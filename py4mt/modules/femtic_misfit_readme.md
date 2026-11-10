@@ -41,6 +41,7 @@ copy, the script can later be reduced to a thin wrapper around this module
 | `run_ensemble(opts, argv=())` | one ensemble from `argv` or `opts.RUN_PATHS`; runs `"nrms"` once if requested; returns the exit code |
 | `run_models(opts, argv=())` | every entry its own single run; `"nrms"` is ignored with a message |
 | `run(opts, argv=(), mode="ensemble")` | `run_models` for `"single"`, else `run_ensemble` |
+| `resolve_out_dir(opts, base_dir)`, `sample_moments(r)`, `display_name(name, case)`, `site_title(sid, info, case)` | output directory; std / skew / excess kurtosis; site name as shown; figure title of a site (2026-11-10) |
 | `resolve_run`, `expand_paths`, `build_dataset`, `align_members`, `merge_sites_by_position`, `data_rms`, ... | the building blocks of `femtic_data_misfit.py`, unchanged |
 | `process_runs(runs, opts, *, mode, out_dir, prefix)` | all selected methods for resolved runs (`mode` = `"single"` or `"ensemble"`) |
 | `run_curves(ds, opts, *, out_dir, prefix, title_extra, plot_dir, search_dirs)`, `run_nrms_histogram(opts)` | methods `"curves"` and `"nrms"` |
@@ -54,7 +55,10 @@ set to `Agg` unless `opts.SHOW`.
 Prefix and directory rules are the same as in the scripts: ensemble prefix
 `OUT_PREFIX` or `ensemble_M<M>`, directory `OUT_DIR` or the common parent of
 the members; single prefix `<run>_iter<N>`, with `OUT_PREFIX` alone for one
-entry and `<OUT_PREFIX>_<run>_iter<N>` for several.
+entry and `<OUT_PREFIX>_<run>_iter<N>` for several. The directory is
+`resolve_out_dir(opts, base_dir)`: `OUT_DIR` if set, else
+`<base_dir>/<OUT_PREFIX>` (`OUT_PREFIX_DIR`), made if missing; `base_dir` is the
+run directory (ensemble: common parent; `"nrms"`: directory of the nRMS file).
 
 ## Settings
 
@@ -68,8 +72,9 @@ The defaults of `Settings` (neutral; the scripts set their own).
 | `METHODS` | `('crossplot', 'histogram', 'qq')` | `"crossplot"`, `"histogram"`, `"qq"`, `"curves"`, `"nrms"` |
 | `ENSEMBLE_OBS` | `'mean'` | Observed data across members |
 | `REF_MEMBER` | `None` | RMS1 reference (None = ensemble mean) |
-| `OUT_DIR` | `None` | `None` = run directory (ensemble: common parent); or a path |
-| `OUT_PREFIX` | `None` | File prefix; prepended if several singles |
+| `OUT_DIR` | `None` | `None` = the directory `<base>/<OUT_PREFIX>/` (base = run directory; ensemble: common parent), made if missing; or a path, used as given |
+| `OUT_PREFIX` | `None` | File prefix (prepended if several singles); also the NAME OF THE OUTPUT DIRECTORY while `OUT_DIR` is `None` |
+| `OUT_PREFIX_DIR` | `True` | `False`: with `OUT_DIR` `None` write into `<base>` itself (no `OUT_PREFIX` sub-directory) |
 | `PLOT_FORMATS`, `PLOT_DPI` | `('.pdf',); 300` | Figure output; must be a tuple (`(".pdf",)` -- with the comma), a plain string is accepted as one format |
 | `PLOT_DIR` | `None` | Directory for all figures: `None` = with the tables; relative name = sub-directory of the output directory (per run); absolute path = one directory for all figures |
 | `DATATYPES`, `COMPONENTS` | `None; None` | Restrict selection |
@@ -102,11 +107,12 @@ The defaults of `Settings` (neutral; the scripts set their own).
 | `CURVES_COMPS` | `'xx, xy, yx, yy'` | Impedance components for rho / phase panels |
 | `SITE_MERGE_BY_POSITION` | `True` | Same position = same site id (first occurrence); see "Site ids" |
 | `SITE_MERGE_TOL` | `1.0` | Positions closer than this [m] are the same site |
-| `CURVES_SITE_DAT` | `'auto'` | `site.dat` for site names: `"auto"`, a path, or `None` |
+| `CURVES_SITE_DAT` | `'auto'` | `site.dat` for site names (`None` = no names): `"auto"` = the local `site.dat` (results directory and up to two levels above, then the current working directory), or a path |
 | `CURVES_SITE_ID_OFFSET` | `0` | `site_id` = `sitenum` + offset (only for `CURVES_SITE_MATCH = "id"` and as the no-coordinates fallback) |
 | `CURVES_SITE_MATCH` | `'auto'` | Assign names by position (`"auto"`, `"coords"`) or by id (`"id"`) |
 | `CURVES_SITE_TOL` | `15.0` | Largest distance [m] for a coordinate match |
-| `CURVES_SITES` | `None` | `None` = all; int N; or list of `site_id` / names |
+| `CURVES_NAME_CASE` | `None` | Site names in the figure title and the file names: `None` = as in `site.dat`, `"upper"`, `"lower"`. The title reads `site NAME (site#)`, or `site site#` for a site without a name |
+| `CURVES_SITES` | `None` | `None` = all; int N; or a LIST of `site_id` values and/or names of the local `site.dat` (any case; merged-away ids such as VTF 1001 select their site; one string `"A01, A02"` also works). A list gives one file per site, see `CURVES_MULTIPAGE` |
 | `CURVES_SITE_ORDER` | `'even'` | For int `CURVES_SITES`: `"even"`, `"id"`, `"worst"`, `"best"` |
 | `CURVES_MAX_SITES` | `200` | Cap on the number of figures |
 | `CURVES_ENS_MODE` | `'auto'` | `"auto"`, `"curves"`, `"density"`, `"bands"`, or `"+"`-joined |
@@ -124,7 +130,7 @@ The defaults of `Settings` (neutral; the scripts set their own).
 | `CURVES_PERIOD_LIM`, `CURVES_YLIM` | `None; {'rho': None, 'phase': (-180.0,...` | Period limits; dict of y limits per panel |
 | `CURVES_PANEL_SIZE` | `(4.2, 3.4)` | Panel width, height [in] |
 | `CURVES_LEGEND_LOC` | `'below'` | `"below"`, a matplotlib `loc`, or `None` |
-| `CURVES_MULTIPAGE` | `True` | One multi-page PDF instead of one file per site |
+| `CURVES_MULTIPAGE` | `None` | `None` = auto: one multi-page PDF for all / N sites, single PDFs for a list of sites; `True` / `False` force it. Other formats (`.jpg`, `.png`, ...) are always one file per site in `<prefix>_curves/` |
 | `CURVES_APPRES_PHASE_DEG` | `True` | APP_RES_AND_PHS phase in degrees (else radians) |
 
 ## Method (Baba 2023)
@@ -172,7 +178,7 @@ and only the conventional histogram is drawn.
 
 Several measures of data fit are computed for the error-normalized
 residuals r, using the routines in `inverse.py` (`nrms`, `r_mae`, `r_med`,
-`q95`) plus the mean of r (bias):
+`q95`), the mean of r (bias) and its higher moments:
 
 | Measure | Definition | Expected for r ~ N(0,1) |
 |---------|------------|-------------------------|
@@ -181,6 +187,9 @@ residuals r, using the routines in `inverse.py` (`nrms`, `r_mae`, `r_med`,
 | `r_med` | median(abs(r)) / 0.6745 | 1 |
 | `q95`   | 95th percentile of abs(r) | 1.96 |
 | `mean`  | mean(r) | 0 |
+| `std`   | sqrt(mean((r - mean(r))^2)) | 1 |
+| `skew`  | m3 / m2^1.5 (skewness) | 0 |
+| `kurt`  | m4 / m2^2 - 3 (excess kurtosis) | 0 |
 
 `r_mae`, `r_med` and `q95` are less sensitive to outliers than `nrms`; if
 they stay near their expected values while `nrms` is large, a few outliers
@@ -188,18 +197,31 @@ rather than a general misfit are the likely cause. Each is given for both
 normalizations: `err` (observed error only, conventional, Baba's RMS1) and
 `err+syn` (observed plus synthesized error, RMS2; ensemble only).
 
+The higher moments are taken about the sample mean (so a bias does not enter)
+with the plain 1/n estimators of `scipy.stats.skew` / `scipy.stats.kurtosis`
+(`skew = m3 / m2^1.5`, `kurt = m4 / m2^2 - 3`, `m_k = mean((r - mean(r))^k)`;
+`kurt` is the EXCESS kurtosis, 0 for a Gaussian). For independent values their
+standard errors are about `sqrt(6/n)` and `sqrt(24/n)`; the bias of `kurt` for
+small samples is about `-6/(n+1)`, so bands with few values are only a rough
+guide. `kurt > 0` = heavy tails (outliers), `kurt < 0` = light tails; `skew > 0`
+= tail towards observed > calculated. Undefined values (`skew` needs n >= 3,
+`kurt` n >= 4, and a non-constant sample) are `nan`.
+
 Where they appear:
 
 - `<prefix>_fit_measures.txt` (switch `FIT_MEASURES`): pooled over all data
   (`ALL`) and per data type; also printed.
 - `<prefix>_crossplot_stats.txt`: per panel (data type / component / part);
-  columns with suffix 1 / 2 are the two normalizations (ensemble only).
+  columns with suffix 1 / 2 are the two normalizations (ensemble only);
+  of the higher moments only `skew` and `kurt` are listed.
 - `<prefix>_hist_stats.txt`: per band (and pooled), one row per
   normalization, plus `n_out`.
 
 The crossplot and histogram statistics use the same residuals (the RMS1
 reference is the ensemble mean, or the `REF_MEMBER` response if set). The
-Q-Q table keeps its own robust slope/intercept statistics.
+Q-Q table keeps its own robust slope/intercept statistics and adds
+`skew` and `kurt` of the plotted residuals (RMS2-normalized for an
+ensemble, else RMS1).
 
 ## Site ids: one id per position
 
@@ -247,6 +269,9 @@ on. Consequences:
   figures pixel for pixel) for singles and for an ensemble, methods
   crossplot, histogram, qq, curves and nrms; details in
   `femtic_ens_misfit_readme.md` and `femtic_mod_misfit_readme.md`.
+- `test_femtic_misfit.py` (pytest, no h5py needed: synthetic reader): moments
+  against `scipy.stats`, table columns, output-directory rules, site list with
+  single pdf / jpg files, names in any case from a local `site.dat`, titles.
 - `make_settings`: defaults are copies (changing one list does not change the
   next call), unknown names raise `KeyError`, there is no `RUN_MODE`.
 
@@ -258,6 +283,21 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### 2026-11-10 -- site list, higher moments, output directory (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- `"curves"`: a list in `CURVES_SITES` (ids and/or names of the local
+  `site.dat`, case-insensitive) gives one file per site and format, pdfs
+  included: `CURVES_MULTIPAGE` is `None` (auto) by default. The `"auto"`
+  search for `site.dat` also tries the current directory (last). New
+  `CURVES_NAME_CASE`; the figure title reads `site NAME (site#)` (before:
+  `site NAME (id site#, x=..., y=...)`), then `, x=..., y=...`.
+- Statistics: `std`, `skew`, excess kurtosis (`kurt`) in the fit-measure,
+  histogram and crossplot tables; `skew` / `kurt` in the Q-Q table.
+- `OUT_PREFIX` is the name of the output directory while `OUT_DIR` is `None`:
+  `<base>/<OUT_PREFIX>/`, made if missing (`OUT_PREFIX_DIR = False` = as
+  before). An `OUT_DIR` that is set is used as given.
+- Behaviour change: with a list in `CURVES_SITES` the pdfs are now single
+  files unless `CURVES_MULTIPAGE = True` is set.
 
 ### 2026-11-09 -- created
 - Engine of `femtic_data_misfit.py` as a module with a `Settings` class and the

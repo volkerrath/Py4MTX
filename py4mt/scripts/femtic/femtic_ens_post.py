@@ -1124,7 +1124,7 @@ ITER_FALLBACK = True
 #: members: all are used. The rows drawn are stored in the .npz
 #: (<P>_subsample_idx, indices into the accepted members in scan order), so a
 #: draw with ENS_SUBSAMPLE_SEED = None can be reproduced afterwards.
-ENS_SUBSAMPLE_N = 192
+ENS_SUBSAMPLE_N = None
 
 # if ENS_SUBSAMPLE_N is None:
 #     ENS_SUBSAMPLE_N = 999
@@ -1378,7 +1378,7 @@ BOOTSTRAP_SEED = None  # None = fresh OS entropy; int = reproducible
 #: figures here by default. Created if missing. Absolute path, or build it from
 #: ENSEMBLE_DIR (default: <ENSEMBLE_DIR>/results/).
 
-RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results") + os.sep
+RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results_test") + os.sep
 
 ENSEMBLE_RESULTS = RESULTS_DIR + (ENSEMBLE_PREFIX  #.upper() 
                                   + "_results" 

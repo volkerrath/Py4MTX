@@ -73,7 +73,7 @@ there with the full text.
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `MOD_MESH` | str | `<ENSEMBLE_DIR>/templates/mesh.dat` | Tetrahedral mesh. |
-| `MOD_MESH_SWAP_XY` | bool / None | `None` | Optional swap of the first two node-coordinate columns when reading `MOD_MESH`. |
+| `MOD_MESH_SWAP_XY` | bool / None | `True` | Swap of the first two node-coordinate columns when the mesh is read (`femtic.read_femtic_mesh`). `mesh.dat` holds x = northing, y = easting; the plots, sites and slice positions use x = easting, y = northing, so `True` (default) gives the right orientation. `False` draws the model transposed (NNE structures appear as ENE) and is only for meshes already written as x = easting, y = northing; `None` = leave femtic's module default (no swap). |
 | `MOD_OCEAN` | bool / None | `None` | Ocean flag; must match the inversion. `None` = auto. |
 | `MOD_AIR_RHO`, `MOD_OCEAN_RHO` | float | `1.0e9`, `0.25` | Sentinel resistivities (Ohm.m) of air / ocean cells; ocean cells are drawn at `MOD_OCEAN_RHO`, air is a gap. |
 | `MOD_PLOT_FORMAT` | list of str | `["pdf"]` | File extensions; one figure file per entry. |
@@ -352,3 +352,4 @@ Converged and perturbed models together: run `femtic_ens_post.py` with
 |---|---|---|
 | 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | Created: the borehole block (`MOD_BH`, step 9) of `femtic_ens_post.py` as a stand-alone script that reads the results `.npz` (including `<P>_ens_perturbed` for the converged-and-perturbed layout). Sampling in `femtic.py` (`sample_boreholes`, `BoreholeMesh`, `heat_scale_*`), drawing in `femtic_viz.py`. Default `z_bot` is `MOD_ZLIM[1]` (else 20 km) instead of the site-derived ROI. |
 | 2026-11-09 | Claude Sonnet 5.5 (Anthropic) | New `MOD_TITLE` (figure title: auto / none / text); `BoreholeFigureOptions.suptitle = None` draws no title. Default unchanged. AI-generated; review before production use. |
+| 2026-11-10 | Claude Sonnet 5.5 (Anthropic) | `MOD_MESH_SWAP_XY` now defaults to `True` (was `None`); description corrected. Without the swap the mesh is transposed relative to the borehole positions. AI-generated; review before production use. |

@@ -80,6 +80,15 @@ Provenance
     fviz.append_catalog_page). One model behaves exactly as before.
     fviz.plot_borehole_logs now returns its figure. AI-generated; review
     before production use.
+@modified: 2026-11-10  Claude Sonnet 5.5 (Anthropic) -- New setting
+    MESH_SWAP_XY (default True): sets fem.MESH_SWAP_XY before the mesh is
+    read. mesh.dat holds x = northing, y = easting, but the borehole
+    positions (site.dat, UTM -> model) are in a geographic frame
+    (x = easting, y = northing); without the swap (the default of
+    femtic.py since 2026-10-11) the mesh is transposed relative to the
+    positions and the logs are taken at the wrong places. None leaves
+    femtic's default, False forces no swap. AI-generated; review before
+    production use.
 """
 
 import os
@@ -152,6 +161,20 @@ BATCH_TITLE = "{label} - iteration {iter}"
 
 #: Mesh file — always required.
 MESH_FILE = WORK_DIR + "mesh.dat"
+
+
+#: x/y column swap applied when the mesh is read (femtic.read_femtic_mesh).
+#: FEMTIC stores mesh.dat nodes as x = northing, y = easting, z down; the
+#: plotting code (femtic_viz, sites from site.dat, slice positions) works in
+#: a geographic frame (x = easting, y = northing). True (default) swaps the
+#: two columns on read, which gives that frame: maps, curtains and sites then
+#: line up, and strikes come out with the right bearing. False draws the
+#: model transposed (a N30E structure appears as N60E, x/y exchanged); it is
+#: only for meshes that were already written as x = easting, y = northing.
+#: None = leave femtic's module default (False) untouched.
+MESH_SWAP_XY = True
+if MESH_SWAP_XY is not None:
+    fem.MESH_SWAP_XY = bool(MESH_SWAP_XY)
 
 #: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic").
 #: Format (comma-separated, no header):

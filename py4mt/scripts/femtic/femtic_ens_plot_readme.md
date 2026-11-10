@@ -113,6 +113,7 @@ borehole heat-map figure (BOREHOLE_HEATMAP_FILE) + histograms .npz
 |---|---|
 | `WORK_DIR` | Base directory for all relative paths |
 | `MESH_FILE` | `mesh.dat` |
+| `MESH_SWAP_XY` | `True` | Swap of the first two node-coordinate columns when the mesh is read (`femtic.read_femtic_mesh`). `mesh.dat` holds x = northing, y = easting; the plots, sites and slice positions use x = easting, y = northing, so `True` (default) gives the right orientation. `False` draws the model transposed (NNE structures appear as ENE) and is only for meshes already written as x = easting, y = northing; `None` = leave femtic's module default (no swap). |
 | `OBSERVE_FILE` | `observe.dat` (fallback site source) |
 | `SITE_DAT` | `site.dat` CSV from `mt_make_sitelist.py` |
 
@@ -722,3 +723,4 @@ unit-conversion block; `z` only matters for `dip < 90`.
   working directory set in the script) instead of next to the script:
   `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the
   `util.py` of the same date. AI-generated; review before production use.
+- **2026-11-10 (Claude Sonnet 5.5, Anthropic):** New `MESH_SWAP_XY` (default `True`), applied before the mesh is read (slice maps and borehole search). `mesh.dat` holds x = northing, y = easting; since 2026-10-11 `femtic.read_femtic_mesh` does not swap by default, which drew the maps transposed (a NNE structure as ENE) and put the boreholes in the wrong tetrahedra. `None` keeps femtic's default, `False` forces no swap. AI-generated; review before production use.

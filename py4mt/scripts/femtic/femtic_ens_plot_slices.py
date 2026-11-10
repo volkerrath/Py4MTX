@@ -67,6 +67,18 @@ AI-generated code -- review before production use.
               femtic_viz.py of the same date. Entries with dip = 90 and all
               other kinds are unchanged.
               AI-generated; review before production use.
+
+2026-11-10  Claude Sonnet 5.5 (Anthropic)
+              MOD_MESH_SWAP_XY now defaults to True (was None). Since
+              2026-10-11 femtic.read_femtic_mesh does not swap the node
+              columns, but mesh.dat holds x = northing, y = easting and
+              femtic_viz / the sites use x = easting, y = northing, so the
+              maps, curtains and borehole positions were drawn transposed
+              (a NNE structure appeared as ENE). The comment, which claimed
+              that no swap gives x = easting, is corrected. None = leave
+              femtic's default, False = force no swap. Checked on a
+              synthetic mesh with a N30E block, not on real data.
+              AI-generated; review before production use.
 """
 
 from __future__ import annotations
@@ -133,12 +145,17 @@ TEMPLATE_BLOCK = None
 # ---------------------------------------------------------------------------
 MOD_MESH = ENSEMBLE_DIR + "templates/mesh.dat"
 
-#: Optional swap of the first two node-coordinate columns when reading
-#: MOD_MESH (femtic.read_femtic_mesh, which is used by every plot and by the
-#: borehole block). None = leave femtic's default (no swap: coordinates as
-#: stored in mesh.dat, with x = easting, y = northing); True = swap, for
-#: meshes stored as x = northing, y = easting; False = force no swap.
-MOD_MESH_SWAP_XY = None
+#: Swap of the first two node-coordinate columns when reading MOD_MESH
+#: (femtic.read_femtic_mesh, which is used by every plot and by the borehole
+#: block). FEMTIC stores mesh.dat nodes as x = northing, y = easting, z down;
+#: the plotting code (femtic_viz, sites from site.dat, slice positions) works
+#: in a geographic frame (x = easting, y = northing). True (default) swaps the
+#: two columns on read, which gives that frame: maps, curtains and sites line
+#: up and strikes come out with the right bearing. False draws the model
+#: transposed (a N30E structure appears as N60E); use it only for meshes that
+#: were already written as x = easting, y = northing. None = leave femtic's
+#: module default (False) untouched.
+MOD_MESH_SWAP_XY = True
 if MOD_MESH_SWAP_XY is not None:
     fem.MESH_SWAP_XY = bool(MOD_MESH_SWAP_XY)
 

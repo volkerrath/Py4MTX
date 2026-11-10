@@ -48,6 +48,15 @@ AI-generated code -- review before production use.
               same date (BoreholeFigureOptions.suptitle = None: no title). With
               the default the figures are unchanged. AI-generated; review before
               production use.
+
+2026-11-10  Claude Sonnet 5.5 (Anthropic)
+              MOD_MESH_SWAP_XY now defaults to True (was None): mesh.dat
+              holds x = northing, y = easting, the borehole positions are in
+              the geographic frame (x = easting, y = northing); without the
+              swap the mesh is transposed relative to them and the logs are
+              taken in the wrong tetrahedra. The comment is corrected. None =
+              leave femtic's default (no swap), False = force no swap.
+              AI-generated; review before production use.
 """
 
 from __future__ import annotations
@@ -92,10 +101,10 @@ ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-er
 ENSEMBLE_PREFIX = "annecy_rto_orig-err"
 
 #: Where femtic_ens_post.py wrote its results; the figures go here too.
-RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results256") + os.sep
+RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results") + os.sep
 
 #: The results .npz (same name rule as femtic_ens_post.py).
-ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX.upper() + "_results256.npz"
+ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX + "_results.npz"
 
 #: Key prefix inside the .npz. None = detect (the file's only ensemble).
 NPZ_PREFIX = None
@@ -111,12 +120,17 @@ TEMPLATE_BLOCK = None
 # ---------------------------------------------------------------------------
 MOD_MESH = ENSEMBLE_DIR + "templates/mesh.dat"
 
-#: Optional swap of the first two node-coordinate columns when reading
-#: MOD_MESH (femtic.read_femtic_mesh, which is used by every plot and by the
-#: borehole block). None = leave femtic's default (no swap: coordinates as
-#: stored in mesh.dat, with x = easting, y = northing); True = swap, for
-#: meshes stored as x = northing, y = easting; False = force no swap.
-MOD_MESH_SWAP_XY = None
+#: Swap of the first two node-coordinate columns when reading MOD_MESH
+#: (femtic.read_femtic_mesh, which is used by every plot and by the borehole
+#: block). FEMTIC stores mesh.dat nodes as x = northing, y = easting, z down;
+#: the plotting code (femtic_viz, sites from site.dat, slice positions) works
+#: in a geographic frame (x = easting, y = northing). True (default) swaps the
+#: two columns on read, which gives that frame: maps, curtains and sites line
+#: up and strikes come out with the right bearing. False draws the model
+#: transposed (a N30E structure appears as N60E); use it only for meshes that
+#: were already written as x = easting, y = northing. None = leave femtic's
+#: module default (False) untouched.
+MOD_MESH_SWAP_XY = True
 if MOD_MESH_SWAP_XY is not None:
     fem.MESH_SWAP_XY = bool(MOD_MESH_SWAP_XY)
 
@@ -315,23 +329,17 @@ MOD_BH = [
              what=["heatmap", "med", "sigma1", "sigma2",],  # ensemble first = underneath
              alpha=0.4, xlim=[1., 10000.],),
     # dict(sites=["SITE01", "SITE07"], z_bot=5.0, what=["med", "best"]),
-    dict(name="SV-108",
-         x=(6.053423 , "latlon"), y=(45.92574, "latlon"),
-         z_top="surface", z_bot=2., dz=0.05,
-         what=["heatmap", "med", "sigma1", "sigma2", ],
-         alpha=0.4, xlim=[1., 10000.],), 
-    # 108: 6.05342229365832 	45.9257397106266
-    # 109: 6.05340119257481 	45.9404667527012
-    dict(name="SV-109",
-         x=(6.05340119, "latlon"), y=(45.940467, "latlon"),
-         z_top="surface", z_bot=2., dz=0.05,
-         what=["heatmap", "med", "sigma1", "sigm2", ],
-         alpha=0.4, xlim=[1., 10000.],),
-    # dict(name="BH-X",
-    #      x=(229100.0, "utm"), y=(8184000.0, "utm"),
-    #      z_top=0.0, z_bot=6.0, dz=0.1,
-    #      what=["avg", "ensemble"], alpha=0.08,
-    #      style=dict(avg=dict(color="navy", lw=3))),
+    # dict(name="SV-108",
+    #      x=(6.053423 , "latlon"), y=(45.92574, "latlon"),
+    #      z_top="surface", z_bot=2., dz=0.05,
+    #      what=["heatmap", "med", "sigma1", "sigma2", ],
+    #      alpha=0.4, xlim=[1., 10000.],), 
+    # dict(name="SV-109",
+    #      x=(6.05340119, "latlon"), y=(45.940467, "latlon"),
+    #      z_top="surface", z_bot=2., dz=0.05,
+    #      what=["heatmap", "med", "sigma1", "sigma2", ],
+    #      alpha=0.4, xlim=[1., 10000.],),
+
 ]
 
 #: Output path (no extension) of the borehole figure; one file per

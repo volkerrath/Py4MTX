@@ -46,11 +46,24 @@ Usage
     python femtic_mod_misfit.py ./run01/results_iter25.h5   # a results file
 
 Output of each run: prefix <OUT_PREFIX>_<run>_iter<N> (OUT_PREFIX = None:
-<run>_iter<N>), written into the directory of the chosen results file (OUT_DIR
-forces one directory; PLOT_DIR separates the figures from the tables).
+<run>_iter<N>), written into the directory <directory of the chosen results
+file>/<OUT_PREFIX>/, made if it does not exist (OUT_DIR forces one directory,
+used as given; OUT_PREFIX_DIR = False writes into the results directory itself;
+PLOT_DIR separates the figures from the tables).
+
+Curves of chosen sites only: CURVES_SITES = ["A01", "a02", 17] (names of the
+local site.dat, any case, and/or site ids) writes one file per site and format
+(.pdf, .jpg, ...) into <OUT_PREFIX>/<prefix>_curves/.
 
 Changelog
 ---------
+2026-11-10  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            output goes to the directory <run dir>/<OUT_PREFIX>/ (new
+            OUT_PREFIX_DIR); CURVES_SITES list -> single pdf / jpg files
+            (CURVES_MULTIPAGE = None = auto), names from the local site.dat
+            in any case; new CURVES_NAME_CASE, title "site NAME (site#)";
+            std, skew and excess kurtosis in the statistics tables. The
+            work is done in femtic_misfit.py (see its changelog).
 2026-11-09  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             created. Single-model half of femtic_data_misfit.py (RUN_MODE = "single"): same
             settings (without the ensemble ones), same output; RUN_MODE and the
@@ -104,10 +117,16 @@ SITE_MERGE_BY_POSITION: bool = True   # data types often number the same station
 SITE_MERGE_TOL: float = 1.0           # [m] positions closer than this are the same
 
 # --- output ---
-OUT_DIR: Optional[str] = None   # None -> into each run's own directory; or one path for all
+OUT_DIR: Optional[str] = None   # None -> into the directory <run dir>/<OUT_PREFIX>/
+                                # (made if missing); or one path for all runs,
+                                # used as given (no OUT_PREFIX sub-directory)
 OUT_PREFIX: Optional[str] = "Misfits"  # None -> derived from run / ensemble;
                                    # if set with several singles it is
-                                   # prepended: <OUT_PREFIX>_<run>_iter<N>
+                                   # prepended: <OUT_PREFIX>_<run>_iter<N>;
+                                   # also the name of the output directory
+                                   # while OUT_DIR is None
+OUT_PREFIX_DIR: bool = True     # False: with OUT_DIR None write into the run
+                                # directory itself (no OUT_PREFIX sub-directory)
 PLOT_FORMATS: Tuple[str, ...] = (".pdf",)   # a tuple: note the comma!
 PLOT_DPI: int = 300
 PLOT_DIR: Optional[str] = None  # where the figures go (tables stay in
@@ -170,9 +189,14 @@ CURVES_COMPS: str = (
 CURVES_SITE_DAT: Optional[str] = "auto"
 # "auto"   # site.dat from mt_make_sitelist.py
 # (name,lat,lon,elev,sitenum,E,N): gives the
-# site names. "auto" = look for site.dat in
-# the results directory and up to two
-# levels above; a path; None = no names
+# site names (None = no names). "auto" = the
+# local site.dat: looked for in the results
+# directory and up to two levels above, then
+# in the current working directory; or a path
+CURVES_NAME_CASE: Optional[str] = None   # site names in the figure titles and the
+# file names: None = as in site.dat, "upper"
+# or "lower". With a name the title reads
+# "site NAME (site#)", else "site site#"
 CURVES_SITE_ID_OFFSET: int = 0  # site_id in the results file = sitenum
 # in site.dat + this offset (only used by
 # CURVES_SITE_MATCH = "id" and as the fallback)
@@ -188,8 +212,12 @@ CURVES_SITE_MATCH: str = "auto"  # how the site.dat names are assigned to the
 CURVES_SITE_TOL: float = 15.0   # [m] largest distance for a coordinate match
 CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = None
 # None = all sites; int N = N sites (chosen
-# by CURVES_SITE_ORDER); list = these
-                                   # site_id values and/or site names
+# by CURVES_SITE_ORDER); list = exactly these
+# sites, as site_id values and/or site names
+# of the local site.dat (case-insensitive;
+# "A01, A02" as one string also works). A
+# list gives one file per site (see
+# CURVES_MULTIPAGE), e.g. ["A01", "a02", 17]
 CURVES_SITE_ORDER: str = "even"    # for an int CURVES_SITES: "even" (spread
                                    # over the site list), "id" (first N),
                                    # "worst" / "best" (by site nRMS)
@@ -213,8 +241,12 @@ CURVES_LEGEND_LOC: Optional[str] = "below"   # "below" (under each panel), a
                                    # None for no legend. Avoid "best" with
                                    # density: matplotlib then needs seconds
                                    # per panel to place it
-CURVES_MULTIPAGE: bool = True      # ".pdf": one file, one page per site;
-                                   # other formats: one file per site in a
+CURVES_MULTIPAGE: Optional[bool] = None   # None = auto: all sites / N sites -> as
+                                   # True; a LIST of sites (CURVES_SITES) -> as
+                                   # False. True: ".pdf" is one file, one page
+                                   # per site; False: the pdfs are single files
+                                   # too. Other formats (.jpg, .png, ...) are
+                                   # always one file per site, in a
                                    # sub-directory <prefix>_curves/
 CURVES_APPRES_PHASE_DEG: bool = True   # APP_RES_AND_PHS phase in degrees
                                        # (False: radians)

@@ -396,6 +396,16 @@ Provenance
                 production use.
 
 @author: vrath
+    2026-11-10  Claude Sonnet 5.5 (Anthropic)
+                New setting MESH_SWAP_XY (default True): sets fem.MESH_SWAP_XY
+                before the mesh is read, for the slice maps and the borehole
+                search. mesh.dat holds x = northing, y = easting; femtic_viz
+                and the sites use x = easting, y = northing. Since
+                2026-10-11 femtic.read_femtic_mesh does not swap by default,
+                which drew the maps transposed (a NNE structure as ENE) and
+                put the boreholes in the wrong tetrahedra. None leaves
+                femtic's default, False forces no swap. AI-generated; review
+                before production use.
 """
 
 import os
@@ -451,6 +461,20 @@ ENSEMBLE_NAME = "annecy_rnd_2_"
 #: Mesh file — always required for plotting.
 
 MESH_FILE = ENSEMBLE_DIR +"/templates/mesh.dat"
+
+
+#: x/y column swap applied when the mesh is read (femtic.read_femtic_mesh).
+#: FEMTIC stores mesh.dat nodes as x = northing, y = easting, z down; the
+#: plotting code (femtic_viz, sites from site.dat, slice positions) works in
+#: a geographic frame (x = easting, y = northing). True (default) swaps the
+#: two columns on read, which gives that frame: maps, curtains and sites then
+#: line up, and strikes come out with the right bearing. False draws the
+#: model transposed (a N30E structure appears as N60E, x/y exchanged); it is
+#: only for meshes that were already written as x = easting, y = northing.
+#: None = leave femtic's module default (False) untouched.
+MESH_SWAP_XY = True
+if MESH_SWAP_XY is not None:
+    fem.MESH_SWAP_XY = bool(MESH_SWAP_XY)
 
 #: observe.dat — used by ESTIMATE_ORIGIN and as fallback for SITE_NUMBER.
 OBSERVE_FILE = ENSEMBLE_DIR + "/templates/observe.dat"

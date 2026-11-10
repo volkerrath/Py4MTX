@@ -208,6 +208,19 @@ Provenance
                 AI-generated; review before production use.
 
 @author: vrath
+    2026-11-10  Claude Sonnet 5.5 (Anthropic)
+                Slice maps were transposed (x = easting and y = northing
+                exchanged: a NNE structure was drawn ENE). Cause: since
+                2026-10-11 femtic.read_femtic_mesh no longer swaps the
+                node columns by default, but mesh.dat holds x = northing,
+                y = easting, while femtic_viz, the sites from site.dat and
+                the slice positions use a geographic frame. New setting
+                MESH_SWAP_XY (default True) sets fem.MESH_SWAP_XY before the
+                mesh is read; None leaves femtic's default (no swap), False
+                forces it. Only the orientation changes; values, colours and
+                the slice geometry are as before. Checked on a synthetic
+                mesh with a N30E block, not on real data.
+                AI-generated; review before production use.
 """
 
 import os
@@ -301,6 +314,20 @@ BATCH_TITLE = "{label} - iteration {iter}"
 
 #: Mesh file — always required for plotting.
 MESH_FILE = WORK_DIR + "mesh.dat"
+
+
+#: x/y column swap applied when the mesh is read (femtic.read_femtic_mesh).
+#: FEMTIC stores mesh.dat nodes as x = northing, y = easting, z down; the
+#: plotting code (femtic_viz, sites from site.dat, slice positions) works in
+#: a geographic frame (x = easting, y = northing). True (default) swaps the
+#: two columns on read, which gives that frame: maps, curtains and sites then
+#: line up, and strikes come out with the right bearing. False draws the
+#: model transposed (a N30E structure appears as N60E, x/y exchanged); it is
+#: only for meshes that were already written as x = easting, y = northing.
+#: None = leave femtic's module default (False) untouched.
+MESH_SWAP_XY = True
+if MESH_SWAP_XY is not None:
+    fem.MESH_SWAP_XY = bool(MESH_SWAP_XY)
 
 #: observe.dat — used as fallback site-overlay source when SITE_DAT is None
 #: and SITE_NUMBER is not None.

@@ -48,6 +48,26 @@ Notice      : This code is AI-generated. Review and test it before any
 
 Changelog
 ---------
+2026-11-10  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            (1) "curves": a list in CURVES_SITES (site ids and/or names of the
+            local site.dat, case-insensitive, merged-away ids resolved, a name
+            shared by several ids selects all of them, a single "A01, A02"
+            string accepted) now gives one file per site, pdfs included:
+            CURVES_MULTIPAGE is None (auto) by default = multi-page pdf for
+            all / N sites, single files for a list; True / False force. The
+            "auto" search for site.dat also tries the current directory, last.
+            New CURVES_NAME_CASE (None / "upper" / "lower") for the names in
+            the figure title and the file names; the title reads
+            "site NAME (site#)" (was "site NAME (id site#, x=..., y=...)"),
+            "site site#" without a name, then ", x=..., y=...".
+            (2) fit_measures() and the tables: std, skew and excess kurtosis
+            (new sample_moments()) in the fit-measure, histogram and
+            crossplot tables, skew / kurt of the plotted residuals in the
+            Q-Q table.
+            (3) OUT_PREFIX is the name of the output directory while OUT_DIR is
+            None: <run dir (ensemble: common parent)>/<OUT_PREFIX>/, made if
+            missing (resolve_out_dir(); OUT_PREFIX_DIR = False switches it
+            off). OUT_DIR, if set, is used as given.
 2026-11-09  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             created. The engine of femtic_data_misfit.py moved into this
             module; settings passed as ``opts`` (``make_settings``) instead of
@@ -121,11 +141,17 @@ class Settings:
     SITE_MERGE_TOL: float = 1.0           # [m] positions closer than this are the same
 
     # --- output ---
-    OUT_DIR: Optional[str] = None   # None -> into the run directory (single: each run's own;
-                                    # ensemble: common parent of the members); or a path
+    OUT_DIR: Optional[str] = None   # None -> the directory <base>/<OUT_PREFIX>/, <base> =
+                                    # the run directory (single: each run's own;
+                                    # ensemble: common parent of the members); or a
+                                    # path, used as it is (no OUT_PREFIX sub-directory)
     OUT_PREFIX: Optional[str] = None  # None -> derived from run / ensemble;
                                        # if set with several singles it is
-                                       # prepended: <OUT_PREFIX>_<run>_iter<N>
+                                       # prepended: <OUT_PREFIX>_<run>_iter<N>.
+                                       # Also the NAME OF THE OUTPUT DIRECTORY
+                                       # (made if missing) while OUT_DIR is None
+    OUT_PREFIX_DIR: bool = True     # False: with OUT_DIR None write into <base>
+                                    # itself, as before (no OUT_PREFIX sub-directory)
     PLOT_FORMATS: Tuple[str, ...] = (".pdf",)   # a tuple: note the comma!
     PLOT_DPI: int = 300
     PLOT_DIR: Optional[str] = None  # where the figures go (tables stay in
@@ -212,9 +238,14 @@ class Settings:
     CURVES_SITE_DAT: Optional[str] = "auto"
     # "auto"   # site.dat from mt_make_sitelist.py
     # (name,lat,lon,elev,sitenum,E,N): gives the
-    # site names. "auto" = look for site.dat in
-    # the results directory and up to two
-    # levels above; a path; None = no names
+    # site names (None = no names). "auto" = the
+    # local site.dat: looked for in the results
+    # directory and up to two levels above, then
+    # in the current working directory; or a path
+    CURVES_NAME_CASE: Optional[str] = None   # site names in the figures (title) and
+    # in the file names: None = as in site.dat,
+    # "upper" or "lower". With a name the title
+    # reads "site NAME (site#)", else "site site#"
     CURVES_SITE_ID_OFFSET: int = 0  # site_id in the results file = sitenum
     # in site.dat + this offset (only used by
     # CURVES_SITE_MATCH = "id" and as the fallback)
@@ -230,8 +261,12 @@ class Settings:
     CURVES_SITE_TOL: float = 15.0   # [m] largest distance for a coordinate match
     CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = None
     # None = all sites; int N = N sites (chosen
-    # by CURVES_SITE_ORDER); list = these
-                                       # site_id values and/or site names
+    # by CURVES_SITE_ORDER); list = exactly these
+    # sites, as site_id values and/or site names
+    # of the local site.dat (case-insensitive;
+    # "A01, A02" as one string also works). A
+    # list gives one file per site (see
+    # CURVES_MULTIPAGE)
     CURVES_SITE_ORDER: str = "even"    # for an int CURVES_SITES: "even" (spread
                                        # over the site list), "id" (first N),
                                        # "worst" / "best" (by site nRMS)
@@ -269,9 +304,13 @@ class Settings:
                                        # None for no legend. Avoid "best" with
                                        # density: matplotlib then needs seconds
                                        # per panel to place it
-    CURVES_MULTIPAGE: bool = True      # ".pdf": one file, one page per site;
-                                       # other formats: one file per site in a
-                                       # sub-directory <prefix>_curves/
+    CURVES_MULTIPAGE: Optional[bool] = None   # None = auto: all sites / N sites ->
+                                       # as True; a LIST of sites (CURVES_SITES)
+                                       # -> as False. True: ".pdf" is one file,
+                                       # one page per site; False: also the pdfs
+                                       # are single files. Other formats (.jpg,
+                                       # .png, ...) are always one file per site,
+                                       # in a sub-directory <prefix>_curves/
     CURVES_APPRES_PHASE_DEG: bool = True   # APP_RES_AND_PHS phase in degrees
                                            # (False: radians)
 
@@ -623,11 +662,47 @@ def build_panels(ds: dict, *, datatypes: Optional[Sequence[str]] = None,
     return panels
 
 
+def sample_moments(r: np.ndarray) -> dict:
+    """
+    Central moments of a sample (non-finite values ignored): std, skew, kurt.
+
+    std   sqrt(m2), m_k = mean((r - mean(r))**k)         (spread about the mean)
+    skew  m3 / m2**1.5                                   (Fisher-Pearson g1)
+    kurt  m4 / m2**2 - 3                                 (EXCESS kurtosis g2)
+
+    These are the plain (biased, 1/n) moment estimators, the defaults of
+    scipy.stats.skew / scipy.stats.kurtosis, centred on the sample mean, so a
+    bias does not enter. Expected for N(0, s^2) samples: skew = kurt = 0; the
+    standard errors are about sqrt(6/n) and sqrt(24/n) for independent values.
+    Positive kurt = heavy tails (outliers), negative = light tails; skew > 0
+    = long tail towards positive residuals (observed > calculated). NaN where
+    undefined: skew needs n >= 3, kurt n >= 4, and a non-constant sample.
+    """
+    nan = float("nan")
+    r = np.asarray(r, dtype=float).ravel()
+    r = r[np.isfinite(r)]
+    n = r.size
+    out = dict(std=nan, skew=nan, kurt=nan)
+    if n == 0:
+        return out
+    d = r - r.mean()
+    m2 = float(np.mean(d ** 2))
+    out["std"] = math.sqrt(m2)
+    if n < 3 or out["std"] <= 1.0e-12 * float(np.max(np.abs(r))):
+        return out                                # constant (or all-zero) sample
+    out["skew"] = float(np.mean(d ** 3)) / m2 ** 1.5
+    if n >= 4:
+        out["kurt"] = float(np.mean(d ** 4)) / m2 ** 2 - 3.0
+    return out
+
+
 def fit_measures(r: np.ndarray) -> dict:
     """
     Fit measures of error-normalized residuals (non-finite values ignored):
-    n, nrms, r_mae, r_med, q95 (all from inverse.py) and the mean (bias).
-    Expected for N(0,1) residuals: nrms = r_mae = r_med = 1, q95 = 1.96.
+    n, nrms, r_mae, r_med, q95 (all from inverse.py), the mean (bias) and the
+    higher moments std, skew, kurt (excess) of sample_moments().
+    Expected for N(0,1) residuals: nrms = r_mae = r_med = 1, q95 = 1.96,
+    mean = skew = kurt = 0, std = 1.
     """
     r = np.asarray(r, dtype=float).ravel()
     r = r[np.isfinite(r)]
@@ -638,6 +713,7 @@ def fit_measures(r: np.ndarray) -> dict:
         r_med=float(inv.r_med(r)),
         q95=float(inv.q95(r)),
         mean=float(np.mean(r)) if r.size else float("nan"),
+        **sample_moments(r),
     )
 
 
@@ -919,7 +995,9 @@ def plot_qq_bands(
     the same range (at most +/- `limit`) and the panels are square.
 
     Returns (figure, stats); stats rows have keys band, n, slope1, slope2,
-    icpt, out_pct (percentage of the dots outside the envelope).
+    icpt, out_pct (percentage of the dots outside the envelope), and skew,
+    kurt (sample_moments of the plotted dots: RMS2- if `has_syn`, else
+    RMS1-normalized).
     """
     import matplotlib.pyplot as plt
     from scipy.stats import norm
@@ -977,8 +1055,10 @@ def plot_qq_bands(
         ax.grid(True, linewidth=0.3, alpha=0.5)
         if k == 0:
             ax.legend(fontsize=7, loc="lower right")
+        mom = sample_moments(main)
         stats.append(dict(band=label, n=nn, slope1=slope1, slope2=slope2,
-                          icpt=icpt, out_pct=out_pct))
+                          icpt=icpt, out_pct=out_pct,
+                          skew=mom["skew"], kurt=mom["kurt"]))
     if equal_axes:
         zmax = float(np.max(np.abs(qq_points(main_all)[0]))) if main_all.size else 1.0
         lim = min(limit, max(ymax, 1.05 * zmax))
@@ -1042,6 +1122,7 @@ def _curves_cfg(opts) -> dict:
         period_lim=opts.CURVES_PERIOD_LIM, ylim=dict(opts.CURVES_YLIM),
         panel_size=tuple(opts.CURVES_PANEL_SIZE), multipage=opts.CURVES_MULTIPAGE,
         appres_deg=opts.CURVES_APPRES_PHASE_DEG, legend_loc=opts.CURVES_LEGEND_LOC,
+        name_case=opts.CURVES_NAME_CASE,
         site_dat=opts.CURVES_SITE_DAT, id_offset=opts.CURVES_SITE_ID_OFFSET,
         site_match=opts.CURVES_SITE_MATCH, site_tol=float(opts.CURVES_SITE_TOL),
     )
@@ -1258,30 +1339,67 @@ def select_sites(info: Dict[int, dict], spec, order: str, max_sites: int) -> Lis
     """
     Choose the sites to plot from the per-site table `info` (see site_nrms).
 
-    spec  None -> all; int N -> N sites; sequence -> exactly these sites, given
-          as site ids (int) and/or site names (str, if info has "name").
+    spec  None -> all; int N -> N sites; sequence -> exactly these sites, in
+          this order, given as site ids (int, or digits as str) and/or site
+          names (str; the names of site.dat, matched exactly first, then
+          ignoring the case; a name shared by several ids selects all of them).
+          A single str is split at commas / white space ("A01, A02").
+          An id that was merged into another one (SITE_MERGE_BY_POSITION,
+          e.g. VTF 1001 -> MT 1) selects the site it was merged into.
     order for an int spec: "even" (evenly spread over the sorted site ids),
           "id" (first N), "worst" / "best" (largest / smallest nRMS first).
           Without an int spec "worst"/"best" still order the whole list.
     """
     ids = sorted(info)
+    if isinstance(spec, str):
+        spec = [t for t in re.split(r"[,;\s]+", spec.strip()) if t]
     if spec is not None and not isinstance(spec, (int, np.integer)):
-        by_name = {d["name"]: s for s, d in info.items() if d.get("name")}
-        sel, miss = [], []
+        by_name: Dict[str, List[int]] = {}
+        by_lower: Dict[str, List[int]] = {}
+        for s in ids:
+            nm = info[s].get("name")
+            if nm:
+                by_name.setdefault(nm, []).append(s)
+                by_lower.setdefault(nm.lower(), []).append(s)
+        by_alias = {a: s for s in ids for a in info[s].get("also", [])}
+        sel: List[int] = []
+        miss: List[Union[int, str]] = []
+
+        def add(found: Sequence[int]) -> None:
+            sel.extend(s for s in found if s not in sel)
+
         for item in spec:
             if isinstance(item, str):
-                if item in by_name:
-                    sel.append(by_name[item])
-                elif item.strip().isdigit() and int(item) in info:
-                    sel.append(int(item))
+                t = item.strip()
+                if t in by_name:
+                    add(by_name[t])
+                elif t.lower() in by_lower:
+                    add(by_lower[t.lower()])
+                elif t.isdigit():
+                    item = int(t)
                 else:
                     miss.append(item)
-            elif int(item) in info:
-                sel.append(int(item))
-            else:
-                miss.append(item)
+                    continue
+            if not isinstance(item, str):
+                try:
+                    k = int(item)
+                except (TypeError, ValueError):
+                    miss.append(item)
+                    continue
+                if k in info:
+                    add([k])
+                elif k in by_alias:
+                    print(f"femtic_misfit: curves: site id {k} is merged into site "
+                          f"{by_alias[k]}.")
+                    add([by_alias[k]])
+                else:
+                    miss.append(item)
         if miss:
             print(f"femtic_misfit: curves: sites not in the data: {miss}")
+            if any(isinstance(m, str) for m in miss) and not by_name:
+                print("femtic_misfit: curves: no site names are available (no "
+                      "site.dat found, or CURVES_SITE_DAT = None), so names "
+                      "cannot be looked up; use site ids.")
     else:
         if order not in ("even", "id", "worst", "best"):
             raise ValueError(f"CURVES_SITE_ORDER {order!r} not in even/id/worst/best.")
@@ -1381,6 +1499,27 @@ def site_series(ds: dict, sid: int, *, appres_deg: bool = True) -> Dict[str, dic
                 elif dname == "PT" and str(cname).startswith("PT"):
                     put(f"pt{lc[2:]}_re", "pt", f, o_re, e_re, c_re)
     return out
+
+
+NAME_CASES = ("", "none", "upper", "lower")
+
+
+def display_name(name: Optional[str], case: Optional[str] = None) -> str:
+    """
+    A site name of site.dat as shown in the plots and in the file names of
+    the "curves" method: unchanged (case None / "none"), "upper" or "lower".
+    "" for a site without a name.
+    """
+    if not name:
+        return ""
+    c = str(case or "").strip().lower()
+    return name.upper() if c == "upper" else name.lower() if c == "lower" else str(name)
+
+
+def site_title(sid: int, info: dict, case: Optional[str] = None) -> str:
+    """"site NAME (site#)" if the site has a name, else "site site#"."""
+    nm = display_name(info.get("name"), case)
+    return f"site {nm} ({sid})" if nm else f"site {sid}"
 
 
 def _series_label(col: str) -> str:
@@ -1633,9 +1772,9 @@ def plot_site_curves(sid: int, series: Dict[str, dict], info: dict, *, M: int,
             ax.set_ylim(cur[0] if yl[0] is None else yl[0], cur[1] if yl[1] is None else yl[1])
         if cfg["invert_x"] != ax.xaxis_inverted():
             ax.invert_xaxis()
-    who = f"site {info['name']} (id {sid}" if info.get("name") else f"site {sid} ("
+    who = site_title(sid, info, cfg["name_case"])
     fit = "" if obs_only else f"nRMS = {info['nrms']:.2f}, "
-    fig.suptitle(f"{who}, x={info['x']:g}, y={info['y']:g}), {fit}"
+    fig.suptitle(f"{who}, x={info['x']:g}, y={info['y']:g}, {fit}"
                  f"n = {info['n']}{' (observed only)' if obs_only else ''}\n{title_extra}",
                  fontsize=10)
     return fig
@@ -1680,6 +1819,9 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
     if cfg["site_match"] not in ("auto", "coords", "id"):
         print("femtic_misfit: curves: CURVES_SITE_MATCH must be auto/coords/id.")
         return 1
+    if str(cfg["name_case"] or "").strip().lower() not in NAME_CASES:
+        print("femtic_misfit: curves: CURVES_NAME_CASE must be None, \"upper\" or \"lower\".")
+        return 1
     M = ds["M"]
     try:
         layers = resolve_layers(cfg["ens_mode"], M, cfg["max_curves"])
@@ -1717,7 +1859,11 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
 
     exts = ["." + str(e).lstrip(".") for e in
             ((opts.PLOT_FORMATS,) if isinstance(opts.PLOT_FORMATS, str) else opts.PLOT_FORMATS)]
-    multipage = bool(cfg["multipage"]) and ".pdf" in exts
+    explicit = cfg["sites"] is not None and not isinstance(cfg["sites"], (int, np.integer))
+    mp = cfg["multipage"]
+    if mp is None:                                # auto: a listed set of sites -> single files
+        mp = not explicit
+    multipage = bool(mp) and ".pdf" in exts
     pdf_dir = plot_dir or out_dir                 # figures; tables stay in out_dir
     os.makedirs(pdf_dir, exist_ok=True)
     pdf_path = os.path.join(pdf_dir, f"{prefix}_curves.pdf")
@@ -1726,6 +1872,8 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
     sub_dir = os.path.join(pdf_dir, f"{prefix}_curves")
     if other:
         os.makedirs(sub_dir, exist_ok=True)
+        print(f"femtic_misfit: curves: one file per site ({', '.join(other)}) in {sub_dir}"
+              + (f"; plus one multi-page {os.path.basename(pdf_path)}" if multipage else ""))
 
     rng = np.random.default_rng(cfg["seed"])
     n_done = 0
@@ -1744,7 +1892,8 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
                     pdf = PdfPages(pdf_path)
                 pdf.savefig(fig, dpi=opts.PLOT_DPI)
             if other:
-                tag = f"{sid}_{_safe_name(info[sid]['name'])}" if info[sid].get("name") else f"{sid}"
+                nm = display_name(info[sid].get("name"), cfg["name_case"])
+                tag = f"{sid}_{_safe_name(nm)}" if nm else f"{sid}"
                 _save(fig, os.path.join(sub_dir, f"{prefix}_curves_site{tag}"), other, opts.PLOT_DPI)
             if opts.SHOW:
                 plt.show()
@@ -1765,10 +1914,15 @@ FIT_MEASURE_NOTE = (
     "# 'err+syn' = obs + synthesized error (Baba RMS2, ensemble only).\n"
     "# nrms = sqrt(mean(r^2)); r_mae = sqrt(pi/2)*mean(|r|); r_med = median(|r|)/0.6745;\n"
     "# q95 = 95th percentile of |r|; mean = bias.\n"
-    "# Expected for N(0,1) residuals: nrms = r_mae = r_med = 1, q95 = 1.96, mean = 0."
+    "# std = sqrt(mean((r-mean)^2)); skew = m3/m2^1.5; kurt = m4/m2^2 - 3 (EXCESS kurtosis),\n"
+    "# m_k = mean((r-mean)^k) (biased 1/n estimators, as scipy.stats.skew / kurtosis).\n"
+    "# Expected for N(0,1) residuals: nrms = r_mae = r_med = 1, q95 = 1.96, mean = 0,\n"
+    "# std = 1, skew = kurt = 0 (standard errors ~ sqrt(6/n), sqrt(24/n) for independent r).\n"
+    "# kurt > 0: heavy tails / outliers; skew > 0: tail towards observed > calculated."
 )
-_MK = ("nrms", "r_mae", "r_med", "q95")
-_MN = {"nrms": "nrms", "r_mae": "rmae", "r_med": "rmed", "q95": "q95"}
+_MK = ("nrms", "r_mae", "r_med", "q95", "skew", "kurt")
+_MN = {"nrms": "nrms", "r_mae": "rmae", "r_med": "rmed", "q95": "q95",
+       "skew": "skew", "kurt": "kurt"}
 
 
 def format_crossplot_stats(panels: Dict[str, List[dict]], *, has_syn: bool) -> str:
@@ -1797,14 +1951,16 @@ def _measure_rows(label_a: str, label_b: str, n: int, m1: dict, m2: dict, *,
         out.append(f"{label_a:<26} " + (f"{label_b:<24} " if label_b else "")
                    + f"{nm:<8} {m['n']:>7d} "
                    f"{m['nrms']:>8.3f} {m['r_mae']:>8.3f} {m['r_med']:>8.3f} "
-                   f"{m['q95']:>8.3f} {m['mean']:>8.3f}{ex}")
+                   f"{m['q95']:>8.3f} {m['mean']:>8.3f} {m['std']:>8.3f} "
+                   f"{m['skew']:>8.3f} {m['kurt']:>8.3f}{ex}")
     return out
 
 
 def _measure_header(first: str, second: str, *, extra: str = "") -> str:
     return (f"{first:<26} " + (f"{second:<24} " if second else "")
             + f"{'norm':<8} {'n':>7} {'nrms':>8} {'r_mae':>8} "
-            f"{'r_med':>8} {'q95':>8} {'mean':>8}" + (f" {extra:>6}" if extra else ""))
+            f"{'r_med':>8} {'q95':>8} {'mean':>8} {'std':>8} {'skew':>8} {'kurt':>8}"
+            + (f" {extra:>6}" if extra else ""))
 
 
 def format_hist_stats(all_stats: Dict[str, List[dict]], *, has_syn: bool) -> str:
@@ -1840,13 +1996,15 @@ def format_fit_measures(panels: Dict[str, List[dict]], *, has_syn: bool) -> str:
 
 def format_qq_stats(all_stats: Dict[str, List[dict]], *, has_syn: bool) -> str:
     hdr = (f"{'group':<26} {'band':<24} {'n':>7} {'slope1':>8}"
-           + (f" {'slope2':>8}" if has_syn else "") + f" {'icpt':>8} {'out%':>6}")
+           + (f" {'slope2':>8}" if has_syn else "") + f" {'icpt':>8} {'out%':>6}"
+           f" {'skew':>8} {'kurt':>8}")
     lines = ["=" * len(hdr), hdr, "-" * len(hdr)]
     for g, lst in all_stats.items():
         for s in lst:
             lines.append(f"{g:<26} {s['band']:<24} {s['n']:>7d} {s['slope1']:>8.3f}"
                          + (f" {s['slope2']:>8.3f}" if has_syn else "")
-                         + f" {s['icpt']:>8.3f} {s['out_pct']:>6.1f}")
+                         + f" {s['icpt']:>8.3f} {s['out_pct']:>6.1f}"
+                         + f" {s['skew']:>8.3f} {s['kurt']:>8.3f}")
     lines.append("=" * len(hdr))
     return "\n".join(lines)
 
@@ -1922,6 +2080,29 @@ def default_out_dir(runs: Sequence[dict]) -> str:
         return os.getcwd()
 
 
+def resolve_out_dir(opts, base_dir: str) -> str:
+    """
+    Output directory of the tables (and, unless PLOT_DIR says otherwise, the
+    figures); it is created if it does not exist.
+
+    OUT_DIR set                    -> OUT_DIR as given (~ expanded)
+    OUT_DIR None, OUT_PREFIX set   -> <base_dir>/<OUT_PREFIX>   (OUT_PREFIX_DIR)
+    otherwise                      -> `base_dir`
+
+    `base_dir` is the directory the output went to before OUT_PREFIX became a
+    directory: the run directory (single) or the common parent of the members
+    (ensemble); for the "nrms" method the directory of the nRMS file.
+    """
+    if opts.OUT_DIR:
+        d = os.path.expanduser(str(opts.OUT_DIR))
+    elif opts.OUT_PREFIX and opts.OUT_PREFIX_DIR:
+        d = os.path.join(base_dir, str(opts.OUT_PREFIX))
+    else:
+        d = base_dir
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
 def run_nrms_histogram(opts) -> int:
     """
     Method "nrms": histogram of the best nRMS of all scanned ensemble members
@@ -1969,8 +2150,7 @@ def run_nrms_histogram(opts) -> int:
 
     name = prefix_npz or re.sub(r"_nrms$", "", os.path.splitext(os.path.basename(src_path))[0])
     prefix = opts.OUT_PREFIX or name
-    out_dir = opts.OUT_DIR or os.path.dirname(os.path.abspath(src_path))
-    os.makedirs(out_dir, exist_ok=True)
+    out_dir = resolve_out_dir(opts, os.path.dirname(os.path.abspath(src_path)))
     fig_dir = resolve_plot_dir(out_dir, opts.PLOT_DIR)
     base = opts.NRMS_HIST_FILE or os.path.join(fig_dir, f"{prefix}_nrms_hist")
     os.makedirs(os.path.dirname(base) or ".", exist_ok=True)
@@ -2132,7 +2312,10 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
         if opts.WRITE_STATS:
             _write(os.path.join(out_dir, f"{prefix}_qq_stats.txt"),
                    f"# {title_extra}; bands: {opts.QQ_BANDS_PER_DECADE} per decade "
-                   f"({opts.QQ_BAND_AXIS})", table)
+                   f"({opts.QQ_BAND_AXIS})\n"
+                   "# skew, kurt (excess): higher moments of the plotted residuals "
+                   "(RMS2-normalized if ensemble, else RMS1); 0 for a Gaussian\n"
+                   "# (definitions: see the fit-measure note of the other tables)", table)
 
     if "curves" in opts.METHODS:
         # where to look for site.dat: the results directories and up to two
@@ -2144,6 +2327,8 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
                 if d not in sdirs:
                     sdirs.append(d)
                 d = os.path.dirname(d)
+        if os.getcwd() not in sdirs:              # the local site.dat, as a last resort
+            sdirs.append(os.getcwd())
         return run_curves(ds, opts, out_dir=out_dir, prefix=prefix, title_extra=title_extra,
                           plot_dir=fig_dir,
                           search_dirs=sdirs)
@@ -2213,7 +2398,7 @@ def run_models(opts, argv: Sequence[str] = ()) -> int:
             prefix = opts.OUT_PREFIX
         else:
             prefix = f"{opts.OUT_PREFIX}_{derived}"
-        out_dir = opts.OUT_DIR or default_out_dir([run])
+        out_dir = resolve_out_dir(opts, default_out_dir([run]))
         try:
             rc = max(rc, process_runs([run], opts, mode="single", out_dir=out_dir, prefix=prefix))
         except (ValueError, KeyError) as exc:
@@ -2248,7 +2433,7 @@ def run_ensemble(opts, argv: Sequence[str] = ()) -> int:
         return 1
     print(f"femtic_misfit: ensemble of {len(runs)} of {len(paths)} runs")
     prefix = opts.OUT_PREFIX or default_prefix(runs, "ensemble")
-    out_dir = opts.OUT_DIR or default_out_dir(runs)
+    out_dir = resolve_out_dir(opts, default_out_dir(runs))
     return max(rc_nrms, process_runs(runs, opts, mode="ensemble", out_dir=out_dir, prefix=prefix))
 
 

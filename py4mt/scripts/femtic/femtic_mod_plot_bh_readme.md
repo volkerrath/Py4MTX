@@ -133,6 +133,7 @@ BOREHOLE_SITES = [
 | `MODEL_FILE` | `resistivity_block_iterX.dat` to sample; or a list / glob / run directories (batch, see above) |
 | `MODEL_ITER`, `BATCH_*` | Batch settings, see "Several models (batch)" |
 | `MESH_FILE` | `mesh.dat` |
+| `MESH_SWAP_XY` | `True` | Swap of the first two node-coordinate columns when the mesh is read (`femtic.read_femtic_mesh`). `mesh.dat` holds x = northing, y = easting; the plots, sites and slice positions use x = easting, y = northing, so `True` (default) gives the right orientation. `False` draws the model transposed (NNE structures appear as ENE) and is only for meshes already written as x = easting, y = northing; `None` = leave femtic's module default (no swap). |
 | `SITE_DAT` | `mt_make_sitelist.py` CSV (`name,lat,lon,elev,sitenum,easting,northing`); used for origin estimation only; `None` to disable |
 
 ### Ocean / air
@@ -261,3 +262,4 @@ for bh in hdr["boreholes"]:
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_mod_plot_bh_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_mod_plot_bh_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 | 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | **Several models in one run:** `MODEL_FILE` may be a list, a glob or run directories (`MODEL_ITER` selects the iteration), giving one figure and NPZ per model plus an optional catalog PDF (`BATCH_*`); new `femtic.resolve_model_files`, `fviz.append_catalog_page`; `fviz.plot_borehole_logs` now returns its figure. One model behaves exactly as before (checked: figure and NPZ identical). AI-generated; review before production use. |
+| 2026-11-10 | Claude Sonnet 5.5 (Anthropic) | New `MESH_SWAP_XY` (default `True`), applied before the mesh is read; without it the mesh is transposed relative to the borehole positions and the logs are taken at the wrong places. AI-generated; review before production use. |
