@@ -305,6 +305,7 @@ Visualisation for FEMTIC resistivity models operating directly on
 | RTO/GST ensemble data plots | `plot_data_ensemble` |
 | RTO/GST ensemble model plots | `plot_model_ensemble` |
 | Model slice panels (map, curtains, oblique plane) | `plot_model_slices`; ensemble version `plot_ensemble_slices` |
+| Polylines on slice panels; intersection line of two slices | `plot_model_slices(polylines=...)`, `slice_intersection_polyline`, `slice_intersection_polylines` |
 | Borehole ρ(z) logs | `plot_borehole_logs` |
 | Ensemble borehole figures (profiles, heat maps) | `plan_borehole_figures`, `draw_borehole_figures`, `plot_boreholes`, `BoreholeFigureOptions` |
 | 3-D rendering | `plot_model_3d` |

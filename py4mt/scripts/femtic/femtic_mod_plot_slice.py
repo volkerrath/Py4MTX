@@ -221,6 +221,22 @@ Provenance
                 the slice geometry are as before. Checked on a synthetic
                 mesh with a N30E block, not on real data.
                 AI-generated; review before production use.
+
+    2026-11-11  Claude Sonnet 5.5 (Anthropic)
+                Polylines. New PLOT_POLYLINES = {name: entry} (metres; {} =
+                none): lines (faults, profiles, boundaries, ...) drawn on the
+                slice panels. Maps show the polyline in plan view (optional
+                z_range); vertical sections (ns, ew, plane, profile) show the
+                parts within max_dist of the section plane, projected into it.
+                Points may be model-local m or CRS-tagged ("utm" metres,
+                "latlon" degrees, longitude first). Passed to
+                fviz.plot_model_slices(polylines=...) with the other
+                shared options. The intersection line of two slices can be
+                computed with fviz.slice_intersection_polyline (comment under
+                PLOT_POLYLINES). Needs the femtic_viz.py of the same date.
+                With PLOT_POLYLINES = {} the figures are unchanged. Tested on
+                a synthetic mesh only.
+                AI-generated; review before production use.
 """
 
 import os
@@ -583,6 +599,45 @@ PLOT_XLIM = [-15000., 15000.]   # [xmin, xmax] metres — easting
 PLOT_YLIM = [-15000., 15000.]   # [ymin, ymax] metres — northing
 PLOT_ZLIM = [-6000.,  15000.]   # [zmin, zmax] metres — depth (z positive-down)
 
+#: Polylines drawn on the slice panels (optional): faults, profiles, borehole
+#: traces, licence boundaries, ... A dict {name: entry}; {} = none. An entry
+#: is the point list itself or a dict with the keys
+#:   points    [[x, y], ...] or [[x, y, z], ...], at least 2 rows, model-local
+#:             metres; z = depth positive down (missing z = 0). CRS-tagged
+#:             like the `point` of a plane: (pts, "model" | "utm" | "latlon")
+#:             with "utm" = [E, N(, z)] UTM metres, "latlon" = [lon, lat(, z)]
+#:             degrees (longitude first); z is metres in every case
+#:   style     matplotlib Line2D keywords, e.g. dict(color="k", linestyle="--",
+#:             linewidth=1.5); default 1.5 pt solid, colour cycled per entry
+#:   label     legend text (lower right of the panel); default = the key,
+#:             None = no legend entry
+#:   kinds     where to draw it: "map", "ns", "ew", "plane" (also the
+#:             "profile" panels), "vertical" (= ns + ew + plane) or a list of
+#:             them; default = everywhere
+#:   max_dist  metres; vertical sections only: the parts of the polyline
+#:             within max_dist of the section plane are projected into it.
+#:             Default PROJECTION_DIST (the whole polyline if that is None);
+#:             0 = only parts lying in the section plane
+#:   z_range   [zmin, zmax] metres; maps only: draw only on maps whose z0 lies
+#:             in the range (default: plan view on every map)
+#: Maps always show the whole polyline in plan view. The axis limits are
+#: never changed by the polylines.
+#: Intersection line of two slices (model-local metres; ready-made entries for
+#: many pairs: fviz.slice_intersection_polylines):
+#:   _p = fviz.slice_intersection_polyline(
+#:       dict(kind="map", z0=5000.0), dict(kind="ns", x0=0.0),
+#:       xlim=PLOT_XLIM, ylim=PLOT_YLIM, zlim=PLOT_ZLIM)
+#:   PLOT_POLYLINES["map 5 km x ns 0"] = dict(
+#:       points=_p, max_dist=0.0, z_range=[5000.0, 5000.0])
+PLOT_POLYLINES = {}
+# PLOT_POLYLINES = {
+#     "fault F1": dict(
+#         points=[[-4000., -3000., 500.], [0., 0., 2500.], [4000., 3000., 4500.]],
+#         style=dict(color="white", linewidth=2.0), max_dist=1500.),
+#     "profile": dict(points=([[-70.95, -16.40], [-70.85, -16.30]], "latlon"),
+#                     kinds="map", style=dict(color="k", linestyle=":")),
+# }
+
 #: Equal aspect ratio for map and curtain panels.
 PLOT_EQUAL_ASPECT = True
 
@@ -748,6 +803,7 @@ _common = dict(
     site_marker_slices=SITE_MARKER_SLICES,
     map_markers=MAP_MARKERS,
     show_model_centre=SHOW_MODEL_CENTRE,
+    polylines=PLOT_POLYLINES,
     display_coords=DISPLAY_COORDS,
     utm_origin_e=UTM_ORIGIN_E,
     utm_origin_n=UTM_ORIGIN_N,

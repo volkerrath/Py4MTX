@@ -1378,7 +1378,7 @@ BOOTSTRAP_SEED = None  # None = fresh OS entropy; int = reproducible
 #: figures here by default. Created if missing. Absolute path, or build it from
 #: ENSEMBLE_DIR (default: <ENSEMBLE_DIR>/results/).
 
-RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results_test") + os.sep
+RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results") + os.sep
 
 ENSEMBLE_RESULTS = RESULTS_DIR + (ENSEMBLE_PREFIX  #.upper() 
                                   + "_results" 

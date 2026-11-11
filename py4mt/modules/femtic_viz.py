@@ -725,6 +725,35 @@ Provenance:
                         to the plane axes, which overrode the axis
                         inversion and put depth upwards.
                         AI-generated code -- review before production use.
+    2026-11-11  Claude Sonnet 5.5 (Anthropic)
+                        Polylines on slices; intersection of two slices.
+                        (1) plot_model_slices: new `polylines` = dict
+                        {name: entry} of 3-D polylines drawn on the map,
+                        ns, ew and plane panels. Entry keys: points (n x 2
+                        or n x 3, plain / "model" / "utm" / "latlon" tagged
+                        like a plane `point`; z = depth, 0 if missing),
+                        style (Line2D kwargs), label, kinds, max_dist,
+                        z_range. Maps: plan view of the whole polyline (only
+                        on maps inside z_range, if given). Vertical panels:
+                        the part within max_dist (default projection_dist)
+                        of the section plane is projected into it, cut
+                        exactly at the slab faces. Added with add_artist, so
+                        axis limits are never changed; labelled polylines
+                        join the lower-right legend. polylines=None (default)
+                        leaves every figure as before.
+                        (2) New slice_intersection_polyline(slice_a,
+                        slice_b, xlim, ylim, zlim, mesh_file, n): the line
+                        in which two slices (map / ns / ew / vertical or
+                        dipping plane, resolved specs in model-local m)
+                        meet, clipped to the ROI box and to the finite
+                        extent the two specs carry (xlim / ylim / zlim);
+                        None if parallel, missing the region or touching it
+                        in a point. slice_intersection_polylines() returns
+                        such lines as ready-made `polylines` entries.
+                        New private helpers _slice_frame, _slice_label,
+                        _slice_number, _slice_limit, _line_style,
+                        _clip_polyline_to_slab, _prepare_polylines.
+                        AI-generated code -- review before production use.
     """
 
 from __future__ import annotations
@@ -3864,6 +3893,517 @@ def _plane_roi_extent(point, normal, u_ax, v_ax, lo, hi):
     return float(uu.min()), float(uu.max()), float(vv.min()), float(vv.max())
 
 
+# =============================================================================
+# Slice intersections and polyline overlays (added 2026-11-11)
+# =============================================================================
+# All geometry below is in the frame of plot_model_slices: model-local metres,
+# x = easting, y = northing, z = DEPTH (positive down).
+
+#: Unit vectors of the x (east), y (north) and z (depth) axes.
+_UNIT_XYZ = (np.array([1.0, 0.0, 0.0]),
+             np.array([0.0, 1.0, 0.0]),
+             np.array([0.0, 0.0, 1.0]))
+
+#: Default line colours of ``plot_model_slices(polylines=...)`` entries that
+#: set none (cycled in dict order).
+_POLYLINE_COLORS = ("black", "magenta", "darkorange", "limegreen",
+                    "deepskyblue", "red", "gold")
+
+#: Names accepted in the ``kinds`` key of a polyline entry -> panel kinds.
+_POLYLINE_KINDS = {
+    "map": ("map",), "horizontal": ("map",),
+    "ns": ("ns",), "sn": ("ns",),
+    "ew": ("ew",), "we": ("ew",),
+    "plane": ("plane",), "profile": ("plane",),
+    "vertical": ("ns", "ew", "plane"),
+}
+
+_LINE_ALIASES = {"color": ("color", "c"),
+                 "linewidth": ("linewidth", "lw"),
+                 "linestyle": ("linestyle", "ls")}
+
+
+def _line_style(user, **defaults):
+    """``Line2D`` kwargs: ``user`` over ``defaults``, aliases respected.
+
+    A default is only set if the user gave neither its long nor its short
+    name (``color`` / ``c``, ``linewidth`` / ``lw``, ``linestyle`` / ``ls``),
+    so ``dict(lw=2)`` does not collide with the default ``linewidth``.
+    """
+    kw = dict(user or {})
+    for key, val in defaults.items():
+        if not any(nm in kw for nm in _LINE_ALIASES.get(key, (key,))):
+            kw[key] = val
+    return kw
+
+
+def _slice_number(spec, key, default=None):
+    """Float value of ``spec[key]``; a ``ValueError`` if it is not a number."""
+    v = spec.get(key, default)
+    if (isinstance(v, (int, float, np.integer, np.floating))
+            and not isinstance(v, bool)):
+        return float(v)
+    raise ValueError(
+        f"slice spec {spec!r}: {key} = {v!r} is not a number of metres. "
+        "Resolve the spec first (fem.resolve_slice_positions, or "
+        "fem.slices_km_to_m / fem.plane_spec_km_to_m for km settings) so "
+        "that all positions are model-local metres.")
+
+
+def _slice_limit(spec, key):
+    """``(min, max)`` of ``spec[key]`` or ``None`` if absent / ``None``."""
+    v = spec.get(key)
+    if v is None:
+        return None
+    return float(min(v)), float(max(v))
+
+
+def _slice_frame(spec):
+    """Plane and finite extent of one resolved slice spec.
+
+    Parameters
+    ----------
+    spec
+        Slice spec as passed to :func:`plot_model_slices` (positions in
+        model-local metres): ``kind`` ``"map"`` (``z0``), ``"ns"`` (``x0``),
+        ``"ew"`` (``y0``) or ``"plane"`` (``point``, ``strike``, ``dip``; a
+        resolved ``"profile"`` is such a plane); ``"sn"`` / ``"we"`` are
+        accepted as ``"ns"`` / ``"ew"``.
+
+    Returns
+    -------
+    point, normal, extent
+        A point on the plane ``(3,)``, its unit normal ``(3,)`` and a list
+        of ``(a, lo, hi)`` constraints ``lo <= a . p <= hi`` (``a`` a unit
+        3-vector) for the finite extent the spec carries itself: ``xlim`` /
+        ``ylim`` of a map, ``ylim`` / ``zlim`` of an ns section, ``xlim`` /
+        ``zlim`` of an ew section, ``xlim`` (along strike, relative to
+        ``point``) and ``zlim`` of a vertical plane, ``xlim`` (along strike)
+        and ``ylim`` (down dip, both relative to ``point``) of a dipping
+        plane. Limits a spec does not set (or sets to ``None``) give no
+        constraint -- exactly the panel extents of plot_model_slices, minus
+        the figure-level defaults.
+    """
+    ex, ey, ez = _UNIT_XYZ
+    kind = spec.get("kind", "map")
+    if kind in ("sn", "we"):
+        kind = "ns" if kind == "sn" else "ew"
+    ext = []
+
+    def _add(a, lim, shift=0.0):
+        if lim is not None:
+            ext.append((a, lim[0] + shift, lim[1] + shift))
+
+    if kind == "map":
+        point = np.array([0.0, 0.0, _slice_number(spec, "z0", 0.0)])
+        normal = ez
+        _add(ex, _slice_limit(spec, "xlim"))
+        _add(ey, _slice_limit(spec, "ylim"))
+    elif kind == "ns":
+        point = np.array([_slice_number(spec, "x0", 0.0), 0.0, 0.0])
+        normal = ex
+        _add(ey, _slice_limit(spec, "ylim"))
+        _add(ez, _slice_limit(spec, "zlim"))
+    elif kind == "ew":
+        point = np.array([0.0, _slice_number(spec, "y0", 0.0), 0.0])
+        normal = ey
+        _add(ex, _slice_limit(spec, "xlim"))
+        _add(ez, _slice_limit(spec, "zlim"))
+    elif kind == "plane":
+        raw = spec.get("point", [0.0, 0.0, 0.0])
+        try:
+            point = np.asarray(raw, dtype=float).reshape(-1)
+        except (TypeError, ValueError):
+            point = np.zeros(0)
+        if point.size == 2:
+            point = np.append(point, 0.0)
+        if point.size != 3:
+            raise ValueError(
+                f"slice spec {spec!r}: plane point {raw!r} must be [x, y(, z)] "
+                "in model-local metres. Resolve the spec first "
+                "(fem.resolve_slice_positions / fem.plane_spec_km_to_m).")
+        strike = _slice_number(spec, "strike", 0.0)
+        dip = _slice_number(spec, "dip", 90.0)
+        if not 0.0 <= dip <= 180.0:
+            raise ValueError(
+                f"slice spec {spec!r}: plane dip must be in [0, 180] "
+                f"degrees, got {dip!r}.")
+        vertical = abs(dip - 90.0) < 1e-6
+        if vertical:
+            s = math.radians(strike)
+            normal = np.array([math.cos(s), -math.sin(s), 0.0])
+            u_st, v_dn = np.array([math.sin(s), math.cos(s), 0.0]), ez
+        else:
+            normal, u_st, v_dn = _strike_dip_frame(strike, dip)
+        _add(u_st, _slice_limit(spec, "xlim"), shift=float(u_st @ point))
+        if vertical:
+            _add(ez, _slice_limit(spec, "zlim"))
+        else:
+            _add(v_dn, _slice_limit(spec, "ylim"), shift=float(v_dn @ point))
+    elif kind == "profile":
+        raise ValueError(
+            f"slice spec {spec!r}: kind 'profile' must be resolved to a "
+            "plane first (fem.resolve_slice_positions).")
+    else:
+        raise ValueError(f"unknown slice kind {kind!r}")
+    return point, np.asarray(normal, dtype=float), ext
+
+
+def _slice_label(spec):
+    """Short description of a resolved slice spec (its title, else automatic)."""
+    if spec.get("title"):
+        return str(spec["title"])
+    kind = spec.get("kind", "map")
+    if kind in ("sn", "we"):
+        kind = "ns" if kind == "sn" else "ew"
+    try:
+        if kind == "map":
+            return f"map z={_slice_number(spec, 'z0', 0.0) / 1000:g} km"
+        if kind == "ns":
+            return f"N-S x={_slice_number(spec, 'x0', 0.0) / 1000:g} km"
+        if kind == "ew":
+            return f"E-W y={_slice_number(spec, 'y0', 0.0) / 1000:g} km"
+        if kind == "plane":
+            return (f"plane str={_slice_number(spec, 'strike', 0.0):g} "
+                    f"dip={_slice_number(spec, 'dip', 90.0):g}")
+    except ValueError:
+        pass
+    return str(kind)
+
+
+def slice_intersection_polyline(
+    slice_a: dict,
+    slice_b: dict,
+    *,
+    xlim=None,
+    ylim=None,
+    zlim=None,
+    mesh_file: Union[str, Path, None] = None,
+    n: int = 2,
+):
+    """Intersection polyline of two slices.
+
+    Works for any pair of the slice kinds of :func:`plot_model_slices`:
+    horizontal maps (``"map"``), the axis-parallel sections (``"ns"`` /
+    ``"ew"``) and vertical or dipping planes (``"plane"``, also a resolved
+    ``"profile"``). Two slices are planes, so they meet in a straight line;
+    that line is clipped to (1) the ROI box ``xlim`` x ``ylim`` x ``zlim``
+    (the mesh bounding box where a limit is ``None`` and ``mesh_file`` is
+    given) and (2) the finite extent each slice carries itself (``xlim`` /
+    ``ylim`` / ``zlim`` keys of the spec, in the frame of that slice; see
+    :func:`_slice_frame`). The result is the part of the line that lies on
+    both panels.
+
+    Parameters
+    ----------
+    slice_a, slice_b
+        Slice specs with positions in model-local **metres**, as passed to
+        :func:`plot_model_slices` (output of ``fem.resolve_slice_positions``;
+        for km settings ``fem.slices_km_to_m`` / ``fem.plane_spec_km_to_m``).
+        ``z0``, ``point[2]`` and ``zlim`` are depths, positive down.
+    xlim, ylim, zlim
+        ROI box ``[min, max]`` in model-local metres (``zlim`` = depth).
+        ``None`` = unlimited, or the mesh extent if ``mesh_file`` is given.
+    mesh_file
+        ``mesh.dat``; only used to fill limits that are ``None``.
+    n
+        Number of vertices of the returned polyline (>= 2, evenly spaced);
+        2 = the end points.
+
+    Returns
+    -------
+    points : ndarray, shape (n, 3), or ``None``
+        Vertices ``[x, y, z]`` in model-local metres (z = depth, positive
+        down), ordered along the line; the direction is the one in which the
+        largest component of the cross product of the two normals is
+        positive. Feed it to the ``polylines`` argument of
+        :func:`plot_model_slices` as ``dict(points=(points, "model"))``.
+        ``None`` if the slices are parallel or the same plane, if the line
+        misses the clip region, or if it touches it in a single point.
+
+    Raises
+    ------
+    ValueError
+        A spec is not in model-local metres (CRS-tagged ``x0`` / ``point``,
+        unresolved ``"profile"``), an unknown ``kind``, ``dip`` outside
+        [0, 180], ``n`` < 2, or the line is unbounded (no limit of any kind
+        stops it in one direction).
+
+    Notes
+    -----
+    The line lies exactly in both planes (checked to ~1e-9 m on random
+    planes); the clip region is closed, so a line lying on a face of the box
+    (e.g. a map exactly at ``zlim[0]``) is kept.
+
+    Added 2026-11-11, Claude Sonnet 5.5 (Anthropic).
+    """
+    if int(n) < 2:
+        raise ValueError(f"n must be >= 2, got {n!r}.")
+    pa, na, ea = _slice_frame(slice_a)
+    pb, nb, eb = _slice_frame(slice_b)
+
+    d = np.cross(na, nb)
+    dn = float(np.linalg.norm(d))
+    if dn < 1.0e-9:
+        return None                       # parallel, or the same plane
+    d = d / dn
+    if d[int(np.argmax(np.abs(d)))] < 0.0:
+        d = -d
+    # point of the line: p0 = alpha*na + beta*nb with na.p0 = ha, nb.p0 = hb
+    c = float(na @ nb)
+    ha, hb = float(na @ pa), float(nb @ pb)
+    p0 = ((ha - hb * c) * na + (hb - ha * c) * nb) / (1.0 - c * c)
+
+    lims = [xlim, ylim, zlim]
+    if mesh_file is not None and any(l is None for l in lims):
+        nodes = _load_mesh(mesh_file).nodes
+        lims = [l if l is not None
+                else (float(nodes[:, k].min()), float(nodes[:, k].max()))
+                for k, l in enumerate(lims)]
+    cons = list(ea) + list(eb)
+    for k, lim in enumerate(lims):
+        if lim is not None:
+            cons.append((_UNIT_XYZ[k], float(min(lim)), float(max(lim))))
+
+    # Clip the parametrised line p0 + t*d to every slab lo <= a.p <= hi.
+    tol = 1.0e-6                          # metres
+    t_lo, t_hi = -math.inf, math.inf
+    for a, lo, hi in cons:
+        s0, s1 = float(a @ p0), float(a @ d)
+        if abs(s1) < 1.0e-12:             # line parallel to the slab
+            if s0 < lo - tol or s0 > hi + tol:
+                return None
+            continue
+        t1, t2 = (lo - s0) / s1, (hi - s0) / s1
+        if t1 > t2:
+            t1, t2 = t2, t1
+        t_lo, t_hi = max(t_lo, t1), min(t_hi, t2)
+    if not (math.isfinite(t_lo) and math.isfinite(t_hi)):
+        raise ValueError(
+            "The intersection line is unbounded: give xlim / ylim / zlim, "
+            "mesh_file, or slices that carry their own limits.")
+    if t_hi - t_lo <= tol:                # no overlap, or a single point
+        return None
+    t = np.linspace(t_lo, t_hi, int(n))
+    return p0[None, :] + t[:, None] * d[None, :]
+
+
+def slice_intersection_polylines(
+    slices: Sequence[dict],
+    *,
+    pairs: Optional[Sequence[Tuple[int, int]]] = None,
+    style: Optional[dict] = None,
+    **kwargs,
+) -> dict:
+    """``polylines`` entries for the intersections of slices.
+
+    Convenience wrapper of :func:`slice_intersection_polyline` for
+    :func:`plot_model_slices`: returns a dict that can be passed (or merged
+    into the user's dict) as its ``polylines`` argument, e.g. to mark where
+    the sections of a figure cross each other.
+
+    Parameters
+    ----------
+    slices
+        Resolved slice specs in model-local metres (the ``slices`` of
+        :func:`plot_model_slices`).
+    pairs
+        List of ``(i, j)`` 0-based indices into ``slices``; ``None`` = every
+        pair ``i < j``. Pairs that do not intersect (parallel, outside the
+        clip region) are skipped.
+    style
+        ``Line2D`` keywords of the lines; default ``color="k"``,
+        ``linestyle="--"``, ``linewidth=1.0`` (aliases ``c`` / ``ls`` /
+        ``lw`` accepted).
+    **kwargs
+        ``xlim``, ``ylim``, ``zlim``, ``mesh_file``, ``n`` of
+        :func:`slice_intersection_polyline`.
+
+    Returns
+    -------
+    dict
+        ``{"slice<i>_slice<j>": entry}``. Each entry has the CRS-tagged
+        ``points`` ``(array, "model")``, a ``label`` ("<slice i> x <slice
+        j>", from the slice titles), ``style``, ``max_dist=0`` (on a vertical
+        section the line shows only where it lies in the section, i.e. on
+        slice ``i`` and ``j`` themselves) and ``z_range`` = depth range of the
+        line (on a map the line shows only where the map cuts it).
+
+    Added 2026-11-11, Claude Sonnet 5.5 (Anthropic).
+    """
+    specs = list(slices)
+    if pairs is None:
+        pairs = [(i, j) for i in range(len(specs))
+                 for j in range(i + 1, len(specs))]
+    out = {}
+    for i, j in pairs:
+        if not (0 <= i < len(specs) and 0 <= j < len(specs)) or i == j:
+            raise ValueError(
+                f"pairs entry {(i, j)!r}: two different indices in "
+                f"0..{len(specs) - 1} are needed.")
+        pts = slice_intersection_polyline(specs[i], specs[j], **kwargs)
+        if pts is None:
+            continue
+        out[f"slice{i}_slice{j}"] = dict(
+            points=(pts, "model"),
+            label=f"{_slice_label(specs[i])} x {_slice_label(specs[j])}",
+            style=_line_style(style, color="k", linestyle="--", linewidth=1.0),
+            max_dist=0.0,
+            z_range=[float(pts[:, 2].min()), float(pts[:, 2].max())],
+        )
+    return out
+
+
+def _clip_polyline_to_slab(points, point, normal, dmax):
+    """Parts of a 3-D polyline within ``dmax`` of a plane.
+
+    ``points`` ``(m, 3)``; plane through ``point`` with unit ``normal``.
+    Returns a list of ``(k, 3)`` arrays (k >= 2): the pieces of the polyline
+    with ``|(p - point) . normal| <= dmax`` (plus 1 mm, so that a line lying
+    in the plane survives round-off), cut exactly at the slab faces. The
+    signed distance is linear along a segment, so each segment is clipped
+    in closed form. ``dmax=None`` = the whole polyline. Pieces shorter than
+    1 cm (transversal crossings of the plane for ``dmax`` ~ 0) are dropped.
+    """
+    P = np.asarray(points, dtype=float)
+    if dmax is None:
+        return [P]
+    D = float(dmax) + 1.0e-3
+    dist = (P - point) @ normal
+    pieces, cur = [], None
+    for i in range(P.shape[0] - 1):
+        a, b = P[i], P[i + 1]
+        da, db = float(dist[i]), float(dist[i + 1])
+        if abs(db - da) < 1.0e-12:        # segment parallel to the plane
+            iv = (0.0, 1.0) if abs(da) <= D else None
+        else:
+            s1, s2 = (-D - da) / (db - da), (D - da) / (db - da)
+            t0, t1 = max(0.0, min(s1, s2)), min(1.0, max(s1, s2))
+            iv = (t0, t1) if t0 <= t1 else None
+        if iv is None:
+            if cur is not None:
+                pieces.append(cur)
+                cur = None
+            continue
+        t0, t1 = iv
+        if cur is None or t0 > 0.0:       # a new piece starts in this segment
+            if cur is not None:
+                pieces.append(cur)
+            cur = [a + t0 * (b - a)]
+        cur.append(a + t1 * (b - a))
+        if t1 < 1.0:                      # ... and ends in it
+            pieces.append(cur)
+            cur = None
+    if cur is not None:
+        pieces.append(cur)
+    # A piece shorter than 1 cm is invisible at any plot scale; it only arises
+    # where the polyline crosses the plane transversally while dmax is ~0
+    # (e.g. an intersection line piercing another section): drop it.
+    total = float(np.linalg.norm(np.diff(P, axis=0), axis=1).sum())
+    min_len = 1.0e-2 if total >= 1.0e-2 else 0.0
+    out = []
+    for c in pieces:
+        c = np.asarray(c)
+        if len(c) >= 2 and float(
+                np.linalg.norm(np.diff(c, axis=0), axis=1).sum()) >= min_len:
+            out.append(c)
+    return out
+
+
+def _prepare_polylines(
+    polylines,
+    *,
+    projection_dist,
+    latlon_to_model_fn,
+    utm_zone,
+    utm_northern,
+    utm_origin_e,
+    utm_origin_n,
+):
+    """Validate the ``polylines`` dict of :func:`plot_model_slices`.
+
+    Returns a list of dicts (``name``, ``pts`` (m, 3) model-local metres,
+    ``label``, ``style``, ``color``, ``kinds`` (frozenset of panel kinds or
+    ``None``), ``max_dist`` [m] or ``None``, ``z_range``). See the
+    ``polylines`` parameter of :func:`plot_model_slices` for the format.
+    """
+    if not polylines:
+        return []
+    if not isinstance(polylines, dict):
+        raise TypeError(
+            "polylines must be a dict {name: entry}, got "
+            f"{type(polylines).__name__}.")
+    out = []
+    for idx, (name, ent) in enumerate(polylines.items()):
+        if not isinstance(ent, dict):          # shorthand: just the points
+            ent = {"points": ent}
+        if "points" not in ent:
+            raise ValueError(f"polylines[{name!r}]: key 'points' is missing.")
+        raw, crs = ent["points"], "model"
+        if (isinstance(raw, (list, tuple)) and len(raw) == 2
+                and isinstance(raw[1], str)):
+            raw, crs = raw
+        crs = str(crs).strip().lower()
+        try:
+            arr = np.array(raw, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"polylines[{name!r}]: points are not numeric: {exc}") from exc
+        if arr.ndim != 2 or arr.shape[1] not in (2, 3) or arr.shape[0] < 2:
+            raise ValueError(
+                f"polylines[{name!r}]: points must be an (n, 2) or (n, 3) "
+                f"array with n >= 2, got shape {arr.shape}.")
+        if not np.all(np.isfinite(arr)):
+            raise ValueError(f"polylines[{name!r}]: points must be finite.")
+        if arr.shape[1] == 2:                  # no depth given: z = 0
+            arr = np.column_stack([arr, np.zeros(arr.shape[0])])
+        if crs == "utm":
+            arr[:, 0] -= float(utm_origin_e)
+            arr[:, 1] -= float(utm_origin_n)
+        elif crs == "latlon":
+            if latlon_to_model_fn is None:
+                raise ValueError(
+                    f"polylines[{name!r}] is tagged 'latlon' but "
+                    "latlon_to_model_fn was not given.")
+            arr[:, :2] = np.asarray(
+                [latlon_to_model_fn(lat, lon, utm_zone, utm_northern,
+                                    utm_origin_e, utm_origin_n)
+                 for lon, lat in arr[:, :2]], dtype=float)
+        elif crs != "model":
+            raise ValueError(
+                f"polylines[{name!r}]: unknown CRS tag {crs!r}; choose "
+                "'model', 'utm' or 'latlon'.")
+
+        kinds = ent.get("kinds")
+        if kinds is not None:
+            ks = set()
+            for k in ((kinds,) if isinstance(kinds, str) else kinds):
+                key = str(k).strip().lower()
+                if key not in _POLYLINE_KINDS:
+                    raise ValueError(
+                        f"polylines[{name!r}]: unknown kind {k!r}; choose "
+                        f"from {sorted(_POLYLINE_KINDS)}.")
+                ks.update(_POLYLINE_KINDS[key])
+            kinds = frozenset(ks)
+        md = ent.get("max_dist")
+        md = projection_dist if md is None else float(md)
+        if md is not None and md < 0.0:
+            raise ValueError(f"polylines[{name!r}]: max_dist must be >= 0.")
+        zr = ent.get("z_range")
+        if zr is not None:
+            zr = (float(min(zr)), float(max(zr)))
+        style = ent.get("style")
+        if style is not None and not isinstance(style, dict):
+            raise ValueError(f"polylines[{name!r}]: style must be a dict.")
+        style = dict(style or {})
+        label = style.pop("label", ent.get("label", name))
+        out.append(dict(
+            name=name, pts=arr, label=label, style=style,
+            color=_POLYLINE_COLORS[idx % len(_POLYLINE_COLORS)],
+            kinds=kinds, max_dist=md, z_range=zr))
+    return out
+
+
 def plot_model_slices(
     model_file: Union[str, Path],
     mesh_file: Union[str, Path],
@@ -3887,6 +4427,7 @@ def plot_model_slices(
     site_marker_slices: Optional[dict] = None,
     map_markers: Optional[list] = None,
     show_model_centre: bool = True,
+    polylines: Optional[dict] = None,
     display_coords: str = "model",
     utm_origin_e: float = 0.0,
     utm_origin_n: float = 0.0,
@@ -4019,6 +4560,45 @@ def plot_model_slices(
         UTM/latlon display.  Has no effect when ``display_coords ==
         "model"`` (the origin is trivially the plotted (0, 0) point
         already) or on non-``"map"`` panel kinds.
+    polylines
+        Optional dict ``{name: entry}`` of 3-D polylines (fault traces,
+        boundaries, survey lines, the output of
+        :func:`slice_intersection_polylines`, ...) drawn on the horizontal
+        and vertical panels; ``None`` / ``{}`` = none (figure unchanged). An
+        entry is a dict with the keys
+
+        - ``points`` (required): ``(n, 2)`` or ``(n, 3)`` array-like,
+          n >= 2, rows ``[x, y(, z)]``; z = depth in m, positive down, and
+          0 where missing. Plain = model-local m; or CRS-tagged like the
+          ``point`` of a plane slice: ``(pts, "model")``, ``(pts, "utm")``
+          (E, N in UTM m) or ``(pts, "latlon")`` (``[lon, lat(, z)]``,
+          degrees, longitude first). ``"utm"`` / ``"latlon"`` use
+          ``utm_origin_*`` / ``utm_zone`` / ``latlon_to_model_fn``. A bare
+          array / tagged tuple instead of an entry dict is shorthand for
+          ``dict(points=...)``.
+        - ``style`` (optional): ``Line2D`` keywords (``color``, ``lw``, ``ls``,
+          ``marker``, ``alpha``, ``zorder``, ...). Default: 1.5 pt solid,
+          zorder 7 (above the reference lines, below the site markers),
+          colour cycled over the entries.
+        - ``label`` (optional): legend text, shown lower right with the
+          other labelled artists; default the dict key, ``None`` = no
+          legend entry.
+        - ``kinds`` (optional): where to draw it; a name or sequence out of
+          ``"map"`` / ``"horizontal"``, ``"ns"``, ``"ew"``, ``"plane"``,
+          ``"vertical"`` (= ns, ew and plane); default all panels.
+        - ``max_dist`` (optional, m): vertical panels only. The part of the
+          polyline within ``max_dist`` of the section plane is projected
+          orthogonally into it and drawn as a line (cut exactly at the slab
+          faces; several pieces if it leaves and re-enters). Default =
+          ``projection_dist`` (so sites and polylines share one tolerance),
+          and the whole polyline if that is ``None`` too. ``0`` = only
+          where the polyline lies in the section (1 mm tolerance).
+        - ``z_range`` (optional, ``[zmin, zmax]`` m depth): map panels
+          only. By default a polyline is drawn in plan view on every map;
+          with ``z_range`` only on maps whose depth ``z0`` lies in the range.
+
+        The polylines never change the axis limits. Units are metres; the
+        km scripts convert with ``fem.polylines_km_to_m``.
     display_coords
         ``"model"`` (model-local m), ``"utm"`` (absolute UTM km), or
         ``"latlon"`` (decimal degrees).
@@ -4230,6 +4810,7 @@ def plot_model_slices(
         import matplotlib.colors as mcolors
         import matplotlib.ticker as mticker
         from matplotlib.collections import PolyCollection, LineCollection
+        from matplotlib.lines import Line2D
     except ImportError:
         print("  plot_model_slices: Matplotlib not available -- skipping.")
         return
@@ -4519,6 +5100,17 @@ def plot_model_slices(
             _mc_marker.update({k: v for k, v in _model_centre_style.items()
                                 if k not in ("is_model_centre", "latlon", "name")})
 
+    # -- polylines (2026-11-11): validated and brought to model-local metres
+    # once; drawn per panel by _overlay_polylines() below.
+    _polys_in = _prepare_polylines(
+        polylines, projection_dist=projection_dist,
+        latlon_to_model_fn=latlon_to_model_fn, utm_zone=utm_zone,
+        utm_northern=utm_northern, utm_origin_e=utm_origin_e,
+        utm_origin_n=utm_origin_n)
+    if out and _polys_in:
+        print(f"  plot: {len(_polys_in)} polyline(s): "
+              + ", ".join(str(p["name"]) for p in _polys_in))
+
     # Horizontal axis labels: "East"/"North" (with the display-mode unit
     # suffix) for every display_coords mode. In "latlon" display the
     # plotted/ticked values are geographic longitude/latitude in degrees
@@ -4732,6 +5324,48 @@ def plot_model_slices(
         ax.add_collection(lc)
         return True
 
+    def _overlay_polylines(ax, kind, *, z0=None, section=None):
+        """Draw the ``polylines`` on one panel; True if a labelled one shows.
+
+        ``kind == "map"``: plan view of the whole polyline (only on maps
+        inside the entry's ``z_range`` if it has one). Vertical panels:
+        ``section = (point, normal, u_ax, v_ax, to_disp)`` -- the plane, its
+        two in-plane axes as used for the mesh polygons, and the function
+        mapping their coordinates to display coordinates; the part of each
+        polyline within ``max_dist`` of the plane is projected into it.
+        Artists are added with ``add_artist``, so the axis limits (and the
+        data limits later autoscaling would use) stay as they are.
+        """
+        labelled = False
+        for pl in _polys_in:
+            if pl["kinds"] is not None and kind not in pl["kinds"]:
+                continue
+            P = pl["pts"]
+            if kind == "map":
+                zr = pl["z_range"]
+                if zr is not None and not (zr[0] - 1e-3 <= z0 <= zr[1] + 1e-3):
+                    continue
+                pieces = [np.column_stack([(P[:, 0] + dE) * sc,
+                                           (P[:, 1] + dN) * sc])]
+            else:
+                point, normal, u_ax, v_ax, to_disp = section
+                pieces = []
+                for Q in _clip_polyline_to_slab(P, point, normal,
+                                                pl["max_dist"]):
+                    X, Y = to_disp(Q @ u_ax, Q @ v_ax)
+                    pieces.append(np.column_stack([X, Y]))
+            if not pieces:
+                continue
+            gap = np.full((1, 2), np.nan)       # breaks the line between pieces
+            xy = np.vstack([q for pc in pieces for q in (pc, gap)][:-1])
+            kw = _line_style(pl["style"], color=pl["color"], linewidth=1.5,
+                             linestyle="-", zorder=7)
+            if pl["label"] is not None:
+                kw["label"] = str(pl["label"])
+                labelled = True
+            ax.add_artist(Line2D(xy[:, 0], xy[:, 1], **kw))
+        return labelled
+
     # -- sample boreholes (before figure, so depth range is known) ---------------
     _bh_logs: list = []
     _bh_sites = borehole_sites or []
@@ -4937,6 +5571,7 @@ def plot_model_slices(
         _zlim = spec.get("zlim", zlim)
         mappable = None
         _ref_drawn = False
+        _poly_drawn = False
 
         # Normalise reversed-direction aliases before dispatch.
         if kind in ("sn", "we"):
@@ -4977,6 +5612,7 @@ def plot_model_slices(
                 ax.yaxis.set_major_formatter(_fmt_y)
             _apply_aspect(ax, "map", sc)
             _ref_drawn = _overlay_reference(ax, polys_d, eidx)
+            _poly_drawn = _overlay_polylines(ax, "map", z0=z0)
             if title is None:
                 title = f"Map  z = {z0/1000:.1f} km"
             for sn, sx_m, sy_m, _elev in (_site_xys if sites_in_maps else []):
@@ -5048,6 +5684,9 @@ def plot_model_slices(
                 ax.xaxis.set_major_formatter(_fmt_y)
             _apply_aspect(ax, "section", sc)
             _ref_drawn = _overlay_reference(ax, polys_d, eidx)
+            _poly_drawn = _overlay_polylines(
+                ax, "ns", section=(point, normal, u_ax, v_ax,
+                                   lambda pu, pv: ((pu + dN)*sc, pv*_dz_sc)))
             if title is None:
                 title = f"N-S  easting = {(x0 + utm_origin_e)/1000:.1f} km"
             _lbl_l, _lbl_r = ("N", "S") if _invert_x else ("S", "N")
@@ -5106,6 +5745,9 @@ def plot_model_slices(
                 ax.xaxis.set_major_formatter(_fmt_x)
             _apply_aspect(ax, "section", sc)
             _ref_drawn = _overlay_reference(ax, polys_d, eidx)
+            _poly_drawn = _overlay_polylines(
+                ax, "ew", section=(point, normal, u_ax, v_ax,
+                                   lambda pu, pv: ((pu + dE)*sc, pv*_dz_sc)))
             if title is None:
                 title = f"E-W  northing = {(y0 + utm_origin_n)/1000:.1f} km"
             _lbl_l, _lbl_r = ("E", "W") if _invert_x else ("W", "E")
@@ -5181,6 +5823,10 @@ def plot_model_slices(
                     ax.invert_xaxis()
                 _apply_aspect(ax, "section", _hsc)
                 _ref_drawn = _overlay_reference(ax, polys_d, eidx)
+                _poly_drawn = _overlay_polylines(
+                    ax, "plane",
+                    section=(_pt, normal, u_ax, v_ax,
+                             lambda pu, pv: ((pu - _u0)*_hsc, pv*_dz_sc)))
                 if title is None:
                     title = f"Section  azimuth N{_strike:.0f}E"
                 _c_l = _s_rad + math.pi if not _invert_x else _s_rad
@@ -5227,6 +5873,10 @@ def plot_model_slices(
                     ocean_color=ocean_color, air_color=air_color,
                     ocean_value=ocean_value, invert_v=False, poly_alphas=_pa)
                 _ref_drawn = _overlay_reference(ax, polys_d, eidx)
+                _poly_drawn = _overlay_polylines(
+                    ax, "plane",
+                    section=(_pt, normal, u_ax, v_ax,
+                             lambda pu, pv: ((pu - _u0)*_psc, (pv - _v0)*_psc)))
                 # Ranges [m] relative to `point`: per-spec xlim (along
                 # strike) / ylim (down dip), else the plane cut with the
                 # ROI box (figure-level xlim x ylim x zlim; mesh extent
@@ -5304,7 +5954,8 @@ def plot_model_slices(
             )) or
             (map_markers and kind == "map" and
              any(m.get("name") for m in map_markers)) or
-            bool(_ref_drawn and _ref_label)
+            bool(_ref_drawn and _ref_label) or
+            bool(_poly_drawn)
         )
         # Only if something actually carries a label (site_marker with
         # label=None, as in the calling scripts' defaults, produces none).

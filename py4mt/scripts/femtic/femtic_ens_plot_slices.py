@@ -79,6 +79,22 @@ AI-generated code -- review before production use.
               femtic's default, False = force no swap. Checked on a
               synthetic mesh with a N30E block, not on real data.
               AI-generated; review before production use.
+
+2026-11-11  Claude Sonnet 5.5 (Anthropic)
+              Polylines. New MOD_POLYLINES = {name: entry} (km; {} = none):
+              lines (faults, profiles, boundaries, ...) drawn on the slice
+              panels of every figure. Maps show the polyline in plan view
+              (optional z_range); vertical sections (ns, ew, plane) show
+              the parts within max_dist of the section plane, projected into
+              it. Points may be model-local km or CRS-tagged ("utm" metres,
+              "latlon" degrees, longitude first). Passed to
+              fviz.plot_model_slices(polylines=...) via
+              fem.polylines_km_to_m. The intersection line of two slices
+              can be computed with fviz.slice_intersection_polyline
+              (comment under MOD_POLYLINES). Needs femtic.py and
+              femtic_viz.py of the same date. With MOD_POLYLINES = {} the
+              figures are unchanged. Tested on a synthetic mesh only.
+              AI-generated; review before production use.
 """
 
 from __future__ import annotations
@@ -372,6 +388,44 @@ MOD_SLICES = [
     # dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]
 #: Epagny (45.9383, 6.0883) 
+# --- Polylines (optional) -----------------------------------------------------
+#: Lines drawn on the slice panels of every figure ("best" and MOD_STATS):
+#: faults, profiles, borehole traces, licence boundaries, ... A dict
+#: {name: entry}; {} = none. An entry is the point list itself or a dict:
+#:   points    [[x, y], ...] or [[x, y, z], ...], at least 2 rows, model-local
+#:             km; z = depth positive down (missing z = 0). CRS-tagged like
+#:             the `point` of a plane: (pts, "model" | "utm" | "latlon") with
+#:             "utm" = [E, N(, z)] UTM metres, "latlon" = [lon, lat(, z)]
+#:             degrees (longitude first); z is km in every case
+#:   style     matplotlib Line2D keywords, e.g. dict(color="k", linestyle="--",
+#:             linewidth=1.5); default 1.5 pt solid, colour cycled per entry
+#:   label     legend text (lower right of the panel); default = the key,
+#:             None = no legend entry
+#:   kinds     where to draw it: "map", "ns", "ew", "plane", "vertical"
+#:             (= ns + ew + plane) or a list of them; default = everywhere
+#:   max_dist  km; vertical sections only: the parts of the polyline within
+#:             max_dist of the section plane are projected into it. Default
+#:             MOD_PROJECTION_DIST (the whole polyline if that is None);
+#:             0 = only parts lying in the section plane
+#:   z_range   [zmin, zmax] km; maps only: draw only on maps whose z0 lies in
+#:             the range (default: plan view on every map)
+#: Maps always show the whole polyline in plan view. The axis limits are
+#: never changed by the polylines.
+#: Intersection line of two slices (metres in, metres out; ready-made
+#: entries for many pairs: fviz.slice_intersection_polylines):
+#:   _p = fviz.slice_intersection_polyline(
+#:       dict(kind="map", z0=2000.0), dict(kind="ns", x0=0.0),
+#:       xlim=[-20e3, 20e3], ylim=[-20e3, 20e3], zlim=[-1e3, 10e3])
+#:   MOD_POLYLINES["map 2 km x ns 0"] = dict(
+#:       points=_p / 1000.0, max_dist=0.0, z_range=[2.0, 2.0])
+MOD_POLYLINES = {}
+# MOD_POLYLINES = {
+#     "fault F1": dict(
+#         points=[[-4.0, -3.0, 0.5], [0.0, 0.0, 2.5], [4.0, 3.0, 4.5]],
+#         style=dict(color="white", linewidth=2.0), max_dist=1.5),
+#     "profile": dict(points=([[6.05, 45.90], [6.15, 45.95]], "latlon"),
+#                     kinds="map", style=dict(color="k", linestyle=":")),
+# }
 # --- Reference model (optional) -----------------------------------------------
 #: A reference model to compare the ensemble with: a resistivity block file
 #: (resistivity_block_iterX.dat) on the SAME mesh as MOD_MESH -- e.g. a
@@ -755,6 +809,7 @@ def _plot_slice(
             site_marker_slices=MOD_SITE_MARKER_SLICES,
             map_markers=MOD_MAP_MARKERS,
             show_model_centre=MOD_SHOW_MODEL_CENTRE,
+            polylines=fem.polylines_km_to_m(MOD_POLYLINES),
             projection_dist=fem.km_to_m(MOD_PROJECTION_DIST),
             display_coords=MOD_DISPLAY_COORDS,
             utm_origin_e=utm_e,

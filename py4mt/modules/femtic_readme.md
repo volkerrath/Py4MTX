@@ -518,7 +518,7 @@ member directories except where a block file is named.
 
 | Function | Purpose |
 |---|---|
-| `km_to_m`, `lim_km_to_m`, `slices_km_to_m`, `plane_spec_km_to_m`, `plane_point_km_to_m` | `MOD_*` settings are in model-local km, `femtic_viz` wants metres; these convert scalars, limit pairs, `MOD_SLICES` lists and `kind="plane"` entries. The plane `point` may be model-local km (plain list or `([x, y, z], "model")`), `([E, N, z], "utm")` (E / N in UTM metres) or `([lon, lat, z], "latlon")` (degrees, longitude first); `z` is always km, depth positive down. The tagged UTM / latlon forms need the keyword arguments `zone`, `northern`, `origin_E`, `origin_N` of `plane_spec_km_to_m` (2026-11-09). |
+| `km_to_m`, `lim_km_to_m`, `slices_km_to_m`, `plane_spec_km_to_m`, `plane_point_km_to_m`, `polylines_km_to_m` | `MOD_*` settings are in model-local km, `femtic_viz` wants metres; these convert scalars, limit pairs, `MOD_SLICES` lists and `kind="plane"` entries. The plane `point` may be model-local km (plain list or `([x, y, z], "model")`), `([E, N, z], "utm")` (E / N in UTM metres) or `([lon, lat, z], "latlon")` (degrees, longitude first); `z` is always km, depth positive down. The tagged UTM / latlon forms need the keyword arguments `zone`, `northern`, `origin_E`, `origin_N` of `plane_spec_km_to_m` (2026-11-09). `polylines_km_to_m(polylines)` converts the `MOD_POLYLINES` dict `{name: entry}` of `femtic_ens_plot_slices.py` for `fviz.plot_model_slices(polylines=...)`: `points` (model-local km, `z` = depth in km) are multiplied by 1000 (`x`, `y`, `z`), for `(pts, "utm")` only `z` (E / N stay UTM metres) and for `(pts, "latlon")` only `z` (degrees stay, longitude first); `max_dist` and `z_range` are km; `style` / `label` / `kinds` pass through; the input is not modified; `None` / `{}` -> `None`; `ValueError` / `TypeError` for malformed entries (2026-11-11). |
 | `parse_alpha_source(expr)` | `"sens_mean_an > -3."` -> `(name, op, value)`; regex, never `eval`. |
 | `alpha_from_condition(arr, op, thr, mode, width)` | Per-free-parameter alpha in [0, 1] (`"blank"` hard cut, `"fade"` linear over `width`). |
 | `write_alpha_block(alpha, template, path, ocean=None, out=True)` | Block file whose raw values are the alpha values (read by `plot_model_slices(alpha_mode="direct")`). |
@@ -622,7 +622,19 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-11-09
+Updated: 2026-11-11
+
+### Changelog (2026-11-11) --- polylines for the slice plots
+- New `polylines_km_to_m()` (Section 6c, next to `plane_spec_km_to_m()`):
+  converts the km `MOD_POLYLINES` dict of `femtic_ens_plot_slices.py` to the
+  metre dict of `femtic_viz.plot_model_slices(polylines=...)`. Model-local
+  points: x, y, z km -> m; `(pts, "utm")`: only z km -> m (E, N are UTM
+  metres); `(pts, "latlon")`: only z km -> m (degrees stay); `max_dist` and
+  `z_range` km -> m. The UTM / latlon -> model-local conversion itself is done
+  by `plot_model_slices`, which knows the zone and the origin.
+- No existing function was changed. Needs the `femtic_viz.py` of the same
+  date (see its readme, "Polylines" and "Intersection of two slices").
+  AI-generated (Claude Sonnet 5.5, Anthropic); review before production use.
 
 ### Changelog (2026-11-09) --- plane `point` in latlon / utm / model
 - `plane_spec_km_to_m()` accepts a CRS-tagged `point`: `([lon, lat, z],

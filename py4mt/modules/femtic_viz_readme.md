@@ -369,6 +369,7 @@ fviz.plot_model_slices(
 | `site_marker_slices` | `dict(marker="o", …)` | Matplotlib kwargs for curtain markers |
 | `map_markers` | `None` | Extra markers (lat/lon dicts) on map panels. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the `show_model_centre` marker's style rather than plotting as a regular marker. |
 | `show_model_centre` | `True` | Marks the model origin (model-local x=0, y=0) on `"map"` panels whenever `display_coords` is `"utm"`/`"latlon"`; no-op for `"model"`. Never gets a legend entry. Default style (since 2026-09-26): yellow 5-point star (`"*"`) with a black edge, `ms=14`, `mew=1.2`, `zorder=15` (above every other map-panel artist, including site markers); override via a `map_markers` entry as above. Set `False` to force off. |
+| `polylines` | `None` | Dict `{name: entry}` of 3-D polylines (faults, boundaries, survey lines, intersection lines of slices, ...) drawn on the map and vertical panels; `None` / `{}` = none (figure unchanged, pixel-identical). Entry keys: `points` (required; model-local m, or CRS-tagged `(pts, "utm" | "latlon" | "model")`), `style`, `label`, `kinds`, `max_dist`, `z_range`. See [Polylines](#polylines). Never changes the axis limits. |
 | `display_coords` | `"model"` | `"model"` / `"utm"` / `"latlon"` |
 | `utm_origin_e`, `utm_origin_n` | `0.0` | Mesh-centre UTM [m] |
 | `utm_zone`, `utm_northern` | `1`, `True` | UTM zone and hemisphere |
@@ -505,6 +506,111 @@ fviz.plot_model_slices(
 
 For `plot_borehole_logs` the same option draws the reference as a dashed
 profile per borehole (below).
+
+### Polylines
+
+`polylines` draws a dict of 3-D lines on the panels, on top of the model and
+the reference lines (zorder 7, below the site markers). Typical uses: fault
+traces, survey lines, licence boundaries, borehole traces, and the
+intersection lines of other slices (next section).
+
+```python
+polylines = {
+    "fault F1": dict(                       # model-local metres, z = depth
+        points=[[-4000., -3000., 500.], [0., 0., 2500.], [4000., 3000., 4500.]],
+        style=dict(color="white", linewidth=2.0),
+        max_dist=1500.),
+    "profile": dict(                        # geographic, longitude first
+        points=([[-70.95, -16.40], [-70.85, -16.30]], "latlon"),
+        kinds="map", style=dict(color="k", linestyle=":")),
+    "boundary": [[0., 0.], [5000., 0.], [5000., 5000.]],   # bare points
+}
+fviz.plot_model_slices(..., polylines=polylines)
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `points` | required | `(n, 2)` or `(n, 3)` array-like, n >= 2, rows `[x, y(, z)]`; z = depth in m, positive down, 0 where missing. Plain = model-local m. CRS tag as for the `point` of a plane: `(pts, "model")`, `(pts, "utm")` (E, N in UTM m), `(pts, "latlon")` (`[lon, lat(, z)]`, degrees, longitude first); `"utm"` / `"latlon"` need `utm_origin_*` / `utm_zone` (and `latlon_to_model_fn`). A bare array or tagged tuple instead of the entry dict is shorthand for `dict(points=...)`. |
+| `style` | 1.5 pt solid, colour cycled | `Line2D` keywords (`color`, `lw` / `linewidth`, `ls` / `linestyle`, `marker`, `alpha`, `zorder`, ...); short aliases are accepted. |
+| `label` | the dict key | Legend text (lower right, with the other labelled artists); `None` = no entry. A `label` inside `style` wins. |
+| `kinds` | all panels | Where to draw: `"map"` (= `"horizontal"`), `"ns"`, `"ew"`, `"plane"` (also resolved `"profile"` panels), `"vertical"` (= ns + ew + plane), or a list of these. |
+| `max_dist` | `projection_dist` | Metres; **vertical panels only**. The part of the polyline within `max_dist` of the section plane is projected orthogonally into it and drawn (a slab, like the site markers). Cut exactly at the slab faces; a polyline that leaves and re-enters gives several pieces. `None` = `projection_dist`, and the whole polyline if that is `None` too; `0` = only where the polyline lies in the section (1 mm tolerance; pieces shorter than 1 cm, i.e. transversal crossings, are dropped). |
+| `z_range` | none | `[zmin, zmax]` m depth; **maps only**. By default a polyline is drawn in plan view (all vertices) on every map; with `z_range` only on maps whose `z0` lies in the range. |
+
+Notes
+
+- Maps show the whole polyline in plan view; the vertical position of its
+  vertices is ignored there unless `z_range` is set.
+- On vertical panels the horizontal coordinate is the one of the panel (ns:
+  northing, ew: easting, plane: along-strike distance) and the vertical one is
+  depth (dipping plane: down-dip distance), with the same scaling as the
+  model, so the lines follow `display_coords`, `horiz_km`, `depth_km` and
+  `vert_exag`.
+- The lines are added as free artists: they never change the axis limits or
+  the automatic panel sizes, so a line extending beyond the model is simply
+  clipped by the axes.
+- Errors: `TypeError` if `polylines` is not a dict; `ValueError` for no
+  `points`, fewer than 2 or non-finite vertices, unknown CRS tag, `kinds` or
+  `style`, negative `max_dist`, and `"latlon"` without `latlon_to_model_fn`.
+- The km scripts convert their `MOD_POLYLINES` with `fem.polylines_km_to_m`
+  (see `femtic_readme.md`).
+
+### Intersection of two slices
+
+Two slices are planes, so they meet in a straight line. The line is clipped to
+the ROI box and to the finite extents the slices carry themselves; what is
+left is the part lying on both panels.
+
+```python
+slices = [dict(kind="map", z0=2000.0), dict(kind="ns", x0=3500.0),
+          dict(kind="plane", point=[0., 0., 0.], strike=45., dip=90.)]
+box = dict(xlim=[-6000., 6000.], ylim=[-6000., 6000.], zlim=[-1000., 6000.])
+
+p = fviz.slice_intersection_polyline(slices[0], slices[1], **box)
+# -> array([[3500., -6000., 2000.], [3500., 6000., 2000.]])
+
+entries = fviz.slice_intersection_polylines(slices, **box)
+fviz.plot_model_slices(..., slices=slices, polylines=entries, **box)
+```
+
+`slice_intersection_polyline(slice_a, slice_b, *, xlim=None, ylim=None,
+zlim=None, mesh_file=None, n=2)` returns an `(n, 3)` array `[x, y, z]` in
+model-local metres (z = depth, positive down), evenly spaced along the line, or
+`None` if the slices are parallel or the same plane, if the line misses the
+clip region, or if it only touches it in a point.
+
+- Any pair of the kinds `"map"`, `"ns"` / `"sn"`, `"ew"` / `"we"` and
+  `"plane"` (any dip; a `"profile"` once resolved to its plane) works. The
+  specs are the metre specs passed to `plot_model_slices` (for the km scripts
+  use `fem.slices_km_to_m` / `fem.plane_spec_km_to_m` first); a CRS-tagged
+  `x0` / `y0` / `point` or an unresolved `"profile"` raises `ValueError`, as
+  do an unknown `kind`, `dip` outside [0, 180] and `n < 2`.
+- Clip region: the ROI box `xlim` x `ylim` x `zlim` (metres, `zlim` = depth;
+  a limit that is `None` is taken from the mesh bounding box if `mesh_file` is
+  given, else it is unlimited), plus every finite extent of the specs: `xlim`
+  / `ylim` / `zlim` keys of a spec are in the frame of that slice (map and
+  ns / ew: model coordinates; vertical plane: along-strike range relative to
+  `point`; dipping plane: along-strike and down-dip range). If nothing
+  bounds the line in one direction (for example ns x ew, which meet in a
+  vertical line, without `zlim`) a `ValueError` says so.
+- The line lies in both planes to ~1e-9 m (checked on random planes); the
+  clip region is closed, so a line on a face of the box is kept. The vertices
+  run in the direction in which the largest component of the cross product of
+  the two plane normals is positive.
+
+`slice_intersection_polylines(slices, *, pairs=None, style=None, **kwargs)`
+is the helper that makes ready entries for `plot_model_slices(polylines=...)`:
+one per pair (`pairs=None` = all `i < j`; otherwise a list of 0-based index
+pairs), keyed `"slice<i>_slice<j>"` (pairs without an intersection are
+skipped). Each entry has `points=(pts, "model")`, a label such as
+`"map z=2 km x N-S x=3.5 km"`, `max_dist=0.0` (so the line is drawn only on
+the panels that contain it, e.g. the map x ns line is a line on both of those
+panels and a point, which is not drawn, on the ew panel) and
+`z_range=[zmin, zmax]` of the line (so a vertical intersection shows on the
+maps it crosses). `style` (default `color="k"`, `linestyle="--"`,
+`linewidth=1.0`) is merged with the aliases understood; other keyword
+arguments go to `slice_intersection_polyline`. Edit or filter the dict before
+passing it on, or merge it with your own polylines.
 
 ### Embedded borehole columns
 
@@ -971,3 +1077,4 @@ Author: Volker Rath (DIAS)
 | 2026-11-08b | Claude Sonnet 5.5 (Anthropic) | New: `plot_model_slices_robust`, `append_catalog_page` (batches of single-model figures, `femtic_mod_plot_slice.py` / `femtic_mod_plot_bh.py`). `plot_borehole_logs` now also returns its figure (it returned `None`; the figure is left open as before). |
 | 2026-11-09 | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: `figure_title=""` / `False` = no figure title; new `panel_titles` (False = no panel titles); new `cbar_location` (None / "panel" = one colour bar per panel as before; "right" / "left" / "top" / "bottom" = one joint colour bar for the whole panel grid), `cbar_shrink`, `cbar_thickness`. The joint bar is placed in a strip reserved in the `tight_layout` rectangle (a plain `fig.colorbar(ax=[all axes])` rescales every panel position and makes the titles / axis labels of neighbouring rows collide). Default arguments: output pixel-identical to the previous version (checked). `BoreholeFigureOptions.suptitle`: `None` / `False` = no figure title. `plot_nrms_histogram`: docstring only (`title=None` was already "no title"). AI-generated code -- review before production use. |
 | 2026-11-09b | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: dipping `"plane"` panels (dip != 90) rewritten: `strike` is the geographic azimuth for every dip (dip towards `strike + 90`), axes are along-strike and down-dip distance from `point` (km if `depth_km` else m, true aspect where the layout supports it, column width from the real spans), default extent = plane cut with the `xlim` x `ylim` x `zlim` box, per-spec `xlim` / `ylim`, compass corner labels, in-plane site markers; the old panel was sheared and labelled "km" while showing metres. `dip` outside [0, 180] raises `ValueError`. `dip = 90` and all other kinds unchanged (pixel-identical). `plot_ensemble_slices`: same plane frame and default extent; the figure-level limits are no longer applied to the plane axes (they overrode the inversion, depth pointed up). New private helpers `_strike_dip_frame`, `_plane_roi_extent`. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: new `polylines` argument (dict of 3-D polylines drawn on the map and vertical panels; `points` model-local m or CRS-tagged `"utm"` / `"latlon"`, `style`, `label`, `kinds`, `max_dist` (slab projection on vertical sections, default `projection_dist`), `z_range` (maps); legend entries, axis limits never changed; `None` / `{}` = figure pixel-identical to before, checked). New public functions `slice_intersection_polyline` (line in which two slices meet, any of map / ns / ew / vertical or dipping plane, clipped to the ROI box and the finite extents of the slices; `None` if parallel or outside) and `slice_intersection_polylines` (ready `polylines` entries for pairs of slices); new private helpers `_slice_frame`, `_slice_label`, `_line_style`, `_clip_polyline_to_slab`, `_prepare_polylines`. Tests: `test_femtic_viz_polylines.py` (synthetic mesh; intersection points lie in both planes to ~1e-9 m, expected line positions from independent formulas). `femtic.polylines_km_to_m` converts the km settings of `femtic_ens_plot_slices.py`. Not used by `plot_ensemble_slices`. AI-generated code -- review before production use. |

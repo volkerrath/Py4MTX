@@ -243,6 +243,12 @@ Modified: 2026-11-09 by Claude Sonnet 5.5 (Anthropic) -- plane_spec_km_to_m():
     computed in femtic_viz.plot_model_slices). Untagged points and all
     other behaviour unchanged. AI-generated code -- review before
     production use.
+Modified: 2026-11-11 by Claude Sonnet 5.5 (Anthropic) -- new
+    polylines_km_to_m() (next to slices_km_to_m / plane_spec_km_to_m):
+    converts the MOD_POLYLINES dict of the km scripts (femtic_ens_plot_
+    slices.py) to the metre dict that femtic_viz.plot_model_slices(
+    polylines=...) takes. Nothing else changed. AI-generated code --
+    review before production use.
 """
 from __future__ import annotations
 
@@ -8389,6 +8395,72 @@ def plane_spec_km_to_m(spec, xlim_km=None, ylim_km=None, *,
         else:
             sp["xlim"] = None
     return sp
+
+
+def polylines_km_to_m(polylines):
+    """Convert a MOD_POLYLINES dict (km) to the metre dict of plot_model_slices.
+
+    ``polylines`` is ``{name: entry}`` as described for the ``polylines``
+    parameter of ``femtic_viz.plot_model_slices``, with the lengths of the
+    km scripts (like the plane ``point`` of :func:`plane_point_km_to_m`):
+
+    ``points`` = ``[[x, y(, z)], ...]`` or ``([[x, y(, z)], ...], "model")``
+        model-local km, z = depth in km, positive down
+    ``([[E, N(, z)], ...], "utm")``
+        absolute UTM easting / northing in **metres**, z in km
+    ``([[lon, lat(, z)], ...], "latlon")``
+        decimal degrees, **longitude first**, z in km
+
+    ``max_dist`` and ``z_range`` of an entry are km. ``style``, ``label`` and
+    ``kinds`` pass through. The result carries every ``points`` as a
+    CRS-tagged ``(array, crs)`` in metres (UTM / latlon coordinates are
+    converted by ``plot_model_slices`` itself, which knows the UTM zone and
+    the model origin). A bare ``points`` value instead of an entry dict is
+    accepted as shorthand. ``None`` / ``{}`` -> ``None``. The input is not
+    modified.
+
+    Added 2026-11-11, Claude Sonnet 5.5 (Anthropic).
+    """
+    if not polylines:
+        return None
+    if not isinstance(polylines, dict):
+        raise TypeError(
+            f"polylines must be a dict {{name: entry}}, got "
+            f"{type(polylines).__name__}.")
+    out = {}
+    for name, ent in polylines.items():
+        ent = dict(ent) if isinstance(ent, dict) else {"points": ent}
+        if "points" not in ent:
+            raise ValueError(f"polylines[{name!r}]: key 'points' is missing.")
+        raw, crs = ent["points"], "model"
+        if (isinstance(raw, (list, tuple)) and len(raw) == 2
+                and isinstance(raw[1], str)):
+            raw, crs = raw
+        crs = str(crs).strip().lower()
+        if crs not in ("model", "utm", "latlon"):
+            raise ValueError(
+                f"polylines[{name!r}]: unknown CRS tag {crs!r}; choose "
+                "'model', 'utm' or 'latlon'.")
+        try:
+            arr = np.array(raw, dtype=float)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(
+                f"polylines[{name!r}]: points are not numeric: {exc}") from exc
+        if arr.ndim != 2 or arr.shape[1] not in (2, 3):
+            raise ValueError(
+                f"polylines[{name!r}]: points must be an (n, 2) or (n, 3) "
+                f"array, got shape {arr.shape}.")
+        if crs == "model":
+            arr[:, :2] *= 1000.0          # km -> m; UTM metres / degrees stay
+        if arr.shape[1] == 3:
+            arr[:, 2] *= 1000.0           # depth km -> m for every CRS
+        ent["points"] = (arr, crs)
+        if ent.get("max_dist") is not None:
+            ent["max_dist"] = km_to_m(ent["max_dist"])
+        if ent.get("z_range") is not None:
+            ent["z_range"] = lim_km_to_m(ent["z_range"])
+        out[name] = ent
+    return out
 
 
 def parse_alpha_source(expr: str):

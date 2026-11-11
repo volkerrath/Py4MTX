@@ -285,6 +285,59 @@ blanking and colourbar of its figure, and shows sites within
 vertical sections need those of 2026-10-07 or later.
 
 
+### Polylines (optional)
+
+`MOD_POLYLINES` is a dict `{name: entry}` of lines (faults, profiles,
+boundaries, borehole traces, ...) drawn on the slice panels of every figure:
+the `"best"` panel and all `MOD_STATS` panels. `{}` (default) draws nothing
+and leaves the figures unchanged. Lengths are in **km** (like `MOD_SLICES`);
+the script converts them with `fem.polylines_km_to_m` and hands them to
+`fviz.plot_model_slices(polylines=...)`.
+
+```python
+MOD_POLYLINES = {
+    "fault F1": dict(
+        points=[[-4.0, -3.0, 0.5], [0.0, 0.0, 2.5], [4.0, 3.0, 4.5]],  # km
+        style=dict(color="white", linewidth=2.0), max_dist=1.5),
+    "profile": dict(points=([[6.05, 45.90], [6.15, 45.95]], "latlon"),
+                    kinds="map", style=dict(color="k", linestyle=":")),
+}
+```
+
+| Key of an entry | Default | Description |
+|---|---|---|
+| `points` | required | `[[x, y], ...]` or `[[x, y, z], ...]`, at least 2 rows, model-local km; z = depth, positive down (missing z = 0). Or CRS-tagged `(pts, "model" \| "utm" \| "latlon")`: `"utm"` = `[E, N(, z)]` in UTM **metres**, `"latlon"` = `[lon, lat(, z)]` in degrees (longitude first); z is km in every case. A bare point list instead of the entry dict is shorthand. |
+| `style` | 1.5 pt solid, colour cycled | matplotlib `Line2D` keywords (`color`, `linewidth`, `linestyle`, `marker`, `alpha`, `zorder`, ...). |
+| `label` | the dict key | Legend text (lower right of each panel, with the reference-model label); `None` = no entry. |
+| `kinds` | all panels | `"map"`, `"ns"`, `"ew"`, `"plane"`, `"vertical"` (= ns + ew + plane) or a list of these. |
+| `max_dist` | `MOD_PROJECTION_DIST` | km; vertical sections only: the parts of the polyline within `max_dist` of the section plane are projected into it (slab, like the site markers). `0` = only parts lying in the section plane. If `MOD_PROJECTION_DIST` is `None` the whole polyline is projected. |
+| `z_range` | none | `[zmin, zmax]` km; maps only: draw only on maps whose `z0` lies in the range. Default: plan view on every map. |
+
+Maps show the whole polyline in plan view. The polylines never change the axis
+limits; parts outside the panel are clipped by the axes.
+
+**Intersection line of two slices.** `fviz.slice_intersection_polyline(a, b,
+xlim=..., ylim=..., zlim=...)` returns the line in which two slices meet
+(clipped to the box and to the extents of the slices), in model-local metres;
+`fviz.slice_intersection_polylines(slices, ...)` makes ready entries for many
+pairs. Because the helpers work in metres, give the slices and limits in metres
+and divide the result by 1000 for this km dict, e.g.
+
+```python
+_p = fviz.slice_intersection_polyline(
+    dict(kind="map", z0=2000.0), dict(kind="ns", x0=0.0),
+    xlim=[-20e3, 20e3], ylim=[-20e3, 20e3], zlim=[-1e3, 10e3])
+MOD_POLYLINES["map 2 km x ns 0"] = dict(
+    points=_p / 1000.0, max_dist=0.0, z_range=[2.0, 2.0])
+```
+
+`max_dist=0.0` draws the line only on the panels that contain it, `z_range`
+only on the map at that depth. There is no automatic switch that draws the
+intersections of all `MOD_SLICES`.
+
+Needs the `femtic.py` (`polylines_km_to_m`) and `femtic_viz.py` of 2026-11-11.
+
+
 ### Site overlay
 
 | Parameter | Description |
@@ -365,3 +418,4 @@ the file.
 | 2026-11-09 | Claude Sonnet 5.5 (Anthropic) | New `MOD_TITLE` (figure title: auto / none / text with placeholders / dict per figure), `MOD_PANEL_TITLES`, and the joint colour bar `MOD_CBAR_LOCATION` ("panel" / "right" / "left" / "top" / "bottom"), `MOD_CBAR_SHRINK`, `MOD_CBAR_THICKNESS`; passed to `fviz.plot_model_slices` (`panel_titles`, `cbar_location`, `cbar_shrink`, `cbar_thickness`; `figure_title=""` = no title). Defaults leave the figures unchanged. AI-generated; review before production use. |
 | 2026-11-09b | Claude Sonnet 5.5 (Anthropic) | Plane sections: the `point` may be CRS-tagged (`([lon, lat, z], "latlon")`, `([E, N, z], "utm")`, `([x, y, z], "model")`, z in km), and dips other than 90 work: `strike` is the azimuth for every dip, axes are along-strike / down-dip distance from `point`, default extent = plane cut with the ROI box, optional `xlim` / `ylim`. Before, a dipping plane was a sheared, mislabelled panel. Needs `femtic.py` and `femtic_viz.py` of the same date. |
 | 2026-11-10 | Claude Sonnet 5.5 (Anthropic) | `MOD_MESH_SWAP_XY` now defaults to `True` (was `None`) and its description is corrected (the old text claimed that no swap gives x = easting). Slice maps were drawn transposed (x = easting and y = northing exchanged; a NNE structure appeared as ENE). Cause: since 2026-10-11 `femtic.read_femtic_mesh` does not swap the node columns by default, but `mesh.dat` holds x = northing, y = easting. `None` keeps femtic's default, `False` forces no swap. Only the orientation changes. Checked on a synthetic mesh with a N30E block, not on real data. AI-generated; review before production use. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `MOD_POLYLINES = {name: entry}` (km; `{}` = none): lines drawn on the slice panels of every figure. Maps: plan view, optional `z_range`; ns / ew / plane sections: the parts within `max_dist` (default `MOD_PROJECTION_DIST`) of the section plane, projected into it. Points model-local km or CRS-tagged (`"utm"` metres, `"latlon"` degrees, longitude first); `style`, `label`, `kinds`. Passed to `fviz.plot_model_slices(polylines=...)` through `fem.polylines_km_to_m`. The intersection line of two slices is available as `fviz.slice_intersection_polyline` / `slice_intersection_polylines` (example in the Polylines section); it is not drawn automatically. With `MOD_POLYLINES = {}` the figures are unchanged. Needs `femtic.py` and `femtic_viz.py` of the same date. Tested on a synthetic mesh only. AI-generated; review before production use. |
