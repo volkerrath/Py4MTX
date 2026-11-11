@@ -237,6 +237,16 @@ for bh in hdr["boreholes"]:
 
 ---
 
+### Titles
+
+Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use); the forms of the title settings (`"auto"`, `None` / `False` / `""`, text with `{placeholders}`, dict per figure) are described in `femtic_viz_readme.md`, *Titles and colour bars*. Defaults give the figures of before.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `FIGURE_TITLE` | `"auto"` | Title above all panels (one model). `"auto"`, `True` = the block-file name; `None`, `False`, `""` = none; text with `{label}`, `{tag}`, `{iter}`, `{nrms}`, `{file}`, `{key}` (= `{label}`); dict keyed by model label with `"default"`. With several models `BATCH_TITLE` is used; `BATCH_TITLE = None` or `""` falls back to `FIGURE_TITLE` |
+| `FIGURE_TITLE_FONTSIZE` | `None` | `None` = `LEGEND_FONTSIZE + 1` |
+| `PANEL_TITLES` | `True` | `False` = no panel titles (`Borehole resistivity logs` of the shared panel; borehole name and position above every panel otherwise) |
+
 ## Dependencies
 
 | Package | Role |
@@ -263,3 +273,4 @@ for bh in hdr["boreholes"]:
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_mod_plot_bh_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 | 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | **Several models in one run:** `MODEL_FILE` may be a list, a glob or run directories (`MODEL_ITER` selects the iteration), giving one figure and NPZ per model plus an optional catalog PDF (`BATCH_*`); new `femtic.resolve_model_files`, `fviz.append_catalog_page`; `fviz.plot_borehole_logs` now returns its figure. One model behaves exactly as before (checked: figure and NPZ identical). AI-generated; review before production use. |
 | 2026-11-10 | Claude Sonnet 5.5 (Anthropic) | New `MESH_SWAP_XY` (default `True`), applied before the mesh is read; without it the mesh is transposed relative to the borehole positions and the logs are taken at the wrong places. AI-generated; review before production use. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | `FIGURE_TITLE` takes the forms of all plot scripts (`"auto"`, none, text with placeholders, dict per model label); new `FIGURE_TITLE_FONTSIZE`, `PANEL_TITLES`; `BATCH_TITLE` also knows `{file}`. Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. |

@@ -36,6 +36,10 @@ Examples
     python kp_plot.py --label-fontsize 12 --tick-fontsize 10 \
         --legend-fontsize 7 --daily-linestyle dashdot
 
+    # Own title ({start} and {end} are the dates), or none
+    python kp_plot.py --title "Kp, {start} to {end}"
+    python kp_plot.py --title ""
+
     # Show command-line help
     python kp_plot.py --help
 
@@ -49,6 +53,14 @@ Notes
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-6) on 2026-10-17
+
+Changes
+-------
+2026-11-11  --title / plot_kp(title=...): "auto" (default) = the title of
+            before; "" (or None) = no title; any other text is used as given,
+            with {start} and {end} replaced by the first and last date of the
+            data. Claude Sonnet 5.5 (Anthropic), AI-generated, review before
+            use.
 """
 
 import argparse
@@ -111,10 +123,29 @@ def get_kp(start="2023-04-01", end="2023-04-30",
     return df
 
 
+def kp_title(title, df):
+    """Title text from the ``title`` setting of plot_kp (see there)."""
+    auto = "Planetary geomagnetic Kp index (GFZ)"
+    if title is None or title is False:
+        return ""
+    if title is True:
+        return auto
+    text = str(title)
+    if text.strip() == "":
+        return ""
+    if text.strip().lower() == "auto":
+        return auto
+    try:
+        return text.format(start=df.index.min().strftime("%Y-%m-%d"),
+                           end=df.index.max().strftime("%Y-%m-%d"))
+    except (KeyError, IndexError, ValueError):
+        return text
+
+
 def plot_kp(df, ax=None, daily_max=True, storm_level=5.0,
             label_fontsize=11, tick_fontsize=10, title_fontsize=12,
             legend_fontsize=8, daily_linestyle="-",
-            threshold_linestyle="--", grid_linestyle=":"):
+            threshold_linestyle="--", grid_linestyle=":", title="auto"):
     """
     Plot three-hourly Kp indices and optionally daily maxima.
 
@@ -133,6 +164,10 @@ def plot_kp(df, ax=None, daily_max=True, storm_level=5.0,
         Font sizes in points; legend defaults to 8 pt.
     daily_linestyle, threshold_linestyle, grid_linestyle : str
         Matplotlib line styles for the daily maximum, threshold, and grid.
+    title : str or None
+        "auto" = "Planetary geomagnetic Kp index (GFZ)" (as before); None,
+        False or "" = no title; any other text is used as given, with {start}
+        and {end} replaced by the first and last date of ``df``.
 
     Returns
     -------
@@ -175,7 +210,9 @@ def plot_kp(df, ax=None, daily_max=True, storm_level=5.0,
     ax.set_xlabel("Date (UTC)", fontsize=label_fontsize)
     ax.set_ylim(0, 9.2)
     ax.set_yticks(np.arange(0, 10, 1))
-    ax.set_title("Planetary geomagnetic Kp index (GFZ)", fontsize=title_fontsize)
+    _title = kp_title(title, df)
+    if _title:
+        ax.set_title(_title, fontsize=title_fontsize)
     ax.grid(True, linestyle=grid_linestyle, alpha=0.5)
     ax.legend(loc="upper left", fontsize=legend_fontsize)
     ax.tick_params(axis="both", labelsize=tick_fontsize)
@@ -214,6 +251,10 @@ def main():
     parser.add_argument("--daily-linestyle", default="-")
     parser.add_argument("--threshold-linestyle", default="--")
     parser.add_argument("--grid-linestyle", default=":")
+    parser.add_argument(
+        "--title", default="auto",
+        help='figure title: "auto" (default), "" for none, or text with '
+             '{start} and {end}')
     args = parser.parse_args()
 
     df = get_kp(
@@ -235,6 +276,7 @@ def main():
         daily_linestyle=args.daily_linestyle,
         threshold_linestyle=args.threshold_linestyle,
         grid_linestyle=args.grid_linestyle,
+        title=args.title,
     )
     ax.figure.tight_layout()
 

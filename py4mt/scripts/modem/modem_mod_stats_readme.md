@@ -56,7 +56,12 @@ Computes across the ensemble (cell-by-cell):
 | `MOD_HIST` | `True` to generate histograms |
 | `PLOT_FORMAT` | List of plot formats (e.g. `['.png', '.pdf']`) |
 | `MODELS` | List of ModEM model file paths |
+| `HIST_TITLE` | Title of the histograms (2026-11-11). `"auto"` = the model file name as before; `None`, `False`, `""` = none; text with `{model}` (and `{key}`, the same); dict `{"<model name>": spec, "default": spec}`. Via `util.resolve_title` (needs the `util.py` of the same date). |
 
 ## Dependencies
 
 `numpy`, `matplotlib`, py4mt: `modem`, `util`, `version`.
+
+## Changes 2026-11-11 (titles)
+
+`HIST_TITLE` (table above). Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before; the script was not run (needs ModEM models).

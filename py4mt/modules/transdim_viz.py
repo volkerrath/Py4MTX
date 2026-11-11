@@ -23,6 +23,14 @@ Contents
 @author:    Volker Rath (DIAS) / Claude (Opus 4.6, Anthropic)
 @project:   py4mt — Python for Magnetotellurics
 @created:   2026-03-07 — split from transdim.py
+@modified:  2026-11-11 — titles and colour bar position, as in the plot scripts:
+            plot_results(figure_title, panel_titles), the single-panel
+            functions (title), plot_qc(figure_title) and
+            plot_posterior_model(figure_title, cbar_location, cbar_shrink).
+            Defaults give the figures of before. None = the automatic title
+            (for plot_results: no figure title, as before), "" = none, any
+            other text is used as given; Claude Sonnet 5.5 (Anthropic),
+            AI-generated, review before use
 """
 
 from __future__ import annotations
@@ -33,6 +41,27 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 import transdim
+
+
+def _check_cbar_location(location, *, name="cbar_location"):
+    """None / "" / "default" -> None (the colour bar of before, at the right);
+    "right", "left", "top", "bottom" -> that; anything else: ValueError."""
+    if location is None or location is False:
+        return None
+    loc = str(location).strip().lower()
+    if loc in ("", "panel", "default", "none"):
+        return None
+    if loc not in ("right", "left", "top", "bottom"):
+        raise ValueError(f"{name} must be None, 'right', 'left', 'top' or "
+                         f"'bottom', got {location!r}.")
+    return loc
+
+
+def _set_title(ax, title, default, **kw):
+    """Axes title: ``title`` None -> ``default``; "" / False -> none."""
+    text = default if title is None else ("" if title is False else str(title))
+    if text:
+        ax.set_title(text, **kw)
 
 
 # =============================================================================
@@ -47,6 +76,8 @@ def plot_results(
     depth_max: float = 3000.0,
     use_aniso: bool = False,
     save_path: Optional[str] = None,
+    figure_title: Optional[str] = None,
+    panel_titles: bool = True,
 ) -> plt.Figure:
     """Multi-panel diagnostic figure for (multi-chain) rjMCMC results.
 
@@ -57,6 +88,10 @@ def plot_results(
       4. Log-likelihood traces (per chain if available)
       5. (aniso only) Posterior anisotropy-ratio profile
 
+    figure_title : None / "" = no figure title (as before); else the text of a
+        title above all panels.
+    panel_titles : False = no titles of the panels.
+
     Returns the ``matplotlib.figure.Figure``.
     """
     n_panels = 5 if use_aniso else 4
@@ -64,19 +99,25 @@ def plot_results(
 
     depth_grid = np.linspace(1, depth_max, 500)
 
+    _pt = None if panel_titles else ""
     plot_resistivity_profile(
-        axes[0], results, depth_grid, true_model=true_model, depth_max=depth_max)
+        axes[0], results, depth_grid, true_model=true_model, depth_max=depth_max,
+        title=_pt)
     plot_dimension_histogram(
-        axes[1], results, true_model=true_model)
+        axes[1], results, true_model=true_model, title=_pt)
     plot_data_fit(
-        axes[2], results, frequencies, observed, use_aniso=use_aniso)
+        axes[2], results, frequencies, observed, use_aniso=use_aniso,
+        title=_pt)
     plot_chain_traces(
-        axes[3], results)
+        axes[3], results, title=_pt)
 
     if use_aniso:
         plot_aniso_profile(
-            axes[4], results, depth_grid, true_model=true_model, depth_max=depth_max)
+            axes[4], results, depth_grid, true_model=true_model,
+            depth_max=depth_max, title=_pt)
 
+    if figure_title:
+        fig.suptitle(figure_title, fontweight="bold")
     plt.tight_layout()
     if save_path:
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
@@ -95,8 +136,11 @@ def plot_resistivity_profile(
     depth_grid: np.ndarray,
     true_model: Optional[transdim.LayeredModel] = None,
     depth_max: float = 3000.0,
+    title: Optional[str] = None,
 ) -> None:
-    """Posterior resistivity profile with credible interval."""
+    """Posterior resistivity profile with credible interval.
+
+    title : None = "Posterior Resistivity Profile"; "" = no title; or text."""
     prof = transdim.compute_posterior_profile(results["models"], depth_grid)
 
     ax.fill_betweenx(
@@ -111,7 +155,7 @@ def plot_resistivity_profile(
     ax.set_xscale("log")
     ax.set_xlabel("Resistivity (Ω·m)")
     ax.set_ylabel("Depth (m)")
-    ax.set_title("Posterior Resistivity Profile", fontweight="bold")
+    _set_title(ax, title, "Posterior Resistivity Profile", fontweight="bold")
     ax.invert_yaxis()
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
@@ -121,8 +165,11 @@ def plot_dimension_histogram(
     ax: plt.Axes,
     results: Dict,
     true_model: Optional[transdim.LayeredModel] = None,
+    title: Optional[str] = None,
 ) -> None:
-    """Posterior histogram of the number of layers."""
+    """Posterior histogram of the number of layers.
+
+    title : None = "Model Dimension"; "" = no title; or text."""
     k_vals = results["n_layers"]
     bins = np.arange(k_vals.min() - 0.5, k_vals.max() + 1.5, 1)
     ax.hist(k_vals, bins=bins, color="steelblue", edgecolor="white",
@@ -132,7 +179,7 @@ def plot_dimension_histogram(
                    label=f"True k={true_model.n_layers}")
     ax.set_xlabel("Number of Layers")
     ax.set_ylabel("Posterior Probability")
-    ax.set_title("Model Dimension", fontweight="bold")
+    _set_title(ax, title, "Model Dimension", fontweight="bold")
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
 
@@ -144,8 +191,11 @@ def plot_data_fit(
     observed: np.ndarray,
     use_aniso: bool = False,
     n_show: int = 50,
+    title: Optional[str] = None,
 ) -> None:
-    """Overlay observed data and posterior-predicted apparent resistivities."""
+    """Overlay observed data and posterior-predicted apparent resistivities.
+
+    title : None = "Data Fit"; "" = no title; or text."""
     ax.loglog(frequencies, observed, "ko", ms=6, label="Observed")
 
     n_show = min(n_show, len(results["models"]))
@@ -165,7 +215,7 @@ def plot_data_fit(
 
     ax.set_xlabel("Frequency (Hz)")
     ax.set_ylabel("Apparent Resistivity (Ω·m)")
-    ax.set_title("Data Fit", fontweight="bold")
+    _set_title(ax, title, "Data Fit", fontweight="bold")
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3, which="both")
 
@@ -173,8 +223,11 @@ def plot_data_fit(
 def plot_chain_traces(
     ax: plt.Axes,
     results: Dict,
+    title: Optional[str] = None,
 ) -> None:
-    """Per-chain log-likelihood traces (or merged trace if no chain info)."""
+    """Per-chain log-likelihood traces (or merged trace if no chain info).
+
+    title : None = "Chain Convergence"; "" = no title; or text."""
     if "chains" in results:
         colors = plt.cm.tab10(np.linspace(0, 1, len(results["chains"])))
         for i, cr in enumerate(results["chains"]):
@@ -186,7 +239,7 @@ def plot_chain_traces(
 
     ax.set_xlabel("Sample Index (post burn-in)")
     ax.set_ylabel("Log-Likelihood")
-    ax.set_title("Chain Convergence", fontweight="bold")
+    _set_title(ax, title, "Chain Convergence", fontweight="bold")
     ax.grid(True, alpha=0.3)
 
 
@@ -196,8 +249,11 @@ def plot_aniso_profile(
     depth_grid: np.ndarray,
     true_model: Optional[transdim.LayeredModel] = None,
     depth_max: float = 3000.0,
+    title: Optional[str] = None,
 ) -> None:
-    """Posterior anisotropy-ratio profile with credible interval."""
+    """Posterior anisotropy-ratio profile with credible interval.
+
+    title : None = "Posterior Anisotropy"; "" = no title; or text."""
     aprof = transdim.compute_posterior_aniso_profile(results["models"], depth_grid)
 
     ax.fill_betweenx(
@@ -216,7 +272,7 @@ def plot_aniso_profile(
 
     ax.set_xlabel("Anisotropy Ratio (ρ_max/ρ_min)")
     ax.set_ylabel("Depth (m)")
-    ax.set_title("Posterior Anisotropy", fontweight="bold")
+    _set_title(ax, title, "Posterior Anisotropy", fontweight="bold")
     ax.invert_yaxis()
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
@@ -228,8 +284,11 @@ def plot_strike_profile(
     depth_grid: np.ndarray,
     true_model: Optional[transdim.LayeredModel] = None,
     depth_max: float = 3000.0,
+    title: Optional[str] = None,
 ) -> None:
-    """Posterior strike-angle profile with credible interval."""
+    """Posterior strike-angle profile with credible interval.
+
+    title : None = "Posterior Strike"; "" = no title; or text."""
     aprof = transdim.compute_posterior_aniso_profile(results["models"], depth_grid)
 
     ax.fill_betweenx(
@@ -248,7 +307,7 @@ def plot_strike_profile(
 
     ax.set_xlabel("Strike (°)")
     ax.set_ylabel("Depth (m)")
-    ax.set_title("Posterior Strike", fontweight="bold")
+    _set_title(ax, title, "Posterior Strike", fontweight="bold")
     ax.invert_yaxis()
     ax.legend(fontsize=9)
     ax.grid(True, alpha=0.3)
@@ -283,6 +342,7 @@ def plot_qc(
     observed_PT_err: Optional[np.ndarray] = None,
     pt_comps: tuple = ("xx", "xy", "yx", "yy"),
     save_path: Optional[str] = None,
+    figure_title: Optional[str] = None,
 ) -> plt.Figure:
     """QC figure with flexible data-fit panels.
 
@@ -316,6 +376,8 @@ def plot_qc(
         PT uncertainties.
     pt_comps : tuple of str
         PT components to plot.
+    figure_title : None = "MT Station <station> -- 1D rj-McMC Inversion" (or
+        "1D rj-McMC Inversion QC" without a station); "" = no title; or text.
     """
     periods = 1.0 / frequencies
     has_chains = "chains" in results
@@ -327,11 +389,11 @@ def plot_qc(
         n_rows = 3
 
     fig, axes = plt.subplots(n_rows, 2, figsize=(14, 5 * n_rows))
-    fig.suptitle(
-        f"MT Station {station} — 1D rj-McMC Inversion" if station
-        else "1D rj-McMC Inversion QC",
-        fontsize=14, fontweight="bold",
-    )
+    _sup = (f"MT Station {station} — 1D rj-McMC Inversion" if station
+            else "1D rj-McMC Inversion QC") if figure_title is None \
+        else ("" if figure_title is False else str(figure_title))
+    if _sup:
+        fig.suptitle(_sup, fontsize=14, fontweight="bold")
 
     # ---- best-fit models per chain -----------------------------------------
     if has_chains:
@@ -588,6 +650,9 @@ def plot_posterior_model(
     strike_range: tuple = (-90.0, 90.0),
     n_strike_bins: int = 120,
     save_path: Optional[str] = None,
+    figure_title: Optional[str] = None,
+    cbar_location: Optional[str] = None,
+    cbar_shrink: float = 0.5,
 ) -> plt.Figure:
     """Posterior-model figure: 2-D histograms + change-point frequency.
 
@@ -609,6 +674,11 @@ def plot_posterior_model(
         Bin range for the strike histogram [degrees].
     n_strike_bins : int
         Number of bins for the strike histogram.
+    figure_title : None = "Station <station>" above the first panel (none
+        without a station); "" = no title; or text.
+    cbar_location : None = colour bars at the right of their panels (as
+        before); or "right", "left", "top", "bottom".
+    cbar_shrink : length of the colour bars as a fraction of the panel (0.5).
     """
     from matplotlib.colors import LogNorm
     import matplotlib.gridspec as gridspec
@@ -654,6 +724,14 @@ def plot_posterior_model(
     ratios = [3] * n_hist_panels + [1]
     gs = gridspec.GridSpec(1, n_hist_panels + 1, width_ratios=ratios, wspace=0.08)
 
+    _cb_kw = dict(label="Log freq.", shrink=cbar_shrink, pad=0.02)
+    if _check_cbar_location(cbar_location) is not None:
+        _cb_kw["location"] = _check_cbar_location(cbar_location)
+        if _cb_kw["location"] != "right":
+            _cb_kw["pad"] = 0.14     # room for tick labels / title / axis label
+    _title = (f"Station {station}" if station else "") if figure_title is None \
+        else ("" if figure_title is False else str(figure_title))
+
     # ---- helper: draw one rho histogram panel ------------------------------
     def _draw_rho_panel(ax, phist, prof, label, panel_tag, show_true_rho=None):
         h2d = np.ma.masked_where(phist["hist2d"] < 1, phist["hist2d"])
@@ -666,7 +744,7 @@ def plot_posterior_model(
             rho_edges, depth_edges, h2d,
             norm=LogNorm(vmin=1, vmax=max(phist["hist2d"].max(), 2)),
             cmap="RdYlGn_r", shading="flat", rasterized=True)
-        fig.colorbar(pcm, ax=ax, label="Log freq.", shrink=0.5, pad=0.02)
+        fig.colorbar(pcm, ax=ax, **_cb_kw)
 
         ax.plot(prof["median"], depth_grid, "k-", lw=2.0, label="Median")
         ax.plot(prof["p05"], depth_grid, "k--", lw=1.5, alpha=0.8)
@@ -700,7 +778,7 @@ def plot_posterior_model(
             str_edges, depth_edges, h2d,
             norm=LogNorm(vmin=1, vmax=max(phist["hist2d"].max(), 2)),
             cmap="RdYlGn_r", shading="flat", rasterized=True)
-        fig.colorbar(pcm, ax=ax, label="Log freq.", shrink=0.5, pad=0.02)
+        fig.colorbar(pcm, ax=ax, **_cb_kw)
 
         ax.plot(aprof["strike_median"], depth_grid, "k-", lw=2.0,
                 label="Median")
@@ -732,8 +810,8 @@ def plot_posterior_model(
         _draw_rho_panel(ax1, h_rmax, prof_rmax, "ρ_max", "E1",
                         show_true_rho=true_rmax)
         ax1.set_ylabel("Depth [m]")
-        if station:
-            ax1.set_title(f"Station {station}", fontsize=12, fontweight="bold")
+        if _title:
+            ax1.set_title(_title, fontsize=12, fontweight="bold")
 
         ax2 = fig.add_subplot(gs[1], sharey=ax1)
         true_rmin = None
@@ -755,8 +833,8 @@ def plot_posterior_model(
                         show_true_rho=(true_model.get_resistivities()
                                        if true_model is not None else None))
         ax1.set_ylabel("Depth [m]")
-        if station:
-            ax1.set_title(f"Station {station}", fontsize=12, fontweight="bold")
+        if _title:
+            ax1.set_title(_title, fontsize=12, fontweight="bold")
 
         ax_cpf = fig.add_subplot(gs[1], sharey=ax1)
 

@@ -57,6 +57,21 @@ AI-generated code -- review before production use.
               taken in the wrong tetrahedra. The comment is corrected. None =
               leave femtic's default (no swap), False = force no swap.
               AI-generated; review before production use.
+
+2026-11-11  Claude Sonnet 5.5 (Anthropic)
+              Title and colour bar settings in the form of all plot scripts.
+              MOD_TITLE now also takes a dict ({"default": spec}; the figure
+              has one title, so only "default" matters) and is resolved by
+              fviz.resolve_title(); same results as before for "auto", None /
+              False / "" and strings. New MOD_PANEL_TITLES (True = borehole
+              name and position above every panel, as before; False = none)
+              and the heat-map colour bar settings MOD_BH_HEAT_CBAR_LOCATION
+              (None = at the right as before; "right", "left", "top",
+              "bottom"), MOD_BH_HEAT_CBAR_SHRINK (default 0.6 as before) and
+              MOD_BH_HEAT_CBAR_THICKNESS [cm]. Needs the femtic_viz.py of the
+              same date (new BoreholeFigureOptions fields). With the defaults
+              the figures are unchanged. AI-generated; review before
+              production use.
 """
 
 from __future__ import annotations
@@ -238,8 +253,12 @@ MOD_TITLE_FONTSIZE = MOD_LABEL_FONTSIZE + 10
 #:                     stands.
 #: When the figure shows the converged and the perturbed models together, the
 #: tag "(converged | perturbed reference)" is still appended to a title (not to
-#: "no title"). The panel titles (borehole name, position) are not affected.
+#: "no title"). The panel titles (borehole name, position) are not affected by
+#: MOD_TITLE; MOD_PANEL_TITLES below switches them off. A dict
+#: {"default": spec} is accepted too (one figure title, so only "default").
 MOD_TITLE = "auto"
+#: Panel titles (borehole name and position): True = as before, False = none.
+MOD_PANEL_TITLES = True
 
 #: Name of the perturbed reference file inside each member directory (only
 #: written into the header of the perturbed-profile file; the results file
@@ -413,6 +432,14 @@ MOD_BH_HEAT_VMIN = None
 MOD_BH_HEAT_VMAX = None
 #: Draw the colour bar of the heat map (one per figure).
 MOD_BH_HEAT_CBAR = True
+#: Side of the heat-map colour bar: None or "panel" = at the right of the
+#: panels (as before); "right", "left", "top", "bottom" = at that side of the
+#: panel grid (horizontal bar for "top" / "bottom").
+MOD_BH_HEAT_CBAR_LOCATION = None
+#: Length of the colour bar as a fraction of the side of the panel grid.
+MOD_BH_HEAT_CBAR_SHRINK = 0.6
+#: Thickness of the colour bar in cm; None = automatic (as before).
+MOD_BH_HEAT_CBAR_THICKNESS = None
 
 # --- Sharing the heat-map colour scale ---------------------------------------
 #: Colours of two heat maps are only comparable if the bin edges (bin width
@@ -710,20 +737,9 @@ def _figure_title():
     """Figure title from MOD_TITLE: a string, or None for no title."""
     _dir = os.path.basename(os.path.normpath(ENSEMBLE_DIR))
     _auto = _dir + "  " + P
-    if MOD_TITLE is None or MOD_TITLE is False:
-        return None
-    if MOD_TITLE is True:
-        return _auto
-    _t = str(MOD_TITLE)
-    if _t.strip() == "":
-        return None
-    if _t.strip().lower() == "auto":
-        return _auto
-    try:
-        return _t.format(prefix=P, dir=_dir)
-    except (KeyError, IndexError, ValueError, AttributeError) as _exc:
-        print(f"  MOD_TITLE: cannot fill in {_t!r} ({_exc!r}) - used as it stands.")
-        return _t
+    _t = fviz.resolve_title(MOD_TITLE, None, _auto, name="MOD_TITLE",
+                            prefix=P, dir=_dir)
+    return _t if _t != "" else None
 
 
 _opts = fviz.BoreholeFigureOptions(
@@ -735,6 +751,11 @@ _opts = fviz.BoreholeFigureOptions(
     share_depth=MOD_BH_SHARE_DEPTH,
     legend_loc=MOD_BH_LEGEND_LOC,
     heat_cbar=MOD_BH_HEAT_CBAR,
+    heat_cbar_location=MOD_BH_HEAT_CBAR_LOCATION,
+    heat_cbar_shrink=MOD_BH_HEAT_CBAR_SHRINK,
+    heat_cbar_thickness=(MOD_BH_HEAT_CBAR_THICKNESS / 2.54
+                         if MOD_BH_HEAT_CBAR_THICKNESS is not None else None),
+    panel_titles=bool(MOD_PANEL_TITLES),
     depth_km=MOD_DEPTH_KM,
     tick_fontsize=MOD_TICK_FONTSIZE,
     label_fontsize=MOD_LABEL_FONTSIZE,

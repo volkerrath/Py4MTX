@@ -56,7 +56,12 @@ Empty axes are automatically removed.
 | `USE_EDI` / `USE_NPZ` / `USE_DAT` | Select input format (only one should be `True`) |
 | `PLT_FMT` | List of output formats (e.g. `['.png', '.pdf']`) |
 | `CATALOG` | Assemble a PDF catalogue of all plots |
+| `FIGURE_TITLE` | Figure title of the station figures (2026-11-11). `"auto"` = the station name as before; `None`, `False`, `""` = none; text with `{station}`, `{key}`; dict `{"<station>": spec, "default": spec}`. |
 
 ## Dependencies
 
 `numpy`, `pandas`, `matplotlib`, py4mt: `data_viz`, `util`, `version`.
+
+## Changes 2026-11-11 (titles)
+
+`FIGURE_TITLE` (table above), via `util.resolve_title` (needs the `util.py` of the same date). Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before. Only compile-checked and tested at the level of the title logic (`util.resolve_title`, `test_util_titles.py`); the script was not run end to end.

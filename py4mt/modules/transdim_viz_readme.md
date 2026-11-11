@@ -12,6 +12,7 @@ Plotting routines for transdimensional rjMCMC results.
 | Created | 2026-03-07 — split from `transdim.py` |
 | Modified | 2026-03-07 — QC and posterior-model summary plots |
 | Modified | 2026-03-07 — impedance/PT data fit, aniso histograms, depth/freq scale options |
+| Modified | 2026-11-11 — titles and colour bar position (Claude Sonnet 5.5, AI-generated, review before use), see *Titles and colour bars* |
 | README generated | 7 March 2026 by Claude (Anthropic), from cleaned source |
 
 ## Purpose
@@ -153,6 +154,34 @@ so they can be composed into custom figure layouts.
 
 All single-panel functions accept `true_model` (optional) and `depth_max`
 where applicable.
+
+
+## Titles and colour bars
+
+Added 2026-11-11. Defaults give the figures of before (checked pixel by pixel
+for the five figure calls of the test).
+
+| Function | New keyword | Meaning |
+|----------|-------------|---------|
+| `plot_results` | `figure_title=None`, `panel_titles=True` | `None` / `""` = no figure title (as before); text = title above all panels. `panel_titles=False` = no panel titles |
+| `plot_qc` | `figure_title=None` | `None` = `MT Station <station> -- 1D rj-McMC Inversion` (`1D rj-McMC Inversion QC` without a station); `""` / `False` = no title; text |
+| `plot_posterior_model` | `figure_title=None`, `cbar_location=None`, `cbar_shrink=0.5` | `None` = `Station <station>` above the first panel (none without a station); `""` / `False` = none. Colour bars: `None` = at the right of their panels as before, or `"right"`, `"left"`, `"top"`, `"bottom"`; `cbar_shrink` = their length as a fraction of the panel |
+| `plot_resistivity_profile`, `plot_dimension_histogram`, `plot_data_fit`, `plot_chain_traces`, `plot_aniso_profile`, `plot_strike_profile` | `title=None` | `None` = the title of before; `""` / `False` = none; text |
+
+For colour bars at the left, top or bottom the gap to the panel is larger
+(`pad` 0.14) so that tick labels, titles and axis labels do not overlap.
+`transdim_viz` has its own private `_check_cbar_location` and `_set_title`; it
+needs neither `util` nor `femtic_viz`. The scripts `mt_transdim_iso1d.py` and
+`mt_transdim_aniso1d.py` (`scripts/general`) pass their settings
+`FIGURE_TITLE`, `PANEL_TITLES`, `CBAR_LOCATION`, `CBAR_SHRINK` to these
+functions.
+
+Test: `test_transdim_viz_titles.py` (12 tests, with a stub for `transdim`).
+
+**Note (found, not changed):** `transdim_viz.py` and `transdim.py` do not
+match in the version supplied (names that `transdim_viz` expects from
+`transdim` are not all there), so the module could not be imported against the
+real `transdim.py`; the tests use a small stand-in.
 
 
 ## Private helpers

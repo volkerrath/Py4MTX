@@ -497,6 +497,23 @@ unit-conversion block; `z` only matters for `dip < 90`.
 
 ---
 
+## Titles and colour bars
+
+Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use); the forms of the title settings (`"auto"`, `None` / `False` / `""`, text with `{placeholders}`, dict per figure) are described in `femtic_viz_readme.md`, *Titles and colour bars*. Defaults give the figures of before.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `PLOT_TITLE` | `"auto"` | Figure titles of the slice figures, the borehole-log figure and (unless `BOREHOLE_HEAT_TITLE` says otherwise) the heat-map figure. `"auto"` = the titles of before; `None`, `False`, `""` = none; text with `{label}` (member / run), `{iter}`, `{nrms}`, `{desc}` (statistic or source), `{prefix}` (results-file prefix), `{key}` (kind of figure); dict `{"iter0": spec, "best": spec, "npz": spec, "<statistic name>": spec, "boreholes": spec, "heatmap": spec, "default": spec}` |
+| `PLOT_PANEL_TITLES` | `True` | `False` = no panel titles of the slice figures |
+| `PLOT_CBAR_LOCATION` | `None` | `None` / `"panel"` = one colour bar per panel (as before); `"right"`, `"left"`, `"top"`, `"bottom"` = ONE joint bar |
+| `PLOT_CBAR_SHRINK`, `PLOT_CBAR_THICKNESS` | `0.7`, `None` | Joint bar: length as a fraction of the side of the panel grid; thickness in cm |
+| `BOREHOLE_HEAT_TITLE` | `"auto"` | Title of the heat-map figure: `"auto"` = what `PLOT_TITLE` says for the key `"heatmap"` (its `"auto"`: `Borehole heat maps: <dir> (N members ...)`); text with `{dir}`, `{n}`, `{what}`; dict `{"heatmap": spec, "default": spec}` |
+| `BOREHOLE_HEAT_PANEL_TITLES` | `True` | `False` = no panel titles (borehole name and position) |
+| `BOREHOLE_HEAT_CBAR_LOCATION` | `None` | `None` / `"right"` = at the right of the panels (as before); `"left"`, `"top"`, `"bottom"` = at that side (horizontal for top and bottom) |
+| `BOREHOLE_HEAT_CBAR_SHRINK`, `BOREHOLE_HEAT_CBAR_THICKNESS` | `0.6`, `None` | Length as a fraction of the side of the panel grid; thickness in cm |
+
+---
+
 ## Changes from previous version
 
 - **2026-11-01b (Claude Sonnet 5.5, Anthropic):** Heat maps of the converged
@@ -724,3 +741,4 @@ unit-conversion block; `z` only matters for `dip < 90`.
   `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the
   `util.py` of the same date. AI-generated; review before production use.
 - **2026-11-10 (Claude Sonnet 5.5, Anthropic):** New `MESH_SWAP_XY` (default `True`), applied before the mesh is read (slice maps and borehole search). `mesh.dat` holds x = northing, y = easting; since 2026-10-11 `femtic.read_femtic_mesh` does not swap by default, which drew the maps transposed (a NNE structure as ENE) and put the boreholes in the wrong tetrahedra. `None` keeps femtic's default, `False` forces no swap. AI-generated; review before production use.
+- **2026-11-11b (Claude Sonnet 5.5 (Anthropic)):** Titles and colour bars: `PLOT_TITLE`, `PLOT_PANEL_TITLES`, `PLOT_CBAR_LOCATION`, `PLOT_CBAR_SHRINK`, `PLOT_CBAR_THICKNESS`, `BOREHOLE_HEAT_TITLE`, `BOREHOLE_HEAT_PANEL_TITLES`, `BOREHOLE_HEAT_CBAR_LOCATION`, `BOREHOLE_HEAT_CBAR_SHRINK`, `BOREHOLE_HEAT_CBAR_THICKNESS` (section *Titles and colour bars*). Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. Not run end to end (needs an ensemble directory); the changed calls were compile-checked. AI-generated; review before production use.

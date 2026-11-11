@@ -79,6 +79,14 @@ Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS)
 AI-assisted development: Claude (Anthropic)
 License: GNU General Public License v3 (GPL-3.0-or-later)
 AI-generated code — review before use in production.
+
+Changes
+-------
+2026-11-11  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            new resolve_title() (the FIGURE_TITLE setting of the plot
+            scripts: "auto" / none / text with placeholders / dict per
+            figure); build_panel_figure() and finish_panel_colorbar()
+            ignore blanks around the colour bar position.
 """
 
 import glob
@@ -667,7 +675,7 @@ def build_panel_figure(panel_w_in, panel_h_in, colorbar, size_label="panel"):
     colorbar["show"] is False.
     """
     show = colorbar["show"]
-    pos = colorbar["position"].lower()
+    pos = colorbar["position"].strip().lower()
     if pos not in ("right", "left", "bottom", "top"):
         raise ValueError(
             f"colorbar position {colorbar['position']!r} is not valid. "
@@ -759,7 +767,7 @@ def finish_panel_colorbar(cax, mappable, label, colorbar):
     """
     if cax is None:
         return None
-    pos = colorbar["position"].lower()
+    pos = colorbar["position"].strip().lower()
     orientation = "vertical" if pos in ("right", "left") else "horizontal"
     cbar = cax.figure.colorbar(mappable, cax=cax, orientation=orientation)
     cbar.set_label(label, fontsize=colorbar["label_size"])
@@ -773,6 +781,39 @@ def finish_panel_colorbar(cax, mappable, label, colorbar):
         cax.xaxis.set_ticks_position("top")
         cax.xaxis.set_label_position("top")
     return cbar
+
+
+# =====================================================================
+# Title setting shared by the plot scripts (FIGURE_TITLE)
+# =====================================================================
+def resolve_title(spec, key=None, auto="", *, name="FIGURE_TITLE", **fields):
+    """Figure title from a title setting: "auto" / True -> ``auto``; None /
+    False / "" -> "" (no title); a string with {placeholders} filled in from
+    ``key`` ({key}) and ``fields`` (text that cannot be filled in is used as
+    it stands); a dict {key: spec, "default": spec} (else "auto").
+    The same as femtic_viz.resolve_title (2026-11-11)."""
+    if isinstance(spec, dict):
+        if key in spec:
+            spec = spec[key]
+        elif key is not None and str(key) in spec:
+            spec = spec[str(key)]
+        else:
+            spec = spec.get("default", "auto")
+    if spec is None or spec is False:
+        return ""
+    if spec is True:
+        return auto
+    text = str(spec)
+    if text.strip() == "":
+        return ""
+    if text.strip().lower() == "auto":
+        return auto
+    try:
+        return text.format(key=key, **fields)
+    except (KeyError, IndexError, ValueError, AttributeError) as exc:
+        print(f"  {name}: cannot fill in {text!r} ({exc!r}) - used as it "
+              "stands.")
+        return text
 
 
 # =====================================================================

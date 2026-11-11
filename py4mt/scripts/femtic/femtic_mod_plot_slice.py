@@ -237,6 +237,23 @@ Provenance
                 With PLOT_POLYLINES = {} the figures are unchanged. Tested on
                 a synthetic mesh only.
                 AI-generated; review before production use.
+
+    2026-11-11b Claude Sonnet 5.5 (Anthropic)
+                Titles and colour bar position. FIGURE_TITLE (and
+                BATCH_TITLE) now take "auto" (block-file name; None keeps
+                that meaning here), "" / False (none, default), text with
+                placeholders ({label}, {tag}, {iter}, {nrms}, {alpha}, {file},
+                {key}) or a dict per model (resolve_title in femtic_viz.py);
+                new PANEL_TITLES (default True) and the colour bar settings
+                CBAR_LOCATION ("panel" = one per panel, as before; "right" /
+                "left" / "top" / "bottom" = one joint bar), CBAR_SHRINK,
+                CBAR_THICKNESS [cm], passed to fviz.plot_model_slices as
+                panel_titles, cbar_location, cbar_shrink, cbar_thickness. The
+                defaults leave the figures unchanged (a title given through
+                BATCH_TITLE is now filled in by the same function; "{nrms}"
+                still shows 3 decimals). Needs the femtic_viz.py of the same
+                date.
+                AI-generated; review before production use.
 """
 
 import os
@@ -325,7 +342,9 @@ BATCH_FORMATS = None
 #: <BATCH_OUT_DIR or the common parent directory>/catalog_slices.pdf; or a
 #: path. Needs "pdf" among the formats.
 BATCH_CATALOG = None
-#: Figure title template; {label}, {iter}, {tag}, {nrms} are filled in.
+#: Figure title template of the batch; {label}, {iter}, {tag}, {nrms} (and
+#: {alpha}, {file}) are filled in, as for FIGURE_TITLE (which takes its place
+#: when BATCH_TITLE is None or "").
 BATCH_TITLE = "{label} - iteration {iter}"
 
 #: Mesh file — always required for plotting.
@@ -496,8 +515,39 @@ LABEL_FONTSIZE = 14
 # ---------------------------------------------------------------------------
 # Convergence annotation  (reads femtic.cnv)
 # ---------------------------------------------------------------------------
-#: Overall figure title.  None → model file basename.
+#: Figure title (above all panels).
+#:   ""  or False      no title (default).
+#:   "auto", None, True the automatic title: the block-file name (batch: see
+#:                     BATCH_TITLE).  None keeps its old meaning in this script.
+#:   a string          used as given.  Placeholders, filled in per model:
+#:                     {label} run directory name, {tag} "iterN", {iter} the
+#:                     iteration ("?" if unknown), {nrms} nRMS (3 decimals; a
+#:                     number, so {nrms:.2f} works; "n/a" if unknown), {alpha},
+#:                     {file} block-file name, {key} = {label}.  Text with
+#:                     other braces is used as it stands.
+#:   a dict            one entry per model, keyed by its label, e.g.
+#:                       {"run1": "Reference", "default": "auto"}
+#:                     values as above; "default" (else "auto") covers the rest.
+#: Several models (batch): BATCH_TITLE, when set, is used instead.
 FIGURE_TITLE = ""
+#: Panel titles ("Map  z = 1.0 km", "N-S  easting = 0.0 km", ...): True = as
+#: before, False = none.  One panel is titled by adding title="text" to its
+#: PLOT_SLICES entry (title="" leaves just that panel untitled).
+PANEL_TITLES = True
+
+# ---------------------------------------------------------------------------
+# Colour bar
+# ---------------------------------------------------------------------------
+#: "panel"  one colour bar next to every panel (as before);
+#: "right", "bottom", "top", "left"
+#:          ONE colour bar for all panels of a figure (they share one colour
+#:          scale), at that side of the whole panel grid.
+CBAR_LOCATION = "panel"
+#: Joint colour bar only: its length as a fraction of the side of the panel
+#: grid it runs along (0 < value <= 1), and its thickness in cm (None =
+#: 1.5 x LABEL_FONTSIZE points).
+CBAR_SHRINK = 0.7
+CBAR_THICKNESS = None  # cm
 #: True if the inversion used distortion correction (adds extra columns).
 #: None → auto-detect from the number of columns in the last cnv line
 #:        (10 cols → distortion, 8 cols → no distortion).
@@ -825,8 +875,34 @@ _common = dict(
     alpha_blank_thresh=ALPHA_BLANK_THRESH,
     tick_fontsize=TICK_FONTSIZE,
     label_fontsize=LABEL_FONTSIZE,
+    panel_titles=bool(PANEL_TITLES),
+    cbar_location=CBAR_LOCATION,
+    cbar_shrink=CBAR_SHRINK,
+    cbar_thickness=CBAR_THICKNESS / 2.54 if CBAR_THICKNESS is not None else None,
     out=OUT,
 )
+
+
+class _Number(float):
+    """float whose plain str() / "{}" has 3 decimals ({nrms:.2f} still works)."""
+    def __str__(self):
+        return f"{float(self):.3f}"
+
+
+def _figure_title(m, template, nrms=None, alpha=None):
+    """Figure title of the model `m` (an entry of MODELS) from `template`
+    (BATCH_TITLE or FIGURE_TITLE): see FIGURE_TITLE. Returns the argument
+    `figure_title` of plot_model_slices (None = block-file name)."""
+    spec = "auto" if template is None else template
+    nrms = m.get("nrms") if nrms is None else nrms
+    alpha = m.get("alpha") if alpha is None else alpha
+    return fviz.resolve_title(
+        spec, m["label"], None, name="FIGURE_TITLE",
+        label=m["label"], tag=m["tag"],
+        iter="?" if m.get("iter") is None else m["iter"],
+        nrms="n/a" if nrms is None else _Number(nrms),
+        alpha="n/a" if alpha is None else alpha,
+        file=os.path.basename(str(m["file"])))
 
 if not BATCH:
     # --- one model: PLOT_FILE; nRMS and alpha from the last line of CNV_FILE
@@ -862,7 +938,10 @@ if not BATCH:
         PLOT_FILE,
         model_file=MODELS[0]["file"],
         nrms_annotation=_nrms_annotation,
-        figure_title=FIGURE_TITLE,
+        figure_title=_figure_title(
+            MODELS[0], FIGURE_TITLE,
+            nrms=_nrms_annotation["nrms"] if _nrms_annotation else None,
+            alpha=_nrms_annotation["alpha"] if _nrms_annotation else None),
         **_common,
     )
     print("Slice plot done.")
@@ -896,11 +975,8 @@ else:
     _n_pages = 0
     try:
         for _i, _m in enumerate(MODELS, 1):
-            _title = BATCH_TITLE.format(
-                label=_m["label"], tag=_m["tag"],
-                iter="?" if _m["iter"] is None else _m["iter"],
-                nrms="n/a" if _m["nrms"] is None else f"{_m['nrms']:.3f}",
-            ) if BATCH_TITLE else FIGURE_TITLE
+            _title = _figure_title(_m, BATCH_TITLE if BATCH_TITLE
+                                   else FIGURE_TITLE)
             _ann = (dict(nrms=_m["nrms"], alpha=_m["alpha"], panel=CNV_PANEL)
                     if _m["nrms"] is not None else None)
             _stem = os.path.join(BATCH_OUT_DIR or _m["dir"],

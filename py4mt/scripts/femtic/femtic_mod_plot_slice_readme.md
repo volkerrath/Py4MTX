@@ -359,6 +359,17 @@ For a standalone borehole figure (higher DPI, separate PDF), use
 
 ---
 
+### Titles and colour bars
+
+Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use); the forms of the title settings (`"auto"`, `None` / `False` / `""`, text with `{placeholders}`, dict per figure) are described in `femtic_viz_readme.md`, *Titles and colour bars*. Defaults give the figures of before.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `FIGURE_TITLE` | `""` | Title above all panels (one model). `""`, `False` = none (the default of this script); `"auto"`, `None`, `True` = the block-file name; text with `{label}`, `{tag}`, `{iter}`, `{nrms}` (a number, `{nrms:.2f}` works), `{alpha}`, `{file}`, `{key}` (= `{label}`); dict keyed by model label `{"run1": "Reference", "default": "auto"}`. With several models `BATCH_TITLE` is used; `BATCH_TITLE = None` or `""` falls back to `FIGURE_TITLE` |
+| `PANEL_TITLES` | `True` | `False` = no panel titles. One panel only: `title="text"` in its `PLOT_SLICES` entry (`title=""` leaves just that panel untitled) |
+| `CBAR_LOCATION` | `"panel"` | `"panel"` = one colour bar per panel (as before); `"right"`, `"bottom"`, `"top"`, `"left"` = ONE colour bar for all panels of a figure, at that side of the panel grid |
+| `CBAR_SHRINK`, `CBAR_THICKNESS` | `0.7`, `None` | Joint bar: length as a fraction of the side of the panel grid; thickness in cm (`None` = 1.5 x `LABEL_FONTSIZE` points) |
+
 ## Dependencies
 
 | Package | Role |
@@ -398,3 +409,4 @@ For a standalone borehole figure (higher DPI, separate PDF), use
 | 2026-11-09 | Claude Sonnet 5.5 (Anthropic) | Dipping planes (`kind="plane"`, `dip != 90`) fixed in `femtic_viz.plot_model_slices`: `strike` is the azimuth for every dip, axes are along-strike / down-dip distance from `point`, default extent = plane cut with the `PLOT_XLIM` x `PLOT_YLIM` x `PLOT_ZLIM` box, per-slice `xlim` / `ylim` = along-strike / down-dip range (m, relative to `point`). The CRS-tagged `point` (`"model"` / `"utm"` / `"latlon"`) was already supported by this script. Needs the `femtic_viz.py` of the same date. |
 | 2026-11-10 | Claude Sonnet 5.5 (Anthropic) | New `MESH_SWAP_XY` (default `True`), applied before the mesh is read. Slice maps were drawn transposed (x = easting and y = northing exchanged; a NNE structure appeared as ENE). Cause: since 2026-10-11 `femtic.read_femtic_mesh` does not swap the node columns by default, but `mesh.dat` holds x = northing, y = easting. `None` keeps femtic's default, `False` forces no swap. Only the orientation changes. Checked on a synthetic mesh with a N30E block, not on real data. AI-generated; review before production use. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `PLOT_POLYLINES = {name: entry}` (metres; `{}` = none): lines drawn on the slice panels. Maps: plan view, optional `z_range`; ns / ew / plane / profile sections: the parts within `max_dist` (default `PROJECTION_DIST`) of the section plane, projected into it. Points model-local m or CRS-tagged (`"utm"` metres, `"latlon"` degrees, longitude first); `style`, `label`, `kinds`. Passed to `fviz.plot_model_slices(polylines=...)` in the shared options (every figure of a batch). The intersection line of two slices is available as `fviz.slice_intersection_polyline` / `slice_intersection_polylines` (example in the section above); it is not drawn automatically. With `PLOT_POLYLINES = {}` the figures are unchanged. Needs the `femtic_viz.py` of the same date. Tested on a synthetic mesh only. AI-generated; review before production use. |
+| 2026-11-11b | Claude Sonnet 5.5 (Anthropic) | Titles and colour bars: `FIGURE_TITLE` takes the forms of all plot scripts (`"auto"`, none, text with `{label}`, `{tag}`, `{iter}`, `{nrms}`, `{alpha}`, `{file}`, dict per model label); `BATCH_TITLE` also knows `{alpha}`, `{file}`; new `PANEL_TITLES`, `CBAR_LOCATION` (`"panel"` default), `CBAR_SHRINK`, `CBAR_THICKNESS`. Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. |

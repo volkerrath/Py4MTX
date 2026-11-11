@@ -31,6 +31,11 @@ This isotropic driver is restricted to the isotropic likelihoods:
 @modified:  2026-03-08 — data I/O via data_proc
 @modified:  2026-03-09 — Z_det likelihood for isotropic; Z-component + PT
                           likelihood for anisotropic; helpers moved to transdim.py
+@modified:  2026-11-11 — FIGURE_TITLE / PANEL_TITLES / CBAR_LOCATION / CBAR_SHRINK:
+                          titles of the three figures and the position of the colour
+                          bars of the posterior-model figure (defaults: figures of
+                          before); needs the matching keywords of transdim_viz;
+                          Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 
 Author: Volker Rath (DIAS)
 Created with the help of ChatGPT (GPT-5 Thinking) on 2026-03-11 UTC
@@ -81,6 +86,20 @@ titstrng = util.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
 
 PLOT_OBSERVED = True
+
+# =============================================================================
+#  USER CONFIG — titles and colour bars of the figures
+# =============================================================================
+# FIGURE_TITLE: "auto" = the titles of before (none for the "results" figure,
+# "MT Station <station> — 1D rj-McMC Inversion" for "qc", "Station <station>"
+# above the first panel of "model"); None, False or "" = no title; a string
+# with the placeholder {station} (other braces are used as they stand); or a
+# dict {"results": spec, "qc": spec, "model": spec, "default": spec}
+FIGURE_TITLE = "auto"
+PANEL_TITLES = True        # False: no titles of the panels of the "results" figure
+CBAR_LOCATION = None       # "model" figure: None = at the right (as before), or
+                           # "right", "left", "top", "bottom"
+CBAR_SHRINK = 0.5          # length of its colour bars (fraction of the panel)
 
 # =============================================================================
 #  Example starting model — ISOTROPIC
@@ -510,6 +529,12 @@ for f in in_files:
     print(f"Wrote: {sum_path}")
 
     fig_path = outdir / f"{station}_rjmcmc.png"
+    def _ttl(key):
+        """None for "auto" (the plot function's own title), else the text."""
+        _t = util.resolve_title(FIGURE_TITLE, key, None,
+                                name="FIGURE_TITLE", station=station)
+        return _t
+
     transdim_viz.plot_results(
         results,
         true_model=None,
@@ -518,6 +543,8 @@ for f in in_files:
         depth_max=DEPTH_GRID_MAX,
         use_aniso=USE_ANISO,
         save_path=str(fig_path),
+        figure_title=_ttl("results"),
+        panel_titles=PANEL_TITLES,
     )
 
     qc_path = outdir / f"{station}_rjmcmc_qc.png"
@@ -535,6 +562,7 @@ for f in in_files:
         observed_PT=site.get("PT", None),
         observed_PT_err=site.get("PT_err", None),
         save_path=str(qc_path),
+        figure_title=_ttl("qc"),
     )
 
     model_path = outdir / f"{station}_rjmcmc_model.png"
@@ -545,6 +573,9 @@ for f in in_files:
         station=station,
         use_aniso=USE_ANISO,
         save_path=str(model_path),
+        figure_title=_ttl("model"),
+        cbar_location=CBAR_LOCATION,
+        cbar_shrink=CBAR_SHRINK,
     )
 
     fig_paths = {

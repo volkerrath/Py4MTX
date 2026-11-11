@@ -282,6 +282,11 @@ COLORBAR_NTICKS     = 7
 AXIS_LABEL_SIZE = 12
 AXIS_TICK_SIZE  = 12
 AXIS_TITLE_SIZE = 12
+# Figure titles: "auto" = the titles of before; None, False or "" = none; a
+# string with the placeholders {var}, {section} (vertical sections) or {var},
+# {depth} (depth maps); other braces are used as they stand; or a dict
+# {"section": spec, "map": spec, "default": spec}
+FIGURE_TITLE = "auto"
 
 # =====================================================================
 # MAP FEATURE LAYERS
@@ -809,7 +814,10 @@ def plot_vertical_slice(dist_km, depth_km, section,
                 fontsize=AXIS_LABEL_SIZE, fontweight="bold",
                 color="black", clip_on=False, zorder=20)
 
-    ax.set_title(f"{var} — {name}", fontsize=AXIS_TITLE_SIZE)
+    _tt = tomomt.resolve_title(FIGURE_TITLE, "section", f"{var} — {name}",
+                               name="FIGURE_TITLE", var=var, section=name)
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
     finish_section_colorbar(cax, im, cbar_label)
     draw_annotation(ax)
     save_fig(fig, stem)
@@ -1084,7 +1092,10 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
                               ISO_LEVELS_MAP, var)
 
         draw_features(ax, eq_e, eq_n)
-        ax.set_title(f"{var} at {depth_lbl}", fontsize=AXIS_TITLE_SIZE)
+        _tt = tomomt.resolve_title(FIGURE_TITLE, "map", f"{var} at {depth_lbl}",
+                                   name="FIGURE_TITLE", var=var, depth=depth_lbl)
+        if _tt:
+            ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
         finish_panel_colorbar(cax, im, cbar_label)
         if AXES_UNITS == "latlon":
             add_latlon_ticks(ax)

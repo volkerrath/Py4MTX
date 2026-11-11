@@ -430,6 +430,12 @@ AXIS_LABEL_SIZE = (
 )
 AXIS_TICK_SIZE = 12  # pt — tick annotations on both axes
 AXIS_TITLE_SIZE = 12  # pt — the "log10ρ at ..." / "... — profile_CD" title
+# Figure titles: "auto" = the titles of before; None, False or "" = none; a
+# string with the placeholders {field}, {section} (vertical sections), {depth}
+# (depth maps and "sens", the sensitivity maps); other braces are used as they
+# stand; or a dict {"section": spec, "map": spec, "sens": spec,
+# "default": spec}
+FIGURE_TITLE = "auto"
 
 # =====================================================================
 # MAP AXES UNITS
@@ -1655,10 +1661,10 @@ def plot_vertical_slice(
             zorder=20,
         )
 
-    ax.set_title(
-        f"{title_field} — {name}",
-        fontsize=AXIS_TITLE_SIZE,
-    )
+    _tt = tomomt.resolve_title(FIGURE_TITLE, "section", f"{title_field} — {name}",
+                               name="FIGURE_TITLE", field=title_field, section=name)
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
 
     finish_section_colorbar(cax, im, cbar_label)
     draw_annotation(ax)
@@ -2102,7 +2108,10 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
     if ISO_LINES_MAP:
         draw_iso_contours(ax, vx, vy, vz, ISO_LEVELS_MAP)
     draw_features(ax, eq_e, eq_n)
-    ax.set_title(f"log$_{{10}}$ρ at {label}", fontsize=AXIS_TITLE_SIZE)
+    _tt = tomomt.resolve_title(FIGURE_TITLE, "map", f"log$_{{10}}$ρ at {label}",
+                               name="FIGURE_TITLE", depth=label)
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
     finish_panel_colorbar(cax, im, "log$_{10}$(ρ / Ω·m)")
     if AXES_UNITS == "latlon":
         add_latlon_ticks(ax)
@@ -2134,7 +2143,10 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
             zorder=5,
         )
         draw_features(ax_s, eq_e, eq_n)
-        ax_s.set_title(f"Sensitivity at {label}", fontsize=AXIS_TITLE_SIZE)
+        _tt = tomomt.resolve_title(FIGURE_TITLE, "sens", f"Sensitivity at {label}",
+                                   name="FIGURE_TITLE", depth=label)
+        if _tt:
+            ax_s.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
         finish_panel_colorbar(cax_s, im_s, SENS_CBAR_LABEL)
         if AXES_UNITS == "latlon":
             add_latlon_ticks(ax_s)

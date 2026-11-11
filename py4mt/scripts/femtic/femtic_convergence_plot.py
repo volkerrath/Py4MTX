@@ -33,6 +33,15 @@ Provenance:
                 utl.write_param_summary(fname, out_dir=WORK_DIR). Needs
                 the util.py of the same date (new out_dir argument).
                 AI-generated; review before production use.
+    2026-11-11  Claude Sonnet 5.5 (Anthropic)
+                New PLOT_TITLE in the form of the title settings of all
+                plot scripts: "auto" (default; the title of before: the
+                PLOT_NAME and the first alpha), None / False / "" (no
+                title), text (placeholders {plot_name}, {alpha}, {what},
+                {dir}, {run}) or a dict {run directory name: spec, "default":
+                spec}, via fviz.resolve_title() (femtic_viz.py of the same
+                date). The figures with the default are unchanged.
+                AI-generated; review before production use.
 """
 
 import os
@@ -52,6 +61,7 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
             sys.path.insert(0, str(_p))
 
 import femtic as fem
+import femtic_viz as fviz
 import util as utl
 from version import versionstrg
 
@@ -72,6 +82,12 @@ PLOT_WHAT = "rough"  # Options: 'misfit', 'rms', 'rough'
 #: Name of the FEMTIC convergence file inside each run directory. A single
 #: name or a list of candidate names (first existing one is used).
 CNV_FILE = "femtic.cnv"
+
+#: Figure title: "auto" = PLOT_NAME and the first alpha (as before); None,
+#: False or "" = no title; a string, used as given ({plot_name} = PLOT_NAME,
+#: {alpha} = first alpha, {what} = PLOT_WHAT, {run} = run directory name,
+#: {dir} = its full path); a dict {run directory name: spec, "default": spec}.
+PLOT_TITLE = "auto"
 
 SEARCH_STRNG = "kra*"
 dir_list = utl.get_filelist(
@@ -144,10 +160,15 @@ for directory in dir_list:
             f"plot_convergence: plotting parameter '{plot_what}' not implemented! Exit."
         )
 
-    plt.title(
+    _run = os.path.basename(os.path.normpath(directory))
+    _title = fviz.resolve_title(
+        PLOT_TITLE, _run,
         PLOT_NAME.replace("_", " ") + r" |   $\alpha$ = "
-        + str(round(alpha[0], 2))
-    )
+        + str(round(alpha[0], 2)),
+        name="PLOT_TITLE", plot_name=PLOT_NAME, alpha=round(alpha[0], 2),
+        what=plot_what, run=_run, dir=directory)
+    if _title:
+        plt.title(_title)
     plt.xlabel(r"iteration", fontsize=14)
     plt.grid("on")
     plt.tight_layout()

@@ -15,6 +15,8 @@ Revision History:
     2020/03  V. Rath — minor improvements, less memory
     2022/03  V. Rath — more options, graphical improvements
     2024/04  V. Rath — python 3.11 / mtpy-v2
+    2026/11  FIGURE_TITLE (title of the figures; Claude Sonnet 5.5, Anthropic,
+             AI-generated, review before use)
 
 @author: vrath
 Cleanup: 4 Mar 2026 by Claude (Anthropic)
@@ -62,6 +64,11 @@ RHO_PLOT_LIM = [0.1, 10000]
 DEPTH_PLOT_LIM = 15000.0
 LOG_DEPTH = False
 COLOR_MAP = "rainbow"
+# Figure title: "auto" = "MT Station <station> - 1D rj-McMC Inversion" (as
+# before); None, False or "" = no title; a string with the placeholder
+# {station} (other braces are used as they stand); or a dict
+# {"<station>": spec, "default": spec}
+FIGURE_TITLE = "auto"
 
 PDF_CATALOG = True
 PDF_CATALOG_NAME = WORK_DIR + "Ubaye_results.pdf"
@@ -120,6 +127,7 @@ for count, filename in enumerate(result_files, start=1):
         resLims=RHO_PLOT_LIM,
         zLog=LOG_DEPTH,
         colormap=COLOR_MAP,
+        figureTitle=FIGURE_TITLE,
     )
     r.plot()
 

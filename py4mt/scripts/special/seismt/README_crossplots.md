@@ -127,6 +127,23 @@ own copy of this small grid-loading boilerplate; only `tomomt.py` and
 import here keeps this script consistent with that pattern rather than
 being a one-off exception.
 
+## Figure titles (`FIGURE_TITLE`)
+
+Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use). `crossplots.py` has a new setting `FIGURE_TITLE`; the default `"auto"` gives the titles of before.
+
+| Value | Title |
+|---|---|
+| `"auto"` or `True` | the titles of before |
+| `None`, `False`, `""` | no title |
+| a string | used as given; `{group}`, `{suffix}` (site and interpolation tag), `{field_a}`, `{field_b}` (and `{field_c}` for triples), and `{key}` (the kind of figure) are filled in (`str.format`); text with other braces (or an unknown name) is used as it stands and a note is printed |
+| a dict | `{"pair": spec, "triple": spec, "default": spec}` with `"default"` for the rest (else `"auto"`) |
+
+The logic is `tomomt.resolve_title` (the same as `femtic_viz.resolve_title` and `util.resolve_title`).
+
+### Colour bar
+
+New `CBAR_LOCATION` (`None` = at the right as before, or `"right"`, `"left"`, `"top"`, `"bottom"`), `CBAR_SHRINK_2D` (`0.85`, as before) and `CBAR_SHRINK_3D` (`0.7`, as before): length of the bar as a fraction of the axes. Invalid values raise `ValueError`.
+
 ## Output
 
 Files named:

@@ -369,7 +369,7 @@ fviz.plot_model_slices(
 | `site_marker_slices` | `dict(marker="o", …)` | Matplotlib kwargs for curtain markers |
 | `map_markers` | `None` | Extra markers (lat/lon dicts) on map panels. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the `show_model_centre` marker's style rather than plotting as a regular marker. |
 | `show_model_centre` | `True` | Marks the model origin (model-local x=0, y=0) on `"map"` panels whenever `display_coords` is `"utm"`/`"latlon"`; no-op for `"model"`. Never gets a legend entry. Default style (since 2026-09-26): yellow 5-point star (`"*"`) with a black edge, `ms=14`, `mew=1.2`, `zorder=15` (above every other map-panel artist, including site markers); override via a `map_markers` entry as above. Set `False` to force off. |
-| `polylines` | `None` | Dict `{name: entry}` of 3-D polylines (faults, boundaries, survey lines, intersection lines of slices, ...) drawn on the map and vertical panels; `None` / `{}` = none (figure unchanged, pixel-identical). Entry keys: `points` (required; model-local m, or CRS-tagged `(pts, "utm" | "latlon" | "model")`), `style`, `label`, `kinds`, `max_dist`, `z_range`. See [Polylines](#polylines). Never changes the axis limits. |
+| `polylines` | `None` | Dict `{name: entry}` of 3-D polylines (faults, boundaries, survey lines, intersection lines of slices, ...) drawn on the map and vertical panels; `None` / `{}` = none (figure unchanged, pixel-identical). Entry keys: `points` (required; model-local m, or CRS-tagged `(pts, "utm")`, `(pts, "latlon")`, `(pts, "model")`), `style`, `label`, `kinds`, `max_dist`, `z_range`. See [Polylines](#polylines). Never changes the axis limits. |
 | `display_coords` | `"model"` | `"model"` / `"utm"` / `"latlon"` |
 | `utm_origin_e`, `utm_origin_n` | `0.0` | Mesh-centre UTM [m] |
 | `utm_zone`, `utm_northern` | `1`, `True` | UTM zone and hemisphere |
@@ -717,12 +717,14 @@ position formats the built-in logic cannot handle.
 | `markers` | `None` | Free annotations on the depth axis (dicts with `depth`, optional `rho`, `text`, `borehole`, ...) |
 | `legend_fontsize` | `9` | Legend (shared mode) / panel-title (per-panel mode) size |
 | `tick_fontsize`, `label_fontsize` | `None` | Tick / label sizes; `None` = `legend_fontsize - 2` (at least 6) / `legend_fontsize` |
-| `figure_title` | `None` | Suptitle; `None` = basename of `model_file` |
+| `figure_title` | `None` | Suptitle; `None` / `True` = basename of `model_file`; `False` / `""` = no title; any other string is used as given |
 | `reference_file` | `None` | Reference block file (same mesh). Sampled at every borehole exactly like the model (same depths, same air / ocean handling) and drawn as a **dashed line in the colour of that borehole's own trace** (1.4 x line width, on top). `None` = none |
 | `reference_style` | `None` | `Line2D` overrides of the reference traces; a `color` given here replaces the pairing with the borehole colour |
 | `reference_label` | `"reference model"` | Legend text; `None` = no entry. Shared mode: one extra legend entry for the dashed style; per-panel mode: each panel gets a small legend "model" / reference |
 | `npz_file` | `None` | NPZ export path; `None` = auto (same stem as `plot_file`, `.npz`); `False` = skip |
 | `plot_file` | `None` | Save path for figure; `None` = `plt.show()` |
+| `panel_titles` | `True` | `False` = no panel titles (the per-panel borehole names of `shared=False`) |
+| `figure_title_fontsize` | `None` | Font size of the figure title; `None` = `legend_fontsize + 1`, as before |
 | `dpi` | `200` | Saved-figure DPI |
 
 ### NPZ export
@@ -861,6 +863,12 @@ fviz.plot_ensemble_slices(
 | `tick_fontsize` | `6` | Font size for axis tick labels and colourbar ticks |
 | `label_fontsize` | `7` | Font size for axis labels, row labels, panel titles, colourbar label, suptitle |
 | `tick_decimals` | `None` | Decimal digits on depth / easting-northing (metres) tick labels, sharing one value. `None` = prior formatting unchanged (`:g` for depth, Matplotlib auto for easting/northing) |
+| `figure_title` | `None` | Overall title of the joint and the per-member figures. `None` / `"auto"` = `Ensemble  (N members)` / `Ensemble member i  --  <file>` as before; `False` / `""` = none; text with `{n_members}`, `{index}`, `{file}`, `{label}` (the last three for member figures); dict `{"joint": spec, 0: spec, "default": spec}` per figure. See *Titles and colour bar position* below |
+| `figure_title_fontsize` | `None` | `None` = `label_fontsize + 4` (joint) / `+ 3` (member figures), as before |
+| `panel_titles` | `True` | `False` = no panel titles (also none from the slice specs) |
+| `cbar_location` | `None` | `None` / `"panel"` = one colour bar per panel as before; `"right"`, `"left"`, `"top"`, `"bottom"` = joint bars at that side of the panel grid (one for log10(rho), one for the std row) |
+| `cbar_shrink` | `0.7` | Joint bars: length as a fraction of the side they run along |
+| `cbar_thickness` | `None` | Joint bars: thickness [inch]; `None` = `1.5 * label_fontsize / 72` (at least 0.15) |
 | `show` | `False` | If `True`, also call `plt.show()` after saving (applies to both the joint figure and any per-member figures from `per_member_file=True`) — displays inline in addition to writing to disk. Useful in interactive environments (Spyder, Jupyter). |
 
 The `"std"` row is rendered on a separate `cividis` colormap anchored at zero.
@@ -1006,7 +1014,7 @@ Not to be confused with `plot_borehole_logs` (single model, above).
 
 | Function / class | Purpose |
 |---|---|
-| `BoreholeFigureOptions` | Layout and style of the figures: `line_style`, `alpha`, `xlim`, `ncols`, `panel_size`, `share_depth`, `legend_loc`, `heat_cbar`, `depth_km`, font sizes, `dpi`, `formats`, `show`, `ref_label`, `suptitle` (`None` / `False` = no figure title, and no source tag), `tag_sources`, `source_labels`, `out`. The fields are the `MOD_BH_*` / `MOD_*` settings of `femtic_ens_plot_bh.py`. |
+| `BoreholeFigureOptions` | Layout and style of the figures: `line_style`, `alpha`, `xlim`, `ncols`, `panel_size`, `share_depth`, `legend_loc`, `heat_cbar`, `heat_cbar_location` / `heat_cbar_shrink` / `heat_cbar_thickness` (side, length and thickness [inch] of the heat-map colour bar), `panel_titles`, `depth_km`, font sizes, `dpi`, `formats`, `show`, `ref_label`, `suptitle` (`None` / `False` = no figure title, and no source tag), `tag_sources`, `source_labels`, `out`. The fields are the `MOD_BH_*` / `MOD_*` settings of `femtic_ens_plot_bh.py`. |
 | `plan_borehole_figures(profiles, cs, io, *, per_fig=None, layout="combined", share_scale=False, scale_file=None, default_source="converged", ensemble=None, ...)` | Splits the profiles into figures of `per_fig` panels and fixes one colour scale per figure (shared by the converged and perturbed heat maps of that figure; one scale for all figures with `share_scale` or a scale file that is read). Writes the scale file when asked. Returns the plan. |
 | `draw_borehole_figures(plan, cs, plot_base, opts, perturbed_suffix="_perturbed")` | Draws the planned figures. With converged and perturbed models either side by side in one figure (`layout="combined"`) or one figure per source (`"separate"`, the perturbed one at `plot_base + perturbed_suffix`). |
 | `plot_boreholes(groups, plot_base, cs, norm, extend, opts)` | One figure: a resistivity-depth panel per borehole (lines, member lines, heat map, reference). `groups` is `[(source, profiles)]`. |
@@ -1031,6 +1039,62 @@ and collect them in a multi-page PDF. matplotlib's pdf backend can raise an
 
 `plot_borehole_logs` returns its figure (left open when `plot_file` is given);
 close it with `plt.close(fig)` in a loop.
+
+---
+
+## Titles and colour bar position
+
+Added 2026-11-11 for all plot scripts (`PLOT_TITLE`, `MOD_TITLE`, `*_CBAR_LOCATION`,
+... in the scripts). The scripts only hold the settings; the logic is here, so
+all of them behave the same way.
+
+| Function | Purpose |
+|---|---|
+| `check_cbar_location(location, *, name="cbar_location")` | Normalises a colour bar setting: `None`, `""`, `"panel"` or `"default"` -> `None` (the plot's own placement, i.e. what the script did before); `"right"`, `"left"`, `"top"`, `"bottom"` (any case) -> that string; anything else raises `ValueError`. |
+| `resolve_title(spec, key=None, auto="", *, name="TITLE", **fields)` | Title text from a title setting. Returns `auto` for the automatic title, `""` for no title, else the text. |
+| `add_colorbar(fig, mappable, ax, *, location=None, shrink=None, thickness=None, pad=None, label=None, label_fontsize=None, tick_fontsize=None, **kw)` | `fig.colorbar` with a choice of side, length (`shrink`, fraction of the side of `ax`) and thickness [inch]. `location=None` is exactly `fig.colorbar(mappable, ax=ax, **kw)`. `ax` may be a list (one bar for several axes). |
+
+**Title settings** (the same everywhere; `resolve_title`):
+
+| Setting | Title |
+|---|---|
+| `"auto"` or `True` | the automatic title of the script (as before) |
+| `None`, `False`, `""` | no title |
+| a string | used as given; `{key}` and the fields the script offers (`{label}`, `{index}`, `{file}`, `{nrms}`, ...) are filled in with `str.format`, so `{nrms:.3f}` works. Text whose braces cannot be filled in (unknown name, stray brace) is used as it stands and a note is printed. `name` (also `spec`, `key`, `auto`) is not available as a placeholder. |
+| a dict | `{key: spec, "default": spec}`, one entry per figure; the key is matched as given, then by its text form (`0` finds `"0"`), then `"default"` (else `"auto"`) |
+
+Where a figure has several panels, a second setting (`*_PANEL_TITLES`,
+`panel_titles`) switches the panel titles on (`True`, as before) or off.
+
+**Colour bar settings** (`*_CBAR_LOCATION`, `*_CBAR_SHRINK`, `*_CBAR_THICKNESS`):
+`None` / `"panel"` keep the bar(s) as they were; `"right"`, `"left"`, `"top"`,
+`"bottom"` put it at that side, at top and bottom as a horizontal bar. Plots
+with one bar per panel (`plot_model_slices`, `plot_ensemble_slices`) draw ONE
+joint bar for the whole panel grid instead; space for it is reserved in the
+`tight_layout` rectangle, so no panel is rescaled.
+
+```python
+import femtic_viz as fviz
+
+fviz.resolve_title("auto", "qc", "Ensemble (12 members)")        # 'Ensemble (12 members)'
+fviz.resolve_title(None, "qc", "x")                              # ''
+fviz.resolve_title("{key}: nRMS {nrms:.2f}", "m3", nrms=1.0234)  # 'm3: nRMS 1.02'
+fviz.resolve_title({"joint": "Ensemble", "default": "auto"}, 4, "member 4")  # 'member 4'
+
+fviz.plot_ensemble_slices(..., figure_title="Misti {n_members} members",
+                          panel_titles=False,
+                          cbar_location="bottom", cbar_shrink=0.6)
+```
+
+Defaults reproduce the earlier figures (checked pixel by pixel for
+`plot_ensemble_slices`, `plot_boreholes` and `plot_borehole_logs`). Tests:
+`test_femtic_viz_titles_cbar.py`, `test_femtic_viz_ens_titles_cbar.py`,
+`test_femtic_viz_bh_cbar.py` (synthetic mesh).
+
+**Fix:** `plot_ensemble_slices` looked its colormap up with
+`matplotlib.cm.colormaps` / `.get_cmap`, which Matplotlib 3.11 no longer has;
+the function raised `AttributeError` there. It now uses
+`plt.get_cmap(name).copy()`.
 
 ---
 
@@ -1078,3 +1142,4 @@ Author: Volker Rath (DIAS)
 | 2026-11-09 | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: `figure_title=""` / `False` = no figure title; new `panel_titles` (False = no panel titles); new `cbar_location` (None / "panel" = one colour bar per panel as before; "right" / "left" / "top" / "bottom" = one joint colour bar for the whole panel grid), `cbar_shrink`, `cbar_thickness`. The joint bar is placed in a strip reserved in the `tight_layout` rectangle (a plain `fig.colorbar(ax=[all axes])` rescales every panel position and makes the titles / axis labels of neighbouring rows collide). Default arguments: output pixel-identical to the previous version (checked). `BoreholeFigureOptions.suptitle`: `None` / `False` = no figure title. `plot_nrms_histogram`: docstring only (`title=None` was already "no title"). AI-generated code -- review before production use. |
 | 2026-11-09b | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: dipping `"plane"` panels (dip != 90) rewritten: `strike` is the geographic azimuth for every dip (dip towards `strike + 90`), axes are along-strike and down-dip distance from `point` (km if `depth_km` else m, true aspect where the layout supports it, column width from the real spans), default extent = plane cut with the `xlim` x `ylim` x `zlim` box, per-spec `xlim` / `ylim`, compass corner labels, in-plane site markers; the old panel was sheared and labelled "km" while showing metres. `dip` outside [0, 180] raises `ValueError`. `dip = 90` and all other kinds unchanged (pixel-identical). `plot_ensemble_slices`: same plane frame and default extent; the figure-level limits are no longer applied to the plane axes (they overrode the inversion, depth pointed up). New private helpers `_strike_dip_frame`, `_plane_roi_extent`. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | `plot_model_slices`: new `polylines` argument (dict of 3-D polylines drawn on the map and vertical panels; `points` model-local m or CRS-tagged `"utm"` / `"latlon"`, `style`, `label`, `kinds`, `max_dist` (slab projection on vertical sections, default `projection_dist`), `z_range` (maps); legend entries, axis limits never changed; `None` / `{}` = figure pixel-identical to before, checked). New public functions `slice_intersection_polyline` (line in which two slices meet, any of map / ns / ew / vertical or dipping plane, clipped to the ROI box and the finite extents of the slices; `None` if parallel or outside) and `slice_intersection_polylines` (ready `polylines` entries for pairs of slices); new private helpers `_slice_frame`, `_slice_label`, `_line_style`, `_clip_polyline_to_slab`, `_prepare_polylines`. Tests: `test_femtic_viz_polylines.py` (synthetic mesh; intersection points lie in both planes to ~1e-9 m, expected line positions from independent formulas). `femtic.polylines_km_to_m` converts the km settings of `femtic_ens_plot_slices.py`. Not used by `plot_ensemble_slices`. AI-generated code -- review before production use. |
+| 2026-11-11b | Claude Sonnet 5.5 (Anthropic) | Titles and colour bar position for all plot scripts. New public helpers `check_cbar_location`, `resolve_title` (the former `_title_for()` of `femtic_ens_plot_slices.py`) and `add_colorbar`. `plot_ensemble_slices`: new `figure_title`, `figure_title_fontsize`, `panel_titles`, `cbar_location`, `cbar_shrink`, `cbar_thickness` (joint colour bars at right / left / top / bottom; new private helpers `_cbar_tracks`, `_joint_cbar_geometry`, `_place_joint_colorbars`). `BoreholeFigureOptions`: new `heat_cbar_location`, `heat_cbar_shrink`, `heat_cbar_thickness`, `panel_titles`. `plot_borehole_logs`: new `panel_titles`, `figure_title_fontsize`; `figure_title=""` = no title. Defaults: figures pixel-identical to before (checked). **Fix:** `plot_ensemble_slices` raised `AttributeError` on Matplotlib 3.11 (`matplotlib.cm.colormaps` removed), now `plt.get_cmap(name).copy()`. Tests: `test_femtic_viz_titles_cbar.py`, `test_femtic_viz_ens_titles_cbar.py`, `test_femtic_viz_bh_cbar.py`. AI-generated code -- review before production use. |

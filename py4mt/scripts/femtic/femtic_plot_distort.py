@@ -40,6 +40,19 @@ an independent reference implementation or real MT data -- see
 `_gb_decompose` for details and known limitations (negative-determinant
 sites).
 
+2026-11-11 (Claude Sonnet 5.5): title and colour bar settings in the form of
+all plot scripts. TITLE takes "auto" (the default text), None / False / ""
+(no title), text, or a dict {"default": spec}; new GB_TITLE (same forms;
+"auto" = the Groom-Bailey reference line) and GB_PANEL_TITLES (False = no
+titles of the four panels); new CBAR_LOCATION / CBAR_SHRINK /
+CBAR_THICKNESS [cm] for the ellipse figure and GB_CBAR_LOCATION /
+GB_CBAR_SHRINK / GB_CBAR_THICKNESS [cm] for the colour bars of the GB
+panels (None = at the right as before; "right", "left", "top", "bottom"),
+drawn by fviz.add_colorbar (needs the femtic_viz.py of the same date). The
+figures with the default settings are unchanged. AI-generated; review
+before use. (TITLE = "" now means no title, which is what it drew before
+as well, as an empty title.)
+
 Usage
 -----
 Edit the CONFIG block below and run:
@@ -70,6 +83,7 @@ from matplotlib.colors import LightSource, Normalize
 from matplotlib.cm import ScalarMappable
 
 import femtic as fem
+import femtic_viz as fviz
 import util as utl  # noqa: F401  (imported for consistency with py4mt scripts;
                      # not called directly -- fem.utm_to_model/latlon_to_model
                      # already wrap the util.py zone-aware conversions)
@@ -149,7 +163,22 @@ FIGSIZE             = (8.0, 7.0)
 DPI                 = 200
 TICK_FONTSIZE       = 8
 LABEL_FONTSIZE_AXES = 9
+#: Figure titles: "auto" = the default text; None, False or "" = no title; a
+#: string, used as given; a dict {"default": spec}.
 TITLE               = "FEMTIC static distortion matrices"
+#: Title of the Groom-Bailey panel figure ("auto" = the reference line).
+GB_TITLE            = "auto"
+#: Titles of the four Groom-Bailey panels ("Twist [deg]", ...): True / False.
+GB_PANEL_TITLES     = True
+#: Colour bars: None or "right" = at the right (as before); "left", "top",
+#: "bottom" = at that side (horizontal for top / bottom). Shrink = length /
+#: side of the map; thickness in cm, None = automatic.
+CBAR_LOCATION       = None      # ellipse figure
+CBAR_SHRINK         = 0.8
+CBAR_THICKNESS      = None
+GB_CBAR_LOCATION    = None      # every panel of the Groom-Bailey figure
+GB_CBAR_SHRINK      = 0.85
+GB_CBAR_THICKNESS   = None
 SHOW                = False
 
 # Output files: one file per entry in OUTPUT_FORMATS, named
@@ -614,16 +643,22 @@ def _plot_ellipse_map(sites, xs, ys, bm, display_coords, color_by,
 
     sm = ScalarMappable(norm=norm, cmap=cmap)
     sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax, shrink=0.8)
-    cbar.set_label(_severity_label(color_by), fontsize=LABEL_FONTSIZE_AXES)
-    cbar.ax.tick_params(labelsize=TICK_FONTSIZE)
+    cbar = fviz.add_colorbar(
+        fig, sm, ax, location=CBAR_LOCATION, shrink=CBAR_SHRINK,
+        thickness=(CBAR_THICKNESS / 2.54 if CBAR_THICKNESS is not None
+                   else None),
+        label=_severity_label(color_by), label_fontsize=LABEL_FONTSIZE_AXES,
+        tick_fontsize=TICK_FONTSIZE)
 
     xlabel, ylabel = _axis_labels(display_coords)
     ax.set_xlabel(xlabel, fontsize=LABEL_FONTSIZE_AXES)
     ax.set_ylabel(ylabel, fontsize=LABEL_FONTSIZE_AXES)
     ax.tick_params(labelsize=TICK_FONTSIZE)
     ax.set_aspect("equal")
-    ax.set_title(TITLE, fontsize=LABEL_FONTSIZE_AXES + 1)
+    _title = fviz.resolve_title(
+        TITLE, "default", "FEMTIC static distortion matrices", name="TITLE")
+    if _title:
+        ax.set_title(_title, fontsize=LABEL_FONTSIZE_AXES + 1)
     ax.autoscale_view()
     fig.tight_layout()
     return fig
@@ -661,8 +696,12 @@ def _plot_gb_panel(sites, xs, ys, bm, display_coords):
             dx, dy, dv = map(np.array, zip(*defined))
             sca = ax.scatter(dx, dy, c=dv, cmap=GB_CMAP, s=GB_MARKER_SIZE,
                              edgecolor="black", linewidths=0.5, zorder=5)
-            cbar = fig.colorbar(sca, ax=ax, shrink=0.85)
-            cbar.ax.tick_params(labelsize=TICK_FONTSIZE)
+            fviz.add_colorbar(
+                fig, sca, ax, location=GB_CBAR_LOCATION,
+                shrink=GB_CBAR_SHRINK,
+                thickness=(GB_CBAR_THICKNESS / 2.54
+                           if GB_CBAR_THICKNESS is not None else None),
+                tick_fontsize=TICK_FONTSIZE)
         if undefined:
             ux, uy = map(np.array, zip(*undefined))
             ax.scatter(ux, uy, marker="x", color=GB_UNDEFINED_COLOR,
@@ -670,7 +709,8 @@ def _plot_gb_panel(sites, xs, ys, bm, display_coords):
                       label="det(C) <= 0 / not converged")
             ax.legend(fontsize=LABEL_FONTSIZE, loc="best")
 
-        ax.set_title(label, fontsize=LABEL_FONTSIZE_AXES)
+        if GB_PANEL_TITLES:
+            ax.set_title(label, fontsize=LABEL_FONTSIZE_AXES)
         ax.tick_params(labelsize=TICK_FONTSIZE)
         ax.set_aspect("equal")
 
@@ -679,9 +719,13 @@ def _plot_gb_panel(sites, xs, ys, bm, display_coords):
     for ax in axs[:, 0]:
         ax.set_ylabel(ylabel, fontsize=LABEL_FONTSIZE_AXES)
 
-    fig.suptitle("Groom-Bailey decomposition of C "
-                 "(Groom & Bailey, 1989, doi:10.1029/JB094iB02p01913)",
-                 fontsize=LABEL_FONTSIZE_AXES + 1)
+    _gb_title = fviz.resolve_title(
+        GB_TITLE, "default",
+        "Groom-Bailey decomposition of C "
+        "(Groom & Bailey, 1989, doi:10.1029/JB094iB02p01913)",
+        name="GB_TITLE")
+    if _gb_title:
+        fig.suptitle(_gb_title, fontsize=LABEL_FONTSIZE_AXES + 1)
     fig.tight_layout()
     return fig
 

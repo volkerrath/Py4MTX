@@ -228,6 +228,12 @@ ARROW_LABEL_STYLE = dict(fontsize=9, fontweight="bold", color="dimgray")
 AXIS_LABEL_SIZE = 12
 AXIS_TICK_SIZE = 12
 AXIS_TITLE_SIZE = 12
+# Figure titles: "auto" = the titles of before; None, False or "" = none; a
+# string with the placeholders {method}, {vars} (the cluster variables, comma
+# separated), {section} (vertical sections) or {depth} (depth maps, km);
+# other braces are used as they stand; or a dict {"section": spec,
+# "map": spec, "default": spec}
+FIGURE_TITLE = "auto"
 
 ANNOTATION_TEXT = None
 ANNOTATION_POS = (0.01, 0.99)
@@ -1123,10 +1129,13 @@ def plot_cluster_section(vslice, vi, label_grid_3d, d_axis_in, e_ax, n_ax,
                 fontsize=AXIS_LABEL_SIZE, fontweight="bold",
                 color="black", clip_on=False, zorder=20)
 
-    ax.set_title(
-        f"{_method_label} classes ({', '.join(active_cluster_vars)}) — {name}",
-        fontsize=AXIS_TITLE_SIZE,
-    )
+    _auto = (f"{_method_label} classes ({', '.join(active_cluster_vars)}) "
+             f"— {name}")
+    _tt = tomomt.resolve_title(
+        FIGURE_TITLE, "section", _auto, name="FIGURE_TITLE",
+        method=_method_label, vars=', '.join(active_cluster_vars), section=name)
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
     tomomt.finish_panel_colorbar(cax, im, "Class", _section_colorbar_settings())
     tomomt.draw_annotation(ax, ANNOTATION_TEXT, ANNOTATION_POS, ANNOTATION_STYLE)
 
@@ -1247,10 +1256,14 @@ def _draw_cluster_overlay(ax, cax, label_slice, actual_depth):
             cmap=cluster_cmap, norm=cluster_norm, shading="nearest",
             alpha=CLUSTER_ALPHA, zorder=5,
         )
-    ax.set_title(
-        f"{_method_label} classes ({', '.join(active_cluster_vars)}) at {actual_depth:.1f} km",
-        fontsize=AXIS_TITLE_SIZE,
-    )
+    _auto = (f"{_method_label} classes ({', '.join(active_cluster_vars)}) "
+             f"at {actual_depth:.1f} km")
+    _tt = tomomt.resolve_title(
+        FIGURE_TITLE, "map", _auto, name="FIGURE_TITLE",
+        method=_method_label, vars=', '.join(active_cluster_vars),
+        depth=f"{actual_depth:.1f}")
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
     if SHOW_COLORBAR:
         cbar = tomomt.finish_panel_colorbar(cax, im, "Class", _colorbar_settings())
         cbar.set_ticks(_cbar_ticks)

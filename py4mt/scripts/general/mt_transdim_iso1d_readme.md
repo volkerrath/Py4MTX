@@ -115,6 +115,21 @@ An isotropic 5-layer starting model (`MODEL0`) is provided in-file.  Set
 
 ---
 
+### Titles and colour bars
+
+Added 2026-11-11 (%s, AI-generated, review before use). Defaults give the figures of before. They need the `transdim_viz.py` of the same date (new keywords, see `transdim_viz_readme.md`).
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `FIGURE_TITLE` | `"auto"` | `"auto"` = the titles of before (none for the `results` figure, `MT Station <station> — 1D rj-McMC Inversion` for `qc`, `Station <station>` above the first panel of `model`); `None`, `False`, `""` = none; text with `{station}`, `{key}`; dict `{"results": spec, "qc": spec, "model": spec, "default": spec}` |
+| `PANEL_TITLES` | `True` | `False` = no titles of the panels of the `results` figure |
+| `CBAR_LOCATION` | `None` | Colour bars of the posterior-model figure: `None` = at the right of their panels (as before); `"right"`, `"left"`, `"top"`, `"bottom"` |
+| `CBAR_SHRINK` | `0.5` | Length of those colour bars as a fraction of the panel |
+
+The `transdim_viz` of the version supplied does not fit the `transdim.py` (see `transdim_viz_readme.md`), so these scripts were compile-checked only.
+
+---
+
 ## Per-station output files
 
 For each input file matching `INPUT_GLOB`, the following files are written to

@@ -144,3 +144,9 @@ Every script's own settings, output filenames, figure content, and
 public function signatures are the same as before **except** the one
 `INTERP_TAG` normalisation change in `structure.py`/`crossplots.py`
 described above. Nothing in `modem.py` was touched.
+
+## Changes 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+
+- New `resolve_title(spec, key=None, auto="", *, name="FIGURE_TITLE", **fields)`: the `FIGURE_TITLE` setting of the plot scripts (`"auto"` / none / text with placeholders / dict per figure); the same logic as `femtic_viz.resolve_title`. Used by `cluster.py`, `cluster_remap.py`, `crossplots.py`, `plot_femtic_mesh.py`, `plot_interp.py`, `plot_interp_tacna.py`, `plot_joint.py`, `plot_modem_image.py`, `plot_modem_mesh.py`, `structure.py`; `plot_seis.py` (which still imports the old `plotpy`) and `plot_modem.py` (self-contained) carry a private copy.
+- `build_panel_figure()` and `finish_panel_colorbar()` ignore blanks around the colour bar position (`" right"`).
+- **Found, not changed:** the `tomomt.py` supplied has stray pasted text from `poisson_seismic.py` near line 2344, which gives an `IndentationError` on import (the same in the original). The tests (`test_seismt_titles.py`) therefore extract the functions with `ast` instead of importing the module. The file needs cleaning up before the scripts can import it.

@@ -300,3 +300,7 @@ a `.sns` file was found: `modem_sens_utm.nc` and
 
 **Figures:** `{seis,modem}_map_{var}_{depth}.{png,pdf,jpg}` (per
 `PLOT_FORMATS`), `{seis,modem}_section_{profile_name}_tacna.{png,pdf,jpg}`
+
+## Figure titles and colour bars (2026-11-11)
+
+All plot scripts of this pipeline have a `FIGURE_TITLE` setting (`"auto"` = the titles of before; `None` / `False` / `""` = none; text with `{placeholders}`; dict per kind of figure). The colour bar position was already a setting of the plot scripts (`COLORBAR_POSITION`); `crossplots.py` and `structure.py` have new `CBAR_LOCATION` / `CBAR_SHRINK*` settings. Details are in the readme of each script (section *Figure titles*); the title logic is `tomomt.resolve_title`. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use. Tested with `test_seismt_titles.py` (title logic and placement of every `set_title` call); the scripts could not be run here (no data, and `tomomt.py` does not import, see `README_tomomt.md`).

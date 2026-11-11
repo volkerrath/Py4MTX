@@ -133,9 +133,15 @@ A 3×2 subplot figure is generated per station (4×2 when `DPLUS = True`) showin
 automatically.  Per-panel `ylim` overrides are passed as `**{**PLTARGS, "ylim": (...)}` —
 the shared `PLTARGS` dict is never mutated between calls.
 
+Figure title (2026-11-11): `FIGURE_TITLE` (default `"auto"` = `<station><NAME_STR with " | " for "_">` as before; `None`, `False`, `""` = none; text with `{station}`, `{name_str}`, `{key}` (= the station); dict `{"<station>": spec, "default": spec}`). It is read inside the `if PLOT:` block and resolved by `util.resolve_title` (needs the `util.py` of the same date).
+
 Empty axes are removed. Plots are saved in all formats listed in `PLOT_FORMAT`
 (default: PDF at 600 DPI).
 
 ## Dependencies
 
 `numpy`, `matplotlib`; py4mt: `data_proc` (`load_edi`, `compute_rhoplus`, …), `data_viz` (`add_rhoplus`, …), `util`, `version`.
+
+## Changes 2026-11-11 (titles)
+
+`FIGURE_TITLE` for the station figures (see *Diagnostic plots*). Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before. Only compile-checked and tested at the level of the title logic (`util.resolve_title`, `test_util_titles.py`); the script was not run end to end.

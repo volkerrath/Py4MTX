@@ -487,6 +487,21 @@ matching projection/plotting), unlike the two ModEM scripts — that would
 be a new feature rather than a settings sync, so it hasn't been added
 automatically; let me know if you'd like it.
 
+## Figure titles (`FIGURE_TITLE`)
+
+Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use). `plot_modem.py`, `plot_modem_image.py` and `plot_modem_mesh.py` has a new setting `FIGURE_TITLE`; the default `"auto"` gives the titles of before.
+
+| Value | Title |
+|---|---|
+| `"auto"` or `True` | the titles of before |
+| `None`, `False`, `""` | no title |
+| a string | used as given; `plot_modem.py`: `{section}`, `{swath}` (vertical sections) or `{depth}` (depth maps). `plot_modem_image.py`: `{section}` or `{depth}`. `plot_modem_mesh.py`: `{field}`, `{section}`, `{depth}` (also for the sensitivity maps), and `{key}` (the kind of figure) are filled in (`str.format`); text with other braces (or an unknown name) is used as it stands and a note is printed |
+| a dict | `{"section": spec, "map": spec, "default": spec}`; `plot_modem_mesh.py` also has the key `"sens"` for the sensitivity maps with `"default"` for the rest (else `"auto"`) |
+
+The logic is `tomomt.resolve_title` (the same as `femtic_viz.resolve_title` and `util.resolve_title`).
+
+The position of the colour bar is the existing `COLORBAR_POSITION` (`"right"`, `"left"`, `"bottom"`, `"top"`); blanks around the value are now ignored (`tomomt.build_panel_figure`, `finish_panel_colorbar`).
+
 ## Dependencies
 
 ```

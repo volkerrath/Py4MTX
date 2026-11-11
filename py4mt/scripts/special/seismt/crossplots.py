@@ -193,6 +193,19 @@ SHOW_PLOTS = False
 # called without going through main() first.
 INTERP_TAG = None
 
+# Figure titles: "auto" = the titles of before; None, False or "" = none; a
+# string with the placeholders {group}, {suffix} (site and interpolation tag),
+# {field_a}, {field_b} (and {field_c} for triples); other braces are used as
+# they stand; or a dict {"pair": spec, "triple": spec, "default": spec}
+FIGURE_TITLE = "auto"
+
+# Colour bar: CBAR_LOCATION None = at the right as before, or "right", "left",
+# "top", "bottom"; CBAR_SHRINK_2D / CBAR_SHRINK_3D = its length as a fraction
+# of the axes (the former 0.85 and 0.7)
+CBAR_LOCATION = None
+CBAR_SHRINK_2D = 0.85
+CBAR_SHRINK_3D = 0.7
+
 
 # ===========================================================================
 # Interpolation-tag derivation / grid loading (mirrors structure.py)
@@ -305,6 +318,20 @@ def _prepare_pair(ds, field_a, field_b, color_by):
                 color=color, color_label=color_label, n=len(x))
 
 
+def _cbar_kwargs(shrink, **kw):
+    """Keywords of fig.colorbar: ``shrink``, any ``kw``, and ``location`` if
+    CBAR_LOCATION is set (None = matplotlib's default, the right side)."""
+    kw = dict(shrink=shrink, **kw)
+    if CBAR_LOCATION is not None and str(CBAR_LOCATION).strip() != "":
+        loc = str(CBAR_LOCATION).strip().lower()
+        if loc not in ("right", "left", "top", "bottom"):
+            raise ValueError(
+                f"CBAR_LOCATION must be None, 'right', 'left', 'top' or "
+                f"'bottom', got {CBAR_LOCATION!r}.")
+        kw["location"] = loc
+    return kw
+
+
 def _pearson_spearman(x, y):
     if len(x) < 2:
         return np.nan, np.nan
@@ -328,7 +355,7 @@ def plot_pair(ds, field_a, field_b, color_by, group_label):
     if PLOT_KIND_2D == "hexbin":
         hb = ax.hexbin(x, y, gridsize=HEXBIN_GRIDSIZE, cmap=HEXBIN_CMAP,
                        mincnt=1, zorder=5)
-        cb = fig.colorbar(hb, ax=ax, shrink=0.85)
+        cb = fig.colorbar(hb, ax=ax, **_cbar_kwargs(CBAR_SHRINK_2D))
         cb.set_label("point count")
     else:
         idx = _subsample(d["n"], MAX_POINTS, RANDOM_SEED)
@@ -337,7 +364,7 @@ def plot_pair(ds, field_a, field_b, color_by, group_label):
             cs = d["color"][idx] if idx is not None else d["color"]
             sc = ax.scatter(xs, ys, c=cs, cmap=CMAP_COLORBY, s=MARKER_SIZE,
                             alpha=MARKER_ALPHA, linewidths=0, zorder=5)
-            cb = fig.colorbar(sc, ax=ax, shrink=0.85)
+            cb = fig.colorbar(sc, ax=ax, **_cbar_kwargs(CBAR_SHRINK_2D))
             cb.set_label(d["color_label"])
         else:
             ax.scatter(xs, ys, c=MARKER_COLOR, s=MARKER_SIZE,
@@ -358,7 +385,12 @@ def plot_pair(ds, field_a, field_b, color_by, group_label):
     ax.set_ylabel(d["label_b"])
 
     suffix = ", ".join(_title_suffix())
-    ax.set_title(f"{group_label} cross-plot ({suffix})")
+    _tt = tomomt.resolve_title(
+        FIGURE_TITLE, "pair", f"{group_label} cross-plot ({suffix})",
+        name="FIGURE_TITLE", group=group_label, suffix=suffix,
+        field_a=field_a, field_b=field_b)
+    if _tt:
+        ax.set_title(_tt)
 
     fig.tight_layout()
 
@@ -409,7 +441,7 @@ def plot_triple(ds, field_a, field_b, field_c, color_by, group_label):
         cs = d["color"][idx] if idx is not None else d["color"]
         sc = ax.scatter(xs, ys, zs, c=cs, cmap=CMAP_COLORBY, s=MARKER_SIZE_3D,
                         alpha=MARKER_ALPHA_3D, linewidths=0)
-        cb = fig.colorbar(sc, ax=ax, shrink=0.7, pad=0.1)
+        cb = fig.colorbar(sc, ax=ax, **_cbar_kwargs(CBAR_SHRINK_3D, pad=0.1))
         cb.set_label(d["color_label"])
     else:
         ax.scatter(xs, ys, zs, c=MARKER_COLOR_3D, s=MARKER_SIZE_3D,
@@ -441,7 +473,12 @@ def plot_triple(ds, field_a, field_b, field_c, color_by, group_label):
                  ha="left", va="bottom", fontsize=8)
 
     suffix = ", ".join(_title_suffix())
-    ax.set_title(f"{group_label} cross-plot ({suffix})")
+    _tt = tomomt.resolve_title(
+        FIGURE_TITLE, "triple", f"{group_label} cross-plot ({suffix})",
+        name="FIGURE_TITLE", group=group_label, suffix=suffix,
+        field_a=field_a, field_b=field_b, field_c=field_c)
+    if _tt:
+        ax.set_title(_tt)
 
     fig.tight_layout()
 

@@ -29,12 +29,12 @@ ensemble of runs (chosen calculated response of each member).
 @author   vrath
 @project  py4mt
 @created  2026-09-26
-@modified 2026-10-09
+@modified 2026-11-11
 
 Provenance
 ----------
 Author      : Claude (Anthropic)
-Generated   : 2026-09-26 (last modified 2026-10-09)
+Generated   : 2026-09-26 (last modified 2026-11-11)
 Notice      : This code is AI-generated. Review and test it before any
               production use.
 
@@ -185,6 +185,28 @@ Full_Interstation_TF is not drawn.
 
 Changelog
 ---------
+2026-11-11b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            titles and colour bar position, in the form of all plot scripts.
+            New settings FIGURE_TITLE ("auto" = the titles of before; None /
+            False / "" = no figure titles; text with {placeholders}; a dict
+            per kind of figure "crossplot" / "histogram" / "qq" / "curves"),
+            PANEL_TITLES (False = no panel titles of the crossplot, histogram
+            and Q-Q panels), CROSSPLOT_CBAR_LOCATION (None = at the right as
+            before; "right", "left", "top", "bottom") and
+            CROSSPLOT_CBAR_SHRINK (0.85 as before). The plot functions have
+            the matching keywords figure_title, panel_titles, cbar_location,
+            cbar_shrink with defaults that give the figures of before.
+2026-11-11  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            direction of the period / frequency axis. CURVES_INVERT_X now
+            defaults to False: the response curves have the period increasing
+            from left to right (a frequency axis would decrease to the right).
+            It was True (period decreasing to the right, the data_viz
+            orientation); True still gives that. The band panels of the
+            residual histograms and Q-Q plots follow the same rule: with
+            *_BAND_AXIS = "frequency" they now run from high to low frequency
+            (were low to high), i.e. from short to long period like the
+            "period" bands; this changes the panel order and the row order
+            of the histogram / Q-Q tables.
 2026-10-09  Claude (Anthropic), AI-generated, review before use: new option
             PLOT_DIR puts all figures (crossplot, histogram, Q-Q, curves)
             into a separate directory (None = with the tables; relative
@@ -293,6 +315,18 @@ FIT_MEASURES: bool = True   # overall table of fit measures (per data type
                             # and pooled) -> <prefix>_fit_measures.txt
 SHOW: bool = True
 
+# --- titles (all figures) ---
+FIGURE_TITLE: Union[str, bool, None, dict] = "auto"
+# "auto" = the titles of before; None, False or "" = no figure title; a
+# string, used as given ({title} = the run description of the title,
+# {datatype} / {group} = data type or group of the figure, {axis},
+# {per_decade} for histogram / Q-Q, {site}, {sid}, {nrms} for curves,
+# {key} = the kind of figure; other braces: used as they stand); a dict
+# {"crossplot": spec, "histogram": spec, "qq": spec, "curves": spec,
+# "default": spec}
+PANEL_TITLES: bool = True     # titles of the panels of the crossplot,
+# histogram and Q-Q figures (False = none)
+
 # --- selection (None = everything) ---
 DATATYPES: Optional[Sequence[str]] = None     # e.g. ["Full_Impedance"]
 COMPONENTS: Optional[Sequence[str]] = None    # e.g. ["ZXY", "ZYX"]
@@ -307,6 +341,9 @@ MARKER_SIZE: float = 14.0
 ALPHA: float = 0.85
 LOG_RHO: bool = True          # log-log axes for rho* components
 SHOW_ERRORBARS: bool = False
+CROSSPLOT_CBAR_LOCATION: Optional[str] = None   # None = at the right (as
+# before); "right", "left", "top", "bottom"
+CROSSPLOT_CBAR_SHRINK: float = 0.85   # length / side of the panel grid
 
 # --- residual histograms ---
 HIST_BAND_AXIS: str = "frequency"   # "frequency" | "period"
@@ -368,8 +405,10 @@ CURVES_OBS_MARKERSIZE: float = 3.5
 CURVES_LINEWIDTH: float = 1.2      # calculated / median line
 
 # axes
-CURVES_INVERT_X: bool = True       # True = as data_viz (period decreasing
-                                   # to the right); False = period increasing
+CURVES_INVERT_X: bool = False      # False = period increasing to the right
+                                   # (long periods at the right; the same as frequency
+                                   # decreasing to the right); True = flipped (the
+                                   # old data_viz orientation)
 CURVES_PERIOD_LIM: Optional[Tuple[float, float]] = None   # (Tmin, Tmax) [s]
 CURVES_YLIM: Dict[str, Optional[Tuple[float, float]]] = {
     "rho": None, "phase": None, "tipper": None, "pt": None}
@@ -652,6 +691,52 @@ def _safe_name(s: str) -> str:
     return re.sub(r"[^A-Za-z0-9_.-]+", "_", str(s))
 
 
+# Title and colour bar settings. The same helpers as femtic_viz.resolve_title /
+# check_cbar_location (copied, so that this script needs no femtic_viz).
+def _resolve_title(spec, key=None, auto=None, *, name: str = "FIGURE_TITLE",
+                   **fields):
+    """Figure title from a title setting: "auto" / True -> ``auto``; None /
+    False / "" -> "" (no title); a string with {placeholders} filled in from
+    ``key`` ({key}) and ``fields`` (unfillable text is used as it stands); a
+    dict {key: spec, "default": spec} (else "auto")."""
+    if isinstance(spec, dict):
+        if key in spec:
+            spec = spec[key]
+        elif key is not None and str(key) in spec:
+            spec = spec[str(key)]
+        else:
+            spec = spec.get("default", "auto")
+    if spec is None or spec is False:
+        return ""
+    if spec is True:
+        return auto
+    text = str(spec)
+    if text.strip() == "":
+        return ""
+    if text.strip().lower() == "auto":
+        return auto
+    try:
+        return text.format(key=key, **fields)
+    except (KeyError, IndexError, ValueError, AttributeError) as exc:
+        print(f"modem_data_misfit: {name}: cannot fill in {text!r} ({exc!r}) - "
+              "used as it stands.")
+        return text
+
+
+def _check_cbar_location(location, *, name: str = "CROSSPLOT_CBAR_LOCATION"):
+    """None / "" / "panel" / "default" -> None; "right", "left", "top",
+    "bottom" -> that; anything else raises ValueError."""
+    if location is None or location is False:
+        return None
+    loc = str(location).strip().lower()
+    if loc in ("", "panel", "default", "none"):
+        return None
+    if loc not in ("right", "left", "top", "bottom"):
+        raise ValueError(f"{name} must be None, 'right', 'left', 'top' or "
+                         f"'bottom', got {location!r}.")
+    return loc
+
+
 def build_panels(ds: dict, *, datatypes: Optional[Sequence[str]] = None,
                  components: Optional[Sequence[str]] = None) -> Dict[str, List[dict]]:
     """Split a dataset into panels: {datatype_name: [panel, ...]}."""
@@ -773,8 +858,15 @@ def plot_crossplot_datatype(
     ncols: int, panel_size: float, cmap: str,
     color_range: Optional[Tuple[float, float]], marker_size: float,
     alpha: float, log_rho: bool, show_errorbars: bool, equal_aspect: bool,
+    figure_title: Optional[str] = None, panel_titles: bool = True,
+    cbar_location: Optional[str] = None, cbar_shrink: float = 0.85,
 ):
-    """One figure with all crossplot panels of a data type."""
+    """One figure with all crossplot panels of a data type.
+
+    figure_title: None = the automatic title, "" = none, else the text.
+    panel_titles: False = no panel titles. cbar_location: None = at the right
+    (as before), or "right" / "left" / "top" / "bottom"; cbar_shrink = its
+    length as a fraction of the side of the panel grid."""
     import matplotlib.pyplot as plt
     from matplotlib import cm
     from matplotlib.colors import Normalize
@@ -794,7 +886,8 @@ def plot_crossplot_datatype(
         if x.size == 0:
             ax.text(0.5, 0.5, "no valid data", ha="center", va="center",
                     transform=ax.transAxes)
-            ax.set_title(p["label"], fontsize=10)
+            if panel_titles:
+                ax.set_title(p["label"], fontsize=10)
             continue
         logf = np.log10(p["freq"])
         if color_range is not None:
@@ -825,7 +918,8 @@ def plot_crossplot_datatype(
                if has_syn else f"n={st['n']}\nnRMS={st['nrms1']:.2f}")
         ax.text(0.04, 0.96, txt, transform=ax.transAxes, ha="left", va="top",
                 fontsize=8, bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
-        ax.set_title(p["label"], fontsize=10)
+        if panel_titles:
+            ax.set_title(p["label"], fontsize=10)
         ax.set_xlabel("observed", fontsize=9)
         ax.set_ylabel("calculated (ensemble mean)" if has_syn else "calculated", fontsize=9)
         ax.tick_params(labelsize=8)
@@ -834,9 +928,15 @@ def plot_crossplot_datatype(
         ax.set_visible(False)
     if sm_norm is not None:
         sm = cm.ScalarMappable(norm=sm_norm, cmap=cmap)
-        cb = fig.colorbar(sm, ax=list(axf[:n]), shrink=0.85, pad=0.02)
+        _kw = dict(shrink=cbar_shrink, pad=0.02)
+        if _check_cbar_location(cbar_location) is not None:
+            _kw["location"] = _check_cbar_location(cbar_location)
+        cb = fig.colorbar(sm, ax=list(axf[:n]), **_kw)
         cb.set_label("log10 frequency (Hz)")
-    fig.suptitle(f"{dname}: observed vs. calculated, {title_extra}", fontsize=12)
+    _sup = (f"{dname}: observed vs. calculated, {title_extra}"
+            if figure_title is None else figure_title)
+    if _sup:
+        fig.suptitle(_sup, fontsize=12)
     return fig
 
 
@@ -857,10 +957,18 @@ def band_label(k: int, *, per_decade: int, axis: str) -> str:
 
 def select_bands(freq: np.ndarray, *, per_decade: int, axis: str,
                  min_n: int) -> List[Tuple[str, np.ndarray]]:
-    """[("all bands", mask), (band label, mask), ...]; sparse bands dropped."""
+    """[("all bands", mask), (band label, mask), ...]; sparse bands dropped.
+
+    The bands run from short to long period: for axis="period" with the
+    period increasing, for axis="frequency" with the frequency decreasing
+    (2026-11-11; before, frequency bands ran from low to high frequency).
+    """
     bidx = band_index(freq, per_decade=per_decade, axis=axis)
     sel = [("all bands", np.ones(freq.size, bool))]
-    for k in np.unique(bidx):
+    ks = np.unique(bidx)
+    if axis == "frequency":
+        ks = ks[::-1]      # frequency decreasing = period increasing, as "period"
+    for k in ks:
         m = bidx == k
         if np.count_nonzero(m) >= min_n:
             sel.append((band_label(int(k), per_decade=per_decade, axis=axis), m))
@@ -875,6 +983,7 @@ def plot_residual_histograms(
     title: str, freq: np.ndarray, r1: np.ndarray, r2: np.ndarray, *,
     has_syn: bool, per_decade: int, axis: str, ncols: int, panel_size: float,
     limit: float, bin_width: float, min_n: int, run_label: str = "",
+    figure_title: Optional[str] = None, panel_titles: bool = True,
 ):
     """
     Histograms of normalized residuals: first panel pools all bands, then
@@ -934,7 +1043,8 @@ def plot_residual_histograms(
             txt += f"\nout: {n_out}"
         ax.text(0.03, 0.97, txt, transform=ax.transAxes, ha="left", va="top",
                 fontsize=8, bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
-        ax.set_title(label, fontsize=10)
+        if panel_titles:
+            ax.set_title(label, fontsize=10)
         ax.set_xlabel("normalized residual", fontsize=9)
         ax.set_ylabel("frequency [%]", fontsize=9)
         ax.tick_params(labelsize=8)
@@ -944,9 +1054,11 @@ def plot_residual_histograms(
                           m2=fit_measures(a2), n_out=n_out))
     for ax in axf[n:]:
         ax.set_visible(False)
-    fig.suptitle(f"{title}: normalized residuals, {axis} bands "
-                 f"({per_decade} per decade)" + (f"\n{run_label}" if run_label else ""),
-                 fontsize=12)
+    _sup = (f"{title}: normalized residuals, {axis} bands "
+            f"({per_decade} per decade)" + (f"\n{run_label}" if run_label else "")
+            if figure_title is None else figure_title)
+    if _sup:
+        fig.suptitle(_sup, fontsize=12)
     return fig, stats
 
 
@@ -976,6 +1088,7 @@ def plot_qq_bands(
     has_syn: bool, per_decade: int, axis: str, ncols: int, panel_size: float,
     limit: float, confidence: Optional[float], min_n: int,
     equal_axes: bool = False, run_label: str = "",
+    figure_title: Optional[str] = None, panel_titles: bool = True,
 ):
     """
     Normal Q-Q plots of the normalized residuals: first panel pools all
@@ -1043,7 +1156,8 @@ def plot_qq_bands(
         txt += f"\nicpt={icpt:.2f}"
         ax.text(0.03, 0.97, txt, transform=ax.transAxes, ha="left", va="top",
                 fontsize=8, bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
-        ax.set_title(label, fontsize=10)
+        if panel_titles:
+            ax.set_title(label, fontsize=10)
         ax.set_xlabel("theoretical N(0,1) quantile", fontsize=9)
         ax.set_ylabel("sample quantile", fontsize=9)
         ax.tick_params(labelsize=8)
@@ -1064,8 +1178,11 @@ def plot_qq_bands(
     for ax in axf[n:]:
         ax.set_visible(False)
     env = f", {100 * confidence:.0f}% envelope" if confidence else ""
-    fig.suptitle(f"{title}: normal Q-Q, {axis} bands ({per_decade} per decade){env}"
-                 + (f"\n{run_label}" if run_label else ""), fontsize=12)
+    _sup = (f"{title}: normal Q-Q, {axis} bands ({per_decade} per decade){env}"
+            + (f"\n{run_label}" if run_label else "")
+            if figure_title is None else figure_title)
+    if _sup:
+        fig.suptitle(_sup, fontsize=12)
     return fig, stats
 
 
@@ -1120,7 +1237,7 @@ def _curves_cfg() -> dict:
         dens_gamma=CURVES_DENSITY_GAMMA, seed=CURVES_SEED,
         obs_only=bool(CURVES_OBSERVED_ONLY),
         obs_errors=CURVES_OBS_ERRORS, obs_ms=CURVES_OBS_MARKERSIZE,
-        lw=CURVES_LINEWIDTH, invert_x=CURVES_INVERT_X,
+        lw=CURVES_LINEWIDTH, invert_x=CURVES_INVERT_X, title=FIGURE_TITLE,
         period_lim=CURVES_PERIOD_LIM, ylim=dict(CURVES_YLIM),
         panel_size=tuple(CURVES_PANEL_SIZE), multipage=CURVES_MULTIPAGE,
         appres_deg=CURVES_APPRES_PHASE_DEG, legend_loc=CURVES_LEGEND_LOC,
@@ -1590,9 +1707,13 @@ def plot_site_curves(sid: str, series: Dict[str, dict], info: dict, *, M: int,
     xy = (f", x={info['x']:g}, y={info['y']:g}"
           if np.isfinite(info["x"]) and np.isfinite(info["y"]) else "")
     fit = "" if obs_only else f"nRMS = {info['nrms']:.2f}, "
-    fig.suptitle(f"site {sid}{xy}, {fit}"
-                 f"n = {info['n']}{' (observed only)' if obs_only else ''}\n{title_extra}",
-                 fontsize=10)
+    _auto = (f"site {sid}{xy}, {fit}"
+             f"n = {info['n']}{' (observed only)' if obs_only else ''}\n{title_extra}")
+    _sup = _resolve_title(
+        cfg.get("title", "auto"), "curves", _auto, title=title_extra,
+        site=sid, sid=sid, nrms=("n/a" if obs_only else f"{info['nrms']:.2f}"))
+    if _sup:
+        fig.suptitle(_sup, fontsize=10)
     return fig
 
 
@@ -1928,7 +2049,13 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                 dname, lst, title_extra=title_extra, has_syn=has_syn, ncols=NCOLS,
                 panel_size=PANEL_SIZE, cmap=CMAP, color_range=crange,
                 marker_size=MARKER_SIZE, alpha=ALPHA, log_rho=LOG_RHO,
-                show_errorbars=SHOW_ERRORBARS, equal_aspect=EQUAL_ASPECT)
+                show_errorbars=SHOW_ERRORBARS, equal_aspect=EQUAL_ASPECT,
+                figure_title=_resolve_title(
+                    FIGURE_TITLE, "crossplot", None, title=title_extra,
+                    datatype=dname),
+                panel_titles=bool(PANEL_TITLES),
+                cbar_location=CROSSPLOT_CBAR_LOCATION,
+                cbar_shrink=CROSSPLOT_CBAR_SHRINK)
             _save(fig, os.path.join(fig_dir, f"{prefix}_crossplot_{_safe_name(dname)}"),
                   PLOT_FORMATS, PLOT_DPI)
             if SHOW:
@@ -1960,7 +2087,12 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                 per_decade=HIST_BANDS_PER_DECADE, axis=HIST_BAND_AXIS,
                 ncols=HIST_NCOLS, panel_size=HIST_PANEL_SIZE, limit=HIST_LIMIT,
                 bin_width=HIST_BIN_WIDTH, min_n=HIST_MIN_N,
-                run_label=title_extra)
+                run_label=title_extra,
+                figure_title=_resolve_title(
+                    FIGURE_TITLE, "histogram", None, title=title_extra,
+                    group=gname, axis=HIST_BAND_AXIS,
+                    per_decade=HIST_BANDS_PER_DECADE),
+                panel_titles=bool(PANEL_TITLES))
             all_stats[gname] = stats
             _save(fig, os.path.join(fig_dir, f"{prefix}_hist_{_safe_name(gname)}"),
                   PLOT_FORMATS, PLOT_DPI)
@@ -1990,7 +2122,12 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                 per_decade=QQ_BANDS_PER_DECADE, axis=QQ_BAND_AXIS,
                 ncols=QQ_NCOLS, panel_size=QQ_PANEL_SIZE, limit=QQ_LIMIT,
                 confidence=QQ_CONFIDENCE, min_n=QQ_MIN_N,
-                equal_axes=QQ_EQUAL_AXES, run_label=title_extra)
+                equal_axes=QQ_EQUAL_AXES, run_label=title_extra,
+                figure_title=_resolve_title(
+                    FIGURE_TITLE, "qq", None, title=title_extra,
+                    group=gname, axis=QQ_BAND_AXIS,
+                    per_decade=QQ_BANDS_PER_DECADE),
+                panel_titles=bool(PANEL_TITLES))
             qq_stats[gname] = stats
             _save(fig, os.path.join(fig_dir, f"{prefix}_qq_{_safe_name(gname)}"),
                   PLOT_FORMATS, PLOT_DPI)

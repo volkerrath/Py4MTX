@@ -53,6 +53,7 @@ rho_global (scalar), n_sites (int).
 @modified:  2026-06-13 — ERRORS switch ("std"/"bootstrap"/None); bootstrap std-of-the-mean per bin and globally; global interval in print/annotation; rho_global_std in NPZ; Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-06-13 — fix global error: resample per-site log-means (not pooled values), stay in log space, report multiplicative factor ×/÷ σ_g; Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-09-07 — BUILD_FROM_EDI switch: collection can now be built directly from an EDI_DIR via the new data_proc.make_collection() instead of requiring a pre-existing COLL_FILE; optional SAVE_COLLECTION caches the built collection to COLL_FILE; added PY4MTX_ROOT sys.path setup and data_proc import; Claude Sonnet 5 (Anthropic)
+@modified:  2026-11-11 — FIGURE_TITLE: title of the figures ("auto" = "<label> — apparent resistivity & phase" as before; None / "" = none; text with {label}, {tag}; dict per quantity "ssq" / "det" / "avg"); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 from __future__ import annotations
@@ -73,6 +74,7 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
             sys.path.insert(0, str(_p))
 
 from data_proc import make_collection
+import util as utl
 
 # ---------------------------------------------------------------------------
 # Configuration
@@ -117,6 +119,12 @@ BIN_TOL_DEC = 0.1   # ±0.1 decade
 XLIM       = None #(1.e-3, 2.e+3)   # period axis limits [s]  (None = auto)
 YLIM_RHO   = None #(1.e+0, 1.e+4)   # rho axis limits [Ω·m]   (None = auto)
 YLIM_PHASE = (0., 90.)         # phase axis limits [°]    (None = auto)
+
+# Figure title: "auto" = "<label> — apparent resistivity & phase" (as before);
+# None, False or "" = no title; a string with the placeholders {label}, {tag}
+# (other braces are used as they stand); or a dict {"ssq": spec, "det": spec,
+# "avg": spec, "default": spec}
+FIGURE_TITLE = "auto"
 
 LEGEND_SITES = False    # True: all station names in legend; False: averages only
 
@@ -333,7 +341,11 @@ def _plot_invar(
 
     _fig_inch = (FIG_SIZE_CM[0] / 2.54, FIG_SIZE_CM[1] / 2.54)
     fig, (ax_rho, ax_phi) = plt.subplots(2, 1, figsize=_fig_inch, sharex=True)
-    fig.suptitle(f"{label} — apparent resistivity & phase", fontsize=11)
+    _sup = utl.resolve_title(
+        FIGURE_TITLE, tag, f"{label} — apparent resistivity & phase",
+        name="FIGURE_TITLE", label=label, tag=tag)
+    if _sup:
+        fig.suptitle(_sup, fontsize=11)
 
     # --- rho panel ---
     for i, (freq_s, rho_s, sta) in enumerate(zip(all_freqs, all_rho, stations)):

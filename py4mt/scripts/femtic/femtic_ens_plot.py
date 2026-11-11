@@ -406,6 +406,24 @@ Provenance
                 put the boreholes in the wrong tetrahedra. None leaves
                 femtic's default, False forces no swap. AI-generated; review
                 before production use.
+    2026-11-11  Claude Sonnet 5.5 (Anthropic)
+                Titles and colour bars in the form of all plot scripts.
+                New PLOT_TITLE ("auto" = the titles of before; None / False /
+                "" = no title; text with {label} {iter} {nrms} {desc}
+                {prefix} {key}; dict per kind of figure: "iter0", "best",
+                "npz" (member figure of a results file), the name of a
+                statistic, "boreholes", "heatmap", plus "default"),
+                PLOT_PANEL_TITLES, PLOT_CBAR_LOCATION (None = one colour bar
+                per panel as before; "right", "left", "top", "bottom" = one
+                joint bar), PLOT_CBAR_SHRINK, PLOT_CBAR_THICKNESS [cm]; passed
+                to fviz.plot_model_slices (and, titles, to
+                fviz.plot_borehole_logs). The heat-map figure (drawn by this
+                script): BOREHOLE_HEAT_TITLE, BOREHOLE_HEAT_PANEL_TITLES,
+                BOREHOLE_HEAT_CBAR_LOCATION (None = at the right as before),
+                BOREHOLE_HEAT_CBAR_SHRINK (0.6 as before),
+                BOREHOLE_HEAT_CBAR_THICKNESS [cm]. Needs the femtic_viz.py of
+                the same date. With the defaults the figures are unchanged.
+                AI-generated; review before production use.
 """
 
 import os
@@ -755,6 +773,31 @@ PLOT_LABEL_FONTSIZE = 8    # axis labels, panel titles, colourbar label
 #: Figure title (above the panels); None = PLOT_LABEL_FONTSIZE + 6.
 PLOT_TITLE_FONTSIZE = None
 
+#: Figure titles of the slice figures, the borehole-log figure and (unless
+#: BOREHOLE_HEAT_TITLE says otherwise) the heat-map figure.
+#:   "auto"            the titles of before ("<member> - best fit (iterN)", ...);
+#:   None, False or "" no title;
+#:   a string          used as given, for all figures. Placeholders (those a
+#:                     figure has; {key} is its kind): {label} member / run
+#:                     name, {iter} iteration, {nrms}, {desc} (statistic or
+#:                     source description), {prefix} (results-file prefix).
+#:                     Text with other braces is used as it stands;
+#:   a dict            one entry per kind of figure, {"iter0": spec,
+#:                     "best": spec, "npz": spec (member figure from a results
+#:                     file), "<statistic name>": spec, "boreholes": spec,
+#:                     "heatmap": spec, "default": spec}; "default" (else
+#:                     "auto") covers the kinds not listed.
+PLOT_TITLE = "auto"
+#: Panel titles of the slice figures ("Map  z = 1.0 km", ...): True = as
+#: before, False = none.
+PLOT_PANEL_TITLES = True
+#: Colour bars of the slice figures: None or "panel" = one next to every panel
+#: (as before); "right", "left", "top", "bottom" = ONE joint bar at that side
+#: of the panel grid.
+PLOT_CBAR_LOCATION = None
+PLOT_CBAR_SHRINK = 0.7       # joint bar: length / side of the panel grid
+PLOT_CBAR_THICKNESS = None   # joint bar: thickness in cm; None = automatic
+
 #: Decimal digits of the axis tick labels (depth, easting/northing and
 #: lat/lon share it).  None = fviz's own per-axis formatting, unchanged.
 PLOT_TICK_DECIMALS = None
@@ -1011,6 +1054,19 @@ BOREHOLE_HEAT_STYLE = {
 #: Panel size [width, height] in cm and number of panel columns.
 BOREHOLE_HEAT_PANEL_SIZE = [8.0, 16.0]
 BOREHOLE_HEAT_NCOLS = 3
+
+#: Figure title of the heat-map figure: "auto" = what PLOT_TITLE says for the
+#: key "heatmap" (its "auto": "Borehole heat maps: <dir> (N members ...)" as
+#: before); None, False or "" = none; a string with {dir}, {n} (members),
+#: {what} (source text); a dict {"heatmap": spec, "default": spec}.
+BOREHOLE_HEAT_TITLE = "auto"
+#: Panel titles (borehole name and position): True = as before, False = none.
+BOREHOLE_HEAT_PANEL_TITLES = True
+#: Colour bar: None or "right" = at the right of the panels (as before);
+#: "left", "top", "bottom" = at that side (horizontal for top / bottom).
+BOREHOLE_HEAT_CBAR_LOCATION = None
+BOREHOLE_HEAT_CBAR_SHRINK = 0.6
+BOREHOLE_HEAT_CBAR_THICKNESS = None    # cm; None = automatic
 
 #: True = also save the histograms (heat_<name>, heat_edges_<name>, depth_<name>,
 #: n_members) as an .npz next to BOREHOLE_HEATMAP_FILE (same name, extension
@@ -1848,8 +1904,9 @@ def _plot_borehole_heatmaps(groups, out_file, cs, norm, extend):
             ax.set_xlim(10.0 ** p["edges"][0], 10.0 ** p["edges"][-1])
             head = (f"{p['name']} - {_HM_SRC_LABEL[src]}" if multi
                     else p["name"])
-            ax.set_title(f"{head}\n{_hm_pos_str(p['x_m'], p['y_m'])}",
-                         fontsize=tick_fs - 2 if tick_fs > 2 else tick_fs)
+            if BOREHOLE_HEAT_PANEL_TITLES:
+                ax.set_title(f"{head}\n{_hm_pos_str(p['x_m'], p['y_m'])}",
+                             fontsize=tick_fs - 2 if tick_fs > 2 else tick_fs)
             ax.set_xlabel("resistivity (Ohm.m)", fontsize=label_fs)
             if k % ncols == 0:
                 ax.set_ylabel("depth (km)" if DEPTH_KM else "depth (m)",
@@ -1874,12 +1931,33 @@ def _plot_borehole_heatmaps(groups, out_file, cs, norm, extend):
     srcs = [s for s, _ in groups]
     what = (", converged and perturbed reference" if multi
             else ", perturbed reference" if srcs[0] == "perturbed" else "")
-    fig.suptitle(f"Borehole heat maps: {os.path.basename(os.path.normpath(ENSEMBLE_DIR))} "
-                 f"({len(model_list)} members{what})", fontsize=title_fs)
+    _hm_dir = os.path.basename(os.path.normpath(ENSEMBLE_DIR))
+    _hm_auto = f"Borehole heat maps: {_hm_dir} ({len(model_list)} members{what})"
+    _hm_spec = BOREHOLE_HEAT_TITLE
+    if isinstance(_hm_spec, str) and _hm_spec.strip().lower() == "auto":
+        _hm_spec = PLOT_TITLE      # then PLOT_TITLE decides (key "heatmap")
+    _hm_title = (fviz.resolve_title(
+        _hm_spec, "heatmap", _hm_auto, name="BOREHOLE_HEAT_TITLE",
+        dir=_hm_dir, n=len(model_list), what=what)
+        if fviz is not None else _hm_auto)
+    if _hm_title:
+        fig.suptitle(_hm_title, fontsize=title_fs)
     fig.tight_layout(rect=(0, 0, 1, 0.94 if not multi else 0.96))
-    cb = fig.colorbar(mesh, ax=used, location="right",
-                      fraction=0.03, pad=0.02, shrink=0.6,
-                      extend=extend)
+    _hm_loc = (fviz.check_cbar_location(BOREHOLE_HEAT_CBAR_LOCATION,
+                                        name="BOREHOLE_HEAT_CBAR_LOCATION")
+               if fviz is not None else None)
+    _hm_thick = (BOREHOLE_HEAT_CBAR_THICKNESS / 2.54
+                 if BOREHOLE_HEAT_CBAR_THICKNESS is not None else None)
+    if fviz is None or (_hm_loc is None and _hm_thick is None):
+        cb = fig.colorbar(mesh, ax=used, location="right",
+                          fraction=0.03, pad=0.02,
+                          shrink=BOREHOLE_HEAT_CBAR_SHRINK, extend=extend)
+    else:
+        cb = fviz.add_colorbar(
+            fig, mesh, used, location=_hm_loc or "right",
+            shrink=BOREHOLE_HEAT_CBAR_SHRINK, thickness=_hm_thick,
+            pad=(0.02 if _hm_loc in (None, "right") else None),
+            extend=extend)
     cb.set_label("fraction of ensemble members per bin"
                  if cs["norm"] == "fraction"
                  else "fraction of the per-depth maximum", fontsize=label_fs)
@@ -1887,7 +1965,8 @@ def _plot_borehole_heatmaps(groups, out_file, cs, norm, extend):
     if cs["scale"] == "log" and _hm_log_ticks(norm) is not None:
         from matplotlib import ticker
         cb.set_ticks(_hm_log_ticks(norm))
-        cb.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%g"))
+        (cb.ax.xaxis if _hm_loc in ("top", "bottom")
+         else cb.ax.yaxis).set_major_formatter(ticker.FormatStrFormatter("%g"))
         cb.ax.minorticks_off()
 
     if out_file:
@@ -2149,6 +2228,8 @@ def _plot_member_slice(
     stats_panel: bool = False,
     cbar_label: str | None = None,
     ref_clim: list | None = None,
+    title_key: str = "default",
+    title_fields: dict | None = None,
 ) -> None:
     """Call fviz.plot_model_slices once per _PLOT_FORMATS entry.
 
@@ -2205,10 +2286,18 @@ def _plot_member_slice(
     PLOT_VERT_EXAG (equal axes or a defined vertical exaggeration of the
     section panels), PLOT_FIGSIZE, PLOT_TICK_FONTSIZE, PLOT_LABEL_FONTSIZE,
     PLOT_TITLE_FONTSIZE, PLOT_TICK_DECIMALS and PLOT_AIR_COLOR.
+
+    ``figure_title`` is the automatic title; PLOT_TITLE (resolved with
+    ``title_key`` as the key of a dict and ``title_fields`` as placeholders)
+    may replace or remove it. PLOT_PANEL_TITLES and PLOT_CBAR_* are passed on.
     """
     if fviz is None:
         print("  plot_member_slice: femtic_viz not available — skipping.")
         return
+
+    figure_title = fviz.resolve_title(
+        PLOT_TITLE, title_key, figure_title, name="PLOT_TITLE",
+        **(title_fields or {}))
 
     _ref_kw = {}
     if with_reference and REF_FILE is not None:
@@ -2269,6 +2358,12 @@ def _plot_member_slice(
             nrms_annotation     = nrms_annotation,
             figure_title        = figure_title,
             figure_title_fontsize = PLOT_TITLE_FONTSIZE,
+            panel_titles        = bool(PLOT_PANEL_TITLES),
+            cbar_location       = PLOT_CBAR_LOCATION,
+            cbar_shrink         = PLOT_CBAR_SHRINK,
+            cbar_thickness      = (PLOT_CBAR_THICKNESS / 2.54
+                                   if PLOT_CBAR_THICKNESS is not None
+                                   else None),
             dpi                 = PLOT_DPI,
             out                 = OUT,
             **_ref_kw,
@@ -2719,6 +2814,8 @@ if PER_MEMBER_PLOT and RESULTS_NPZ is None:
                 clim            = PLOT_CLIM_ITER0,
                 pdf_catalog     = _pdf_catalog if _catalog_iter0 else None,
                 with_reference  = REF_SLICES == "slices",
+                title_key       = "iter0",
+                title_fields    = dict(label=_label, iter=0),
             )
             if _catalog_iter0:
                 _n_catalog_pages += 1
@@ -2737,6 +2834,9 @@ if PER_MEMBER_PLOT and RESULTS_NPZ is None:
                 nrms_annotation = dict(nrms=_m["nrms"]),
                 pdf_catalog     = _pdf_catalog if _catalog_best else None,
                 with_reference  = REF_SLICES in ("slices", "best"),
+                title_key       = "best",
+                title_fields    = dict(label=_label, iter=_m["numit"],
+                                       nrms=f"{_m['nrms']:.4f}"),
             )
             if _catalog_best:
                 _n_catalog_pages += 1
@@ -2814,6 +2914,9 @@ if RESULTS_NPZ is not None:
                 pdf_catalog     = _pdf_catalog,
                 with_reference  = REF_SLICES in ("slices", "best"),
                 stats_panel     = True,
+                title_key       = "npz",
+                title_fields    = dict(label=_label, iter=_m["numit"],
+                                       nrms=f"{_m['nrms']:.4f}"),
             )
             gc.collect()
     finally:
@@ -2851,6 +2954,8 @@ if RESULTS_NPZ is not None:
             stats_panel     = True,
             cbar_label      = _cbl,
             ref_clim        = PLOT_CLIM_BEST,
+            title_key       = _key,
+            title_fields    = dict(prefix=_res["prefix"], desc=_desc),
         )
         gc.collect()
     print("\nNPZ mode: figures done.")
@@ -2899,7 +3004,10 @@ if PLOT_BOREHOLE:
                 shared         = BOREHOLE_SHARED,
                 tick_fontsize  = PLOT_TICK_FONTSIZE,
                 label_fontsize = PLOT_LABEL_FONTSIZE,
-                figure_title   = f"Borehole logs: {_bh_label}",
+                figure_title   = fviz.resolve_title(
+                    PLOT_TITLE, "boreholes", f"Borehole logs: {_bh_label}",
+                    name="PLOT_TITLE", label=_bh_label, desc=_bh_desc),
+                panel_titles   = bool(PLOT_PANEL_TITLES),
                 reference_file  = REF_FILE if REF_BOREHOLE else None,
                 reference_label = REF_LABEL if REF_LABEL else None,
                 npz_file       = (os.path.splitext(BOREHOLE_FILE)[0] + ".npz"

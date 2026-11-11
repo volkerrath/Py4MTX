@@ -55,6 +55,7 @@ One PDF per inversion directory:
 
 - `WORK_DIR` — root directory.
 - `PLOT_NAME` — base name for the plot title and filename.
+- `PLOT_TITLE` — figure title (added 2026-11-11, Claude Sonnet 5.5 (Anthropic)): `"auto"` (default) = `PLOT_NAME` and the first alpha, as before; `None`, `False`, `""` = no title; text with `{plot_name}`, `{alpha}`, `{what}`, `{run}`, `{dir}`; dict `{run directory name: spec, "default": spec}`.
 - `PLOT_WHAT` — `'misfit'`, `'rms'`, or `'rough'`.
 - `SEARCH_STRNG` — glob pattern.
 - `CNV_FILE` — name of the convergence file (or list of candidates).

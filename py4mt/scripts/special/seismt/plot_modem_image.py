@@ -375,6 +375,11 @@ COLORBAR_NTICKS     = 7 # None = matplotlib picks automatically, sized
 AXIS_LABEL_SIZE = 12   # pt — "Easting (km)" / "Northing (km)" / "Depth (km)" etc.
 AXIS_TICK_SIZE  = 12   # pt — tick annotations on both axes
 AXIS_TITLE_SIZE = 12   # pt — the "log10ρ at ..." / "... — profile_CD" title
+# Figure titles: "auto" = the titles of before; None, False or "" = none; a
+# string with the placeholders {section} (vertical sections) or {depth} (depth
+# maps); other braces are used as they stand; or a dict {"section": spec,
+# "map": spec, "default": spec}
+FIGURE_TITLE = "auto"
 
 # =====================================================================
 # MAP AXES UNITS
@@ -1293,7 +1298,10 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
                 color="black",
                 clip_on=False, zorder=20)
 
-    ax.set_title(f"log$_{{10}}$ρ — {name}", fontsize=AXIS_TITLE_SIZE)
+    _tt = tomomt.resolve_title(FIGURE_TITLE, "section", f"log$_{{10}}$ρ — {name}",
+                               name="FIGURE_TITLE", section=name)
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
 
     finish_section_colorbar(cax, im, cbar_label)
     draw_annotation(ax)
@@ -1678,7 +1686,10 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
     if ISO_LINES_MAP:
         draw_iso_contours(ax, vx, vy, vz, ISO_LEVELS_MAP)
     draw_features(ax, eq_e, eq_n)
-    ax.set_title(f"log$_{{10}}$ρ at {label}", fontsize=AXIS_TITLE_SIZE)
+    _tt = tomomt.resolve_title(FIGURE_TITLE, "map", f"log$_{{10}}$ρ at {label}",
+                               name="FIGURE_TITLE", depth=label)
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
     finish_panel_colorbar(cax, im, "log$_{10}$(ρ / Ω·m)")
     if AXES_UNITS == "latlon":
         add_latlon_ticks(ax)

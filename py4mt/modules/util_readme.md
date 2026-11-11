@@ -181,6 +181,39 @@ run_queue(["./init.sh", "python process.py --site A01", "./cleanup.sh"])
 
 ---
 
+## Plot title and colour bar settings
+
+Added 2026-11-11 (Claude Sonnet 5.5, AI-generated, review before use). The
+settings of the plot scripts for titles and colour bar position; the same
+logic as `femtic_viz.resolve_title` / `check_cbar_location`, repeated here so
+that the scripts that do not use `femtic_viz` (`scripts/general`,
+`scripts/modem`) need no extra module.
+
+- `resolve_title(spec, key=None, auto="", *, name="TITLE", **fields)` -- title
+  text from a title setting. `"auto"` / `True` -> `auto`; `None` / `False` /
+  `""` -> `""` (no title); a string -> used as given with `{key}` and the
+  `fields` filled in (`str.format`; text that cannot be filled in is used as
+  it stands and a note is printed); a dict `{key: spec, "default": spec}` ->
+  the entry of `key` (as given, then `str(key)`), else `"default"`, else
+  `"auto"`. The keyword names `spec`, `key`, `auto`, `name` cannot be used as
+  placeholders.
+- `check_cbar_location(location, *, name="cbar_location")` -- `None`, `""`,
+  `"panel"`, `"default"` -> `None` (the plot's own placement); `"right"`,
+  `"left"`, `"top"`, `"bottom"` -> that string; anything else raises
+  `ValueError`.
+
+```python
+import util as utl
+
+utl.resolve_title("MT {station}", "default", "auto text", station="site01")  # 'MT site01'
+utl.resolve_title({"curves": None, "default": "auto"}, "curves", "x")        # ''
+utl.check_cbar_location("Bottom")                                             # 'bottom'
+```
+
+Test: `test_util_titles.py` (16 tests).
+
+---
+
 ## FT sign-convention correction (`ft_convention.py`)
 
 A companion module — **not part of `util.py`** — for correcting the

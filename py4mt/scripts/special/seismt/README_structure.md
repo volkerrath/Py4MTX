@@ -230,6 +230,23 @@ project data): `cos²θ + sin²θ = 1` to ~1e-16, and
 algebraic identities they're derived from. `ast.parse` and a
 definition-before-use scan were also run on the delivered file.
 
+## Figure titles (`FIGURE_TITLE`)
+
+Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use). `structure.py` has a new setting `FIGURE_TITLE`; the default `"auto"` gives the titles of before.
+
+| Value | Title |
+|---|---|
+| `"auto"` or `True` | the titles of before |
+| `None`, `False`, `""` | no title |
+| a string | used as given; `{group}`, `{title}` (name of the quantity), `{suffix}` (site and interpolation tag), `{depth}` (km; maps) or `{section}` (vertical sections), and `{key}` (the kind of figure) are filled in (`str.format`); text with other braces (or an unknown name) is used as it stands and a note is printed |
+| a dict | `{"map": spec, "section": spec, "default": spec}` with `"default"` for the rest (else `"auto"`) |
+
+The logic is `tomomt.resolve_title` (the same as `femtic_viz.resolve_title` and `util.resolve_title`).
+
+### Colour bar
+
+New `CBAR_LOCATION` (`None` = at the right as before, or `"right"`, `"left"`, `"top"`, `"bottom"`) and `CBAR_SHRINK` (`0.85`, as before): length of the bar as a fraction of the axes.
+
 ## Output
 
 Files named

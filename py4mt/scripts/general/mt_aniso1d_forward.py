@@ -10,6 +10,11 @@ text files, and generates diagnostic plots.
 @author:    Volker Rath (DIAS)
 @project:   py4mt — Python for Magnetotellurics
 @created:   2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
+@modified:  2026-11-11 -- FIGURE_TITLE / PANEL_TITLES: titles of the three
+            figures ("auto" = PLTARGS["suptitle"] as before; None / "" = none;
+            text; dict per figure "imped" / "rhophas" / "phstens"), and the
+            panel titles can be switched off; Claude Sonnet 5.5 (Anthropic),
+            AI-generated, review before use
 """
 
 import os
@@ -64,6 +69,15 @@ RHO_PLT = True
 PHT_OUT = True
 PHT_FILE = WORK_DIR + "phstens.dat"
 PHT_PLT = True
+
+# --- titles ---
+FIGURE_TITLE = "auto"   # figure title: "auto" = PLTARGS["suptitle"] as before;
+                        # None, False or "" = none; a string ({title} = the
+                        # automatic title, {key} = "imped", "rhophas" or
+                        # "phstens"; other braces are used as they stand); or
+                        # a dict {"imped": spec, "rhophas": spec, "phstens":
+                        # spec, "default": spec}
+PANEL_TITLES = True     # False = no titles of the panels
 
 if RHO_PLT or IMP_PLT or PHT_PLT:
     PLOT_FORMAT = [".png"]
@@ -176,7 +190,10 @@ if IMP_PLT:
     Imp = interlaced
     PLTARGS["pltsize"] = [16., 16.]
     fig, ax = plt.subplots(2, 2, figsize=PLTARGS["pltsize"])
-    fig.suptitle(PLTARGS["suptitle"], fontsize=PLTARGS["fontsizes"][2])
+    _sup = utl.resolve_title(FIGURE_TITLE, "imped", PLTARGS["suptitle"],
+                             name="FIGURE_TITLE", title=PLTARGS["suptitle"])
+    if _sup:
+        fig.suptitle(_sup, fontsize=PLTARGS["fontsizes"][2])
 
     PLTARGS["yscale"] = "linear"
     PLTARGS["ylabel"] = r"impedance [$\Omega$]"
@@ -190,7 +207,7 @@ if IMP_PLT:
     ]):
         data[:, 1] = Imp[:, col_re]
         data[:, 2] = Imp[:, col_im]
-        PLTARGS["title"] = title
+        PLTARGS["title"] = title if PANEL_TITLES else ""
         viz.plot_impedance(thisaxis=ax[idx // 2, idx % 2], data=data, **PLTARGS)
 
     for fmt in PLOT_FORMAT:
@@ -218,14 +235,17 @@ if RHO_OUT:
 if RHO_PLT:
     PLTARGS["pltsize"] = [16., 16.]
     fig, ax = plt.subplots(2, 2, figsize=PLTARGS["pltsize"])
-    fig.suptitle(PLTARGS["suptitle"], fontsize=PLTARGS["fontsizes"][2])
+    _sup = utl.resolve_title(FIGURE_TITLE, "rhophas", PLTARGS["suptitle"],
+                             name="FIGURE_TITLE", title=PLTARGS["suptitle"])
+    if _sup:
+        fig.suptitle(_sup, fontsize=PLTARGS["fontsizes"][2])
 
     data = np.zeros((len(PERIODS), 3))
     data[:, 0] = PERIODS[:]
 
     data[:, 1] = rhoa[:, 1]
     data[:, 2] = rhoa[:, 2]
-    PLTARGS["title"] = "Rho xy/yx"
+    PLTARGS["title"] = "Rho xy/yx" if PANEL_TITLES else ""
     PLTARGS["legend"] = [r"$\rho_{a, xy}$", r"$\rho_{a, yx}$"]
     PLTARGS["yscale"] = "log"
     PLTARGS["ylimits"] = []
@@ -234,7 +254,7 @@ if RHO_PLT:
 
     data[:, 1] = phas[:, 1] + 90.
     data[:, 2] = phas[:, 2] - 90.
-    PLTARGS["title"] = "Phas xy/yx"
+    PLTARGS["title"] = "Phas xy/yx" if PANEL_TITLES else ""
     PLTARGS["legend"] = [r"$\phi_{xy}$", r"$\phi_{yx}$"]
     PLTARGS["yscale"] = "linear"
     PLTARGS["ylimits"] = [-180., 180.]
@@ -243,7 +263,7 @@ if RHO_PLT:
 
     data[:, 1] = rhoa[:, 0]
     data[:, 2] = rhoa[:, 3]
-    PLTARGS["title"] = "Rho xx/yy"
+    PLTARGS["title"] = "Rho xx/yy" if PANEL_TITLES else ""
     PLTARGS["legend"] = [r"$\rho_{a, xx}$", r"$\rho_{a, yy}$"]
     PLTARGS["yscale"] = "log"
     PLTARGS["ylimits"] = []
@@ -252,7 +272,7 @@ if RHO_PLT:
 
     data[:, 1] = phas[:, 0] - 90.
     data[:, 2] = phas[:, 3] + 90.
-    PLTARGS["title"] = "Phas xx/yy"
+    PLTARGS["title"] = "Phas xx/yy" if PANEL_TITLES else ""
     PLTARGS["legend"] = [r"$\phi_{xx}$", r"$\phi_{yy}$"]
     PLTARGS["yscale"] = "linear"
     PLTARGS["ylimits"] = [-180., 180.]
@@ -277,14 +297,17 @@ if PHT_OUT:
 if PHT_PLT:
     PLTARGS["pltsize"] = [16., 8.]
     fig, ax = plt.subplots(1, 2, figsize=PLTARGS["pltsize"])
-    fig.suptitle(PLTARGS["suptitle"], fontsize=PLTARGS["fontsizes"][2])
+    _sup = utl.resolve_title(FIGURE_TITLE, "phstens", PLTARGS["suptitle"],
+                             name="FIGURE_TITLE", title=PLTARGS["suptitle"])
+    if _sup:
+        fig.suptitle(_sup, fontsize=PLTARGS["fontsizes"][2])
 
     data = np.zeros((len(PERIODS), 3))
     data[:, 0] = PERIODS[:]
 
     data[:, 1] = P[:, 1]
     data[:, 2] = P[:, 2]
-    PLTARGS["title"] = r"Phase Tensor xy/yx"
+    PLTARGS["title"] = r"Phase Tensor xy/yx" if PANEL_TITLES else ""
     PLTARGS["legend"] = [r"$\Phi_{xy}$", r"$\Phi_{yx}$"]
     PLTARGS["yscale"] = "linear"
     PLTARGS["ylimits"] = []
@@ -293,7 +316,7 @@ if PHT_PLT:
 
     data[:, 1] = P[:, 0]
     data[:, 2] = P[:, 3]
-    PLTARGS["title"] = r"Phase Tensor xx/yy"
+    PLTARGS["title"] = r"Phase Tensor xx/yy" if PANEL_TITLES else ""
     PLTARGS["legend"] = [r"$\Phi_{xx}$", r"$\Phi_{yy}$"]
     PLTARGS["yscale"] = "linear"
     PLTARGS["ylimits"] = []

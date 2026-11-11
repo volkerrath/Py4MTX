@@ -310,6 +310,18 @@ SHOW_PLOTS = False
 # through main() first.
 INTERP_TAG = "-"
 
+# Figure titles: "auto" = the titles of before; None, False or "" = none; a
+# string with the placeholders {group}, {title} (name of the quantity),
+# {suffix} (site and interpolation tag), {depth} (km; maps) or {section}
+# (vertical sections); other braces are used as they stand; or a dict
+# {"map": spec, "section": spec, "default": spec}
+FIGURE_TITLE = "auto"
+
+# Colour bar: CBAR_LOCATION None = at the right as before, or "right", "left",
+# "top", "bottom"; CBAR_SHRINK = its length as a fraction of the axes
+CBAR_LOCATION = None
+CBAR_SHRINK = 0.85
+
 
 # ===========================================================================
 # Interpolation-tag derivation (mirrors plot_joint.py's _derive_interp_tag)
@@ -655,6 +667,20 @@ def _quantity_spec(key):
 # Plotting -- depth-slice maps
 # ===========================================================================
 
+def _cbar_kwargs(shrink, **kw):
+    """Keywords of fig.colorbar: ``shrink``, any ``kw``, and ``location`` if
+    CBAR_LOCATION is set (None = matplotlib's default, the right side)."""
+    kw = dict(shrink=shrink, **kw)
+    if CBAR_LOCATION is not None and str(CBAR_LOCATION).strip() != "":
+        loc = str(CBAR_LOCATION).strip().lower()
+        if loc not in ("right", "left", "top", "bottom"):
+            raise ValueError(
+                f"CBAR_LOCATION must be None, 'right', 'left', 'top' or "
+                f"'bottom', got {CBAR_LOCATION!r}.")
+        kw["location"] = loc
+    return kw
+
+
 def plot_map(cg, depth_km, group_label, quantity_key):
     """
     Depth-slice map of one quantity for one field group.
@@ -701,9 +727,15 @@ def plot_map(cg, depth_km, group_label, quantity_key):
     ax.set_ylabel("Northing (km)")
 
     suffix = ", ".join(_title_suffix())
-    ax.set_title(f"{group_label}: {spec['title']}\nz = {depth[iz]:.2f} km ({suffix})")
+    _tt = tomomt.resolve_title(
+        FIGURE_TITLE, "map",
+        f"{group_label}: {spec['title']}\nz = {depth[iz]:.2f} km ({suffix})",
+        name="FIGURE_TITLE", group=group_label, title=spec["title"],
+        suffix=suffix, depth=f"{depth[iz]:.2f}")
+    if _tt:
+        ax.set_title(_tt)
 
-    cb = fig.colorbar(im, ax=ax, shrink=0.85)
+    cb = fig.colorbar(im, ax=ax, **_cbar_kwargs(CBAR_SHRINK))
     cb.set_label(spec["cbar"])
 
     fig.tight_layout()
@@ -782,9 +814,15 @@ def plot_section(cg, vslice, group_label, quantity_key):
            ha="center", va="bottom", zorder=21)
 
     suffix = ", ".join(_title_suffix())
-    ax.set_title(f"{group_label}: {spec['title']}\nsection: {name} ({suffix})")
+    _tt = tomomt.resolve_title(
+        FIGURE_TITLE, "section",
+        f"{group_label}: {spec['title']}\nsection: {name} ({suffix})",
+        name="FIGURE_TITLE", group=group_label, title=spec["title"],
+        suffix=suffix, section=name)
+    if _tt:
+        ax.set_title(_tt)
 
-    cb = fig.colorbar(im, ax=ax, shrink=0.85)
+    cb = fig.colorbar(im, ax=ax, **_cbar_kwargs(CBAR_SHRINK))
     cb.set_label(spec["cbar"])
 
     fig.tight_layout()

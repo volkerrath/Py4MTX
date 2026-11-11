@@ -61,6 +61,7 @@ used from each file.
 | `WORK_DIR` | `str` | — | Root directory containing the per-α run sub-directories |
 | `PLOT_NAME` | `str` | — | Output file base path (no extension); title derived from this |
 | `PLOT_WHAT` | `str` | `"nrms"` | x-axis quantity: `"nrms"` for normalised RMS, anything else for raw misfit |
+| `PLOT_TITLE` | `str`, `None`, `False` or `dict` | as set in the script | Figure title: `"auto"` = `L-curve`; `None`, `False`, `""` = none; text with `{what}` (= `PLOT_WHAT`), `{key}`; dict `{"default": spec}`. Via `fviz.resolve_title` (needs the `femtic_viz.py` of 2026-11-11). A plain string works as before |
 | `PLOT_LOG_X` | `bool` | `False` | Apply log₁₀ scale to the x-axis (misfit / nRMS) |
 | `PLOT_LOG_Y` | `bool` | `False` | Apply log₁₀ scale to the y-axis (roughness) |
 | `PLOT_XLIM` | `list` or `None` | `None` | x-axis limits `[xmin, xmax]`; `None` = matplotlib auto |
@@ -150,3 +151,4 @@ offset tuple `ann_offset` in the script if crowding still occurs.
 | 2026-09-07 | Claude Sonnet 5 (Anthropic) | Removed `DISTORTION` and the raw-token-count / index-based column lookup (8 vs 10 columns) it drove: that heuristic silently matched only those two specific `femtic.cnv` layouts and misread nRMS (e.g. reading `Distortion` or `Misfit` instead of `RMS`) for any other column count. Now uses `fem.read_cnv()`, which reads column positions from each file's own header row (case-insensitive substring match), same fix already applied to `femtic_ens_post.py`'s `get_nrms()` and (2026-09-07) `femtic_ens_plot.py` / `femtic_ens_repair.py`. |
 | 2026-10-08 | Claude Sonnet 5.5 (Anthropic) | Convergence file name configurable via `CNV_FILE` (default `femtic.cnv`), passed to `fem.read_cnv(..., filename=)`. AI-generated; review before production use. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_lcurve_plot_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | `PLOT_TITLE` takes the forms of the title settings of all plot scripts (`"auto"` = `L-curve`, none, text with `{what}`, dict). A plain string works as before. |

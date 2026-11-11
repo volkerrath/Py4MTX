@@ -110,6 +110,21 @@ Removed (2026-10-21): `MOD_MU`, `MOD_PDF` (never passed on; implied alpha = 1),
 
 ---
 
+### Titles and colour bars of the slice figures
+
+Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use); the forms of the title settings (`"auto"`, `None` / `False` / `""`, text with `{placeholders}`, dict per figure) are described in `femtic_viz_readme.md`, *Titles and colour bars*. Defaults give the figures of before. The joint bars need the `femtic_viz.py` of the same date.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MOD_TITLE` | `"auto"` | Title of the QC and model slice figures. `"auto"` = the model file name (as before); `None`, `False`, `""` = none; text with `{label}` (member directory), `{index}` (member number), `{file}` (model file), `{key}` (`"qc"` or `"model"`); dict `{"qc": spec, "model": spec, 0: spec, "default": spec}` |
+| `MOD_PANEL_TITLES` | `True` | `False` = no panel titles (`Map  z = 1.0 km`, ...) |
+| `MOD_CBAR_LOCATION` | `None` | `None` / `"panel"` = one colour bar per panel (as before); `"right"`, `"left"`, `"top"`, `"bottom"` = ONE joint bar for the panel grid |
+| `MOD_CBAR_SHRINK`, `MOD_CBAR_THICKNESS` | `0.7`, `None` | Joint bar: length as a fraction of the side of the panel grid; thickness in cm (`None` = automatic) |
+| `ENS_TITLE` | `"auto"` | Title of the joint ensemble figure (and of the per-member figures with `ENS_PER_MEMBER`): `"auto"` = `Ensemble (N members)` / `Ensemble member i -- file`; text with `{n_members}` (`{index}`, `{label}`, `{file}` for the member figures); dict `{"joint": spec, 0: spec, "default": spec}` |
+| `ENS_PANEL_TITLES`, `ENS_CBAR_LOCATION`, `ENS_CBAR_SHRINK`, `ENS_CBAR_THICKNESS` | `True`, `None`, `0.7`, `None` | As the `MOD_*` settings, for the ensemble figure: with a position there are joint bars, one for log10(rho) and one for the std row |
+
+---
+
 ## Slice specification
 
 All slice dicts use `kind` (not `type`) as the panel-type key. Positions in
@@ -202,3 +217,4 @@ The same rule applies to `p1` / `p2` of `kind="profile"` (z optional).
   and `fem.resolve_slice_positions()` on the changed specs (femtic.py with a
   stubbed `ensembles`); the full script was not run here (no site/mesh data).
   AI-generated; review before production use.
+- **2026-11-11 (Claude Sonnet 5.5 (Anthropic)):** Titles and colour bars of the slice figures: `MOD_TITLE` / `ENS_TITLE`, `MOD_PANEL_TITLES` / `ENS_PANEL_TITLES`, `MOD_CBAR_LOCATION` / `ENS_CBAR_LOCATION`, `MOD_CBAR_SHRINK` / `ENS_CBAR_SHRINK`, `MOD_CBAR_THICKNESS` / `ENS_CBAR_THICKNESS` (see *Titles and colour bars of the slice figures* above). `_plot_member_slices()` got the arguments `kind` and `index` for the title placeholders. Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. Not run end to end (no site / mesh data); the changed calls were compile-checked. AI-generated; review before production use.

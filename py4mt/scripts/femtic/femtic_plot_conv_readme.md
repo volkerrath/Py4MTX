@@ -100,7 +100,7 @@ sequence)"`).
 
 | Variable | Default | Description |
 |---|---|---|
-| `PLOT_TITLE` | `"FEMTIC convergence history"` | Figure super-title |
+| `PLOT_TITLE` | `"FEMTIC convergence history"` | Figure super-title. `"auto"` = the same text; `None`, `False`, `""` = none; text with `{n_runs}`, `{fields}` (the plotted fields, joined by `, `), `{key}`; dict `{"default": spec}` (via `fviz.resolve_title`) |
 | `PLOT_XLABEL` | `"Row index (Iter# / Retrial# sequence)"` | x-axis label (bottom panel only) |
 | `FONTSIZE` | `10` | Axis label / tick font size |
 | `LEGEND_FONTSIZE` | `8` | Legend and threshold-label font size |
@@ -196,5 +196,6 @@ python femtic_plot_conv.py
 |---|---|---|
 | 2026-09-07 | Claude Sonnet 5 (Anthropic) | Created. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_plot_conv_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | `PLOT_TITLE` takes the forms of the title settings of all plot scripts (`"auto"` = the former text, which is still the default). The figure with the default is unchanged. Needs the `femtic_viz.py` of the same date. |
 
 Author: Volker Rath (DIAS)

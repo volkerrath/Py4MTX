@@ -20,6 +20,7 @@ Panel contents depend on the parameterisation used by the sampler:
 @author:    Volker Rath (DIAS)
 @project:   py4mt — Python for Magnetotellurics
 @created:   2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
+@modified:  2026-11-11 -- FIGURE_TITLE: title of the figures ("auto" = station | domain:set as before; None / "" = none; text with {station}, {domain}, {param_set}, {key}); PANEL_TITLES is not needed (the panels of mv.plot_paramset_threepanel are labelled by their axes); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 from __future__ import annotations
@@ -55,6 +56,12 @@ from version import versionstrg
 # Use "auto" to pick up the parametrisation actually used by the sampler.
 PARAM_DOMAIN = "auto"  # "auto", "rho" or "sigma"
 PARAM_SET = "auto"     # "auto", "minmax" or "max_anifac"
+
+# Figure title: "auto" = "<station> | <domain>:<set>" (as before); None, False
+# or "" = no title; a string with the placeholders {station}, {domain},
+# {param_set} (other braces are used as they stand); or a dict
+# {"<station>": spec, "default": spec}
+FIGURE_TITLE = "auto"
 
 # Uncertainty bands (used when idata exists). Can be given either as
 # quantiles (0..1) or percentiles (0..100).
@@ -208,7 +215,12 @@ def main() -> int:
             ),
         )
 
-        fig.suptitle(f"{station} | {param_domain}:{param_set}")
+        _sup = utl.resolve_title(
+            FIGURE_TITLE, station, f"{station} | {param_domain}:{param_set}",
+            name="FIGURE_TITLE", station=station, domain=param_domain,
+            param_set=param_set)
+        if _sup:
+            fig.suptitle(_sup)
         fig.tight_layout()
 
         for fmt in PLOT_FORMATS:

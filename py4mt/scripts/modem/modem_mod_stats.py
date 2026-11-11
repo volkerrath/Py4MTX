@@ -12,6 +12,9 @@ Percentile reference (normal distribution):
 
 @author: vrath, sbyrd
 Cleanup: 4 Mar 2026 by Claude (Anthropic)
+2026-11-11: HIST_TITLE: title of the histograms ("auto" = the model file name
+    as before; None / "" = none; text with {model}; dict per model file name);
+    Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 import os
@@ -50,6 +53,10 @@ BLANK = np.nan
 RHOAIR = 17.0  # log10(rhoair)
 
 MOD_HIST = True
+# Title of the histograms: "auto" = the model file name (as before); None,
+# False or "" = no title; a string with the placeholder {model} (other braces
+# are used as they stand); or a dict {"<model name>": spec, "default": spec}
+HIST_TITLE = "auto"
 PLOT_FORMAT = [".png", ".pdf"]
 
 WORK_DIR = "/home/vrath/work/MT_Data/Sabancaya/Saba_best/SABA13a/"
@@ -116,7 +123,11 @@ for imod, f in enumerate(MODELS):
         plt.xlabel(r"log resistivity $\Omega m$")
         plt.ylabel(r"counts")
         plt.grid("on")
-        plt.title(os.path.splitext(os.path.basename(f))[0])
+        _mname = os.path.splitext(os.path.basename(f))[0]
+        _tit = utl.resolve_title(HIST_TITLE, _mname, _mname,
+                                 name="HIST_TITLE", model=_mname)
+        if _tit:
+            plt.title(_tit)
         plt.tight_layout()
 
         pname = os.path.splitext(f)[0]

@@ -156,6 +156,21 @@ e.g. `rho at 5.0 km [site_a, krig]` or `|∇vp| — profile AA' [site_b, rbf]`
 — so a figure is self-identifying even once separated from its
 filename (e.g. pasted into a slide or PDF report).
 
+## Figure titles (`FIGURE_TITLE`)
+
+Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use). `plot_joint.py` has a new setting `FIGURE_TITLE`; the default `"auto"` gives the titles of before.
+
+| Value | Title |
+|---|---|
+| `"auto"` or `True` | the titles of before |
+| `None`, `False`, `""` | no title |
+| a string | used as given; `{title}` (the automatic title), `{var}` (the field), `{section}` (name of the vertical slice; sections only), and `{key}` (the kind of figure) are filled in (`str.format`); text with other braces (or an unknown name) is used as it stands and a note is printed |
+| a dict | `{"section": spec, "map": spec, "default": spec}` with `"default"` for the rest (else `"auto"`) |
+
+The logic is `tomomt.resolve_title` (the same as `femtic_viz.resolve_title` and `util.resolve_title`). The panel-title suffix `[SITE_PREFIX, INTERP_TAG]` is part of the automatic title; with another setting it is only there if the text has it.
+
+The position of the colour bar is the existing `COLORBAR_POSITION` (`"right"`, `"left"`, `"bottom"`, `"top"`); blanks around the value are now ignored (`tomomt.build_panel_figure`, `finish_panel_colorbar`).
+
 ## Dependencies
 
 `numpy`, `xarray`, `pandas`, `matplotlib`, `scipy`

@@ -754,6 +754,33 @@ Provenance:
                         _slice_number, _slice_limit, _line_style,
                         _clip_polyline_to_slab, _prepare_polylines.
                         AI-generated code -- review before production use.
+
+    2026-11-11b Claude Sonnet 5.5 (Anthropic)
+                        Shared title / colour bar helpers for all plot
+                        scripts: check_cbar_location(), resolve_title()
+                        ("auto" / none / text with {placeholders} / dict per
+                        figure; the former _title_for() of
+                        femtic_ens_plot_slices.py) and add_colorbar()
+                        (fig.colorbar with location right / left / top /
+                        bottom, shrink, thickness; location=None is exactly
+                        fig.colorbar(mappable, ax=ax)). Used by the plot
+                        scripts from this date.
+                        plot_ensemble_slices: new keyword arguments
+                        figure_title (None/"auto" = as before, False/"" =
+                        none, text with {n_members} / {index} / {file} /
+                        {label}, dict per figure), figure_title_fontsize,
+                        panel_titles, cbar_location (None/"panel" = one bar
+                        per panel as before; right/left/top/bottom = joint
+                        bars: one for log10(rho), one for the std row),
+                        cbar_shrink, cbar_thickness; new private helpers
+                        _cbar_tracks, _joint_cbar_geometry,
+                        _place_joint_colorbars. Defaults give pixel-identical
+                        figures. Bug fix: the colormap lookup of
+                        plot_ensemble_slices used matplotlib.cm.colormaps /
+                        .get_cmap, which Matplotlib 3.11 no longer has (the
+                        function raised AttributeError there); now
+                        plt.get_cmap(name).copy().
+                        AI-generated code -- review before production use.
     """
 
 from __future__ import annotations
@@ -4404,6 +4431,166 @@ def _prepare_polylines(
     return out
 
 
+# =============================================================================
+# Shared helpers: figure titles ("auto" / none / text / per-figure dict) and
+# colour bars at any side of a plot
+# =============================================================================
+_CBAR_SIDES = ("right", "left", "top", "bottom")
+
+
+def check_cbar_location(location, *, name: str = "cbar_location"):
+    """Normalise a colour-bar location setting.
+
+    ``None``, ``""``, ``"panel"`` or ``"default"`` -> ``None`` (the plot's own
+    placement, i.e. what the script did before the setting existed); ``"right"``,
+    ``"left"``, ``"top"`` or ``"bottom"`` (any case, surrounding blanks
+    ignored) -> that string. Anything else raises ``ValueError``.
+
+    Added 2026-11-11, Claude Sonnet 5.5 (Anthropic).
+    """
+    if location is None or location is False:
+        return None
+    loc = str(location).strip().lower()
+    if loc in ("", "panel", "default", "none"):
+        return None
+    if loc not in _CBAR_SIDES:
+        raise ValueError(
+            f"{name} must be None, 'panel', 'right', 'left', 'top' or "
+            f"'bottom', got {location!r}.")
+    return loc
+
+
+def resolve_title(spec, key=None, auto="", *, name: str = "TITLE", **fields):
+    """Figure title from a title setting: ``"auto"``, none, text or a dict.
+
+    ``spec`` is the setting of the script (the same forms everywhere):
+
+    ``"auto"`` (or ``True``)
+        the script's automatic title, passed as ``auto``;
+    ``None``, ``False`` or ``""``
+        no title (returns ``""``);
+    a string
+        used as given, with its ``{placeholders}`` filled in from ``key``
+        (``{key}``) and the keyword ``fields`` of the call (``{label}``,
+        ``{iter}``, ``{nrms}``, ... as offered by the script; format
+        specifiers such as ``{nrms:.3f}`` work). Text whose braces cannot
+        be filled in (unknown name, stray brace) is used as it stands and a
+        note is printed;
+    a dict
+        one entry per figure, ``{key: value, "default": value}`` with the
+        values of this list; ``key`` selects the entry, ``"default"`` (else
+        ``"auto"``) covers the keys not listed (a key is also found by its
+        text form, so ``0`` matches ``"0"``).
+
+    Returns ``auto`` for the automatic title (so a caller may pass ``None``
+    meaning "the plot function's own default"), ``""`` for no title, else
+    the text.
+
+    Added 2026-11-11, Claude Sonnet 5.5 (Anthropic); the logic is the former
+    ``_title_for()`` of femtic_ens_plot_slices.py.
+    """
+    if isinstance(spec, dict):
+        # key as given, else its text form (0 -> "0"), else "default"
+        if key in spec:
+            spec = spec[key]
+        elif key is not None and str(key) in spec:
+            spec = spec[str(key)]
+        else:
+            spec = spec.get("default", "auto")
+    if spec is None or spec is False:
+        return ""
+    if spec is True:
+        return auto
+    text = str(spec)
+    if text.strip() == "":
+        return ""
+    if text.strip().lower() == "auto":
+        return auto
+    try:
+        return text.format(key=key, **fields)
+    except (KeyError, IndexError, ValueError, AttributeError) as exc:
+        print(f"  {name}: cannot fill in {text!r} ({exc!r}) - used as it "
+              "stands.")
+        return text
+
+
+def add_colorbar(fig, mappable, ax, *, location=None, shrink=None,
+                 thickness=None, pad=None, label=None, label_fontsize=None,
+                 tick_fontsize=None, **kwargs):
+    """``fig.colorbar`` with a choice of side, length and thickness.
+
+    Parameters
+    ----------
+    fig, mappable, ax
+        As in ``fig.colorbar(mappable, ax=ax)``; ``ax`` may be a list of
+        axes (one bar for all of them, space is taken from all of them).
+    location
+        ``None`` / ``"panel"`` -> exactly ``fig.colorbar(mappable, ax=ax,
+        **kwargs)`` (what the plots did before this setting existed: a
+        vertical bar at the right). ``"right"``, ``"left"``, ``"top"``,
+        ``"bottom"`` -> the bar at that side of ``ax`` (horizontal for top
+        and bottom; ticks and label on the outer side).
+    shrink
+        Length of the bar as a fraction of the side of ``ax`` it runs
+        along (``None`` -> matplotlib's default 1.0, or what ``kwargs``
+        says).
+    thickness
+        Thickness of the bar [inch] (``None`` -> matplotlib's default,
+        1/20 of its length). Only used when ``location`` is given.
+    pad
+        Gap to the axes as a fraction of the axes (matplotlib's ``pad``);
+        ``None`` -> matplotlib's default for that side.
+    label, label_fontsize, tick_fontsize
+        Optional bar label and font sizes (sizes in points); ``None``
+        leaves the label / sizes to the caller.
+    **kwargs
+        Passed on to ``fig.colorbar`` (``extend``, ``format``, ...).
+
+    Returns the ``Colorbar``. Raises ``ValueError`` for an invalid
+    ``location`` or ``shrink`` outside (0, 1], ``thickness`` <= 0.
+
+    Added 2026-11-11, Claude Sonnet 5.5 (Anthropic).
+    """
+    loc = check_cbar_location(location)
+    kw = dict(kwargs)
+    if shrink is not None:
+        if not (0.0 < float(shrink) <= 1.0):
+            raise ValueError(f"shrink must be in (0, 1], got {shrink!r}.")
+        kw["shrink"] = float(shrink)
+    if pad is not None:
+        kw["pad"] = float(pad)
+    if loc is not None:
+        kw["location"] = loc
+        if thickness is not None:
+            t_in = float(thickness)
+            if not t_in > 0.0:
+                raise ValueError(
+                    f"thickness must be > 0 (inch), got {thickness!r}.")
+            axes = list(ax) if isinstance(ax, (list, tuple, np.ndarray)) \
+                else [ax]
+            axes = [a for a in np.ravel(axes)]
+            fw, fh = fig.get_size_inches()
+            x0 = min(a.get_position().x0 for a in axes)
+            x1 = max(a.get_position().x1 for a in axes)
+            y0 = min(a.get_position().y0 for a in axes)
+            y1 = max(a.get_position().y1 for a in axes)
+            w_in, h_in = (x1 - x0) * fw, (y1 - y0) * fh
+            along, across = ((h_in, w_in) if loc in ("right", "left")
+                             else (w_in, h_in))
+            length = kw.get("shrink", 1.0) * along
+            kw["aspect"] = max(length / t_in, 1.0)
+            # the bar must fit into the strip taken from the axes
+            kw["fraction"] = min(max(0.15, 1.05 * t_in / max(across, 1e-6)),
+                                 0.5)
+    cb = fig.colorbar(mappable, ax=ax, **kw)
+    if label is not None:
+        cb.set_label(label, **({} if label_fontsize is None
+                               else {"fontsize": label_fontsize}))
+    if tick_fontsize is not None:
+        cb.ax.tick_params(labelsize=tick_fontsize)
+    return cb
+
+
 def plot_model_slices(
     model_file: Union[str, Path],
     mesh_file: Union[str, Path],
@@ -6166,7 +6353,7 @@ def plot_borehole_logs(
     legend_fontsize: int = 9,
     tick_fontsize: Optional[int] = None,
     label_fontsize: Optional[int] = None,
-    figure_title: Optional[str] = None,
+    figure_title: Union[str, bool, None] = None,
     reference_file=None,
     reference_style: Optional[dict] = None,
     reference_label: Optional[str] = "reference model",
@@ -6174,6 +6361,8 @@ def plot_borehole_logs(
     plot_file=None,
     dpi: int = 200,
     out: bool = True,
+    panel_titles: bool = True,
+    figure_title_fontsize: Optional[float] = None,
 ):
     """Produce a 1-D rho vs depth figure for a list of boreholes (log x-axis).
 
@@ -6298,8 +6487,9 @@ def plot_borehole_logs(
         Font size for axis labels and standalone titles.  ``None`` →
         ``legend_fontsize``.
     figure_title
-        Overall figure title (suptitle).  ``None`` → the basename of
-        *model_file*.
+        Overall figure title (suptitle).  ``None`` or ``True`` -> the
+        basename of *model_file*; ``False`` or ``""`` -> no title; a string
+        is used as given.
     reference_file
         Optional reference model (a block file on the same mesh as
         *model_file*).  It is sampled at every borehole exactly like the main
@@ -6332,6 +6522,13 @@ def plot_borehole_logs(
         Figure DPI.
     out
         Print progress messages.
+    panel_titles
+        ``True`` (default) -> the panel titles as before ("Borehole
+        resistivity logs" in the shared panel; borehole name and position
+        above every panel otherwise); ``False`` -> none.
+    figure_title_fontsize
+        Font size of the figure title; ``None`` -> ``legend_fontsize + 1``
+        (as before).
 
     Returns
     -------
@@ -6533,8 +6730,9 @@ def plot_borehole_logs(
         if clim is not None:
             ax.set_xlim(clim)
         if not shared:
-            ax.set_title(f"{log['name']}\n{log['pos_str']}",
-                         fontsize=legend_fontsize)
+            if panel_titles:
+                ax.set_title(f"{log['name']}\n{log['pos_str']}",
+                             fontsize=legend_fontsize)
             ax.tick_params(labelsize=_tick_fs)
         name_to_ax[log["name"]] = ax
 
@@ -6548,8 +6746,9 @@ def plot_borehole_logs(
             _lab.append(reference_label)
         ax_arr[0].legend(_hdl, _lab, fontsize=legend_fontsize,
                          loc="lower right")
-        ax_arr[0].set_title("Borehole resistivity logs",
-                            fontsize=legend_fontsize + 1)
+        if panel_titles:
+            ax_arr[0].set_title("Borehole resistivity logs",
+                                fontsize=legend_fontsize + 1)
     for ax in set(ax_arr):
         ax.tick_params(labelsize=_tick_fs)
         ax.grid(True, which="both", axis="x", lw=0.4, alpha=0.5)
@@ -6619,9 +6818,16 @@ def plot_borehole_logs(
                     **annotate_kw,
                 )
 
-    fig.suptitle(figure_title if figure_title is not None
-                 else os.path.basename(str(model_file)),
-                 fontsize=legend_fontsize + 1)
+    if figure_title is None or figure_title is True:
+        _sup = os.path.basename(str(model_file))
+    elif figure_title is False:
+        _sup = ""
+    else:
+        _sup = str(figure_title)
+    if _sup:
+        fig.suptitle(_sup, fontsize=(figure_title_fontsize
+                                     if figure_title_fontsize is not None
+                                     else legend_fontsize + 1))
     fig.tight_layout()
     if plot_file is not None:
         fig.savefig(plot_file, dpi=dpi, bbox_inches="tight")
@@ -6635,6 +6841,143 @@ def plot_borehole_logs(
 # =============================================================================
 # Ensemble slice plot  (exact tet-plane intersection, same as femtic_mod_plot)
 # =============================================================================
+
+def _cbar_tracks(spans):
+    """Track index (0, 1, ...) of every colour bar of a joint-bar strip.
+
+    ``spans`` is one ``(lo, hi)`` interval per bar along the side of the
+    plot grid the bars run along (row indices); bars whose intervals overlap
+    cannot share a track (they would lie on top of each other), so the later
+    one is put on the next track further out.
+    """
+    tracks: list = []
+    for k, (lo, hi) in enumerate(spans):
+        t = 0
+        while any(tracks[j] == t and not (hi < spans[j][0] or lo > spans[j][1])
+                  for j in range(k)):
+            t += 1
+        tracks.append(t)
+    return tracks
+
+
+def _joint_cbar_geometry(fig, loc, *, tick_fontsize, label_fontsize,
+                         thickness=None, n_track=1, rect=(0.0, 0.0, 1.0, 1.0)):
+    """Layout rectangle left by a strip for joint colour bars, and bar sizes.
+
+    The strip (``n_track`` bars side by side for ``loc`` right / left; one
+    row of bars for top / bottom) is taken out of ``rect`` (figure fractions
+    ``[x0, y0, x1, y1]`` as for ``tight_layout(rect=...)``) so that the
+    panels are arranged in what remains.  Returns ``(rect, thick, gap,
+    room)``, the sizes in inch: bar thickness, gap between the panels and
+    the first bar, room beyond a bar for its tick labels and label.
+
+    Same sizes as the joint bar of ``plot_model_slices``.
+    Added 2026-11-11, Claude Sonnet 5.5 (Anthropic).
+    """
+    fw, fh = fig.get_size_inches()
+    tk, lb = float(tick_fontsize), float(label_fontsize)
+    if thickness is None:
+        thick = max(0.15, 1.5 * lb / 72.0)
+    else:
+        thick = float(thickness)
+        if not thick > 0.0:
+            raise ValueError(
+                f"cbar_thickness must be > 0 (inch), got {thickness!r}.")
+    gap = max(0.08, 0.4 * thick)
+    r = [float(v) for v in rect]
+    if loc in ("right", "left"):
+        room = (11.0 + 3.0 * tk + 1.3 * lb) / 72.0
+        strip = min((gap + max(n_track, 1) * (thick + room)) / fw, 0.45)
+    else:
+        room = (17.0 + 1.25 * tk + 1.3 * lb) / 72.0
+        strip = min((gap + thick + room) / fh, 0.4)
+    if loc == "right":
+        r[2] -= strip
+    elif loc == "left":
+        r[0] += strip
+    elif loc == "top":
+        r[3] -= strip
+    else:
+        r[1] += strip
+    return r, thick, gap, room
+
+
+def _place_joint_colorbars(fig, groups, loc, rect, *, shrink, thick, gap,
+                           room, tick_fontsize, label_fontsize):
+    """Put one colour bar per group of panels at one side of the panel grid.
+
+    ``groups`` is a list of dicts ``norm``, ``cmap``, ``label``, ``axes``
+    (the panels this scale belongs to) and ``span`` ((first, last) row
+    index; used to decide which bars may share a track).  For ``loc`` right /
+    left every bar runs along the rows of its own panels (``shrink`` of
+    their height, centred); bars of overlapping rows go on further tracks.
+    For top / bottom the bars share the one strip, side by side along the
+    full width (the first group gets 1.6 times the length of the others).
+    Call after ``fig.tight_layout(rect=rect)``.  Returns the colour bars.
+
+    Added 2026-11-11, Claude Sonnet 5.5 (Anthropic).
+    """
+    import matplotlib
+    from matplotlib.transforms import Bbox
+
+    groups = [g for g in groups if any(a.get_visible() for a in g["axes"])]
+    if not groups:
+        return []
+    fw, fh = fig.get_size_inches()
+    parents = [a for g in groups for a in g["axes"] if a.get_visible()]
+    # Edge of the panels' content (axes plus titles / tick labels / axis
+    # labels) on the bars' side; falls back to the layout rectangle edge.
+    edge = {"right": rect[2], "left": rect[0],
+            "top": rect[3], "bottom": rect[1]}[loc]
+    try:
+        tb = Bbox.union([a.get_tightbbox(fig.canvas.get_renderer())
+                         for a in parents])
+        tbf = fig.transFigure.inverted().transform_bbox(tb)
+        meas = {"right": tbf.x1, "left": tbf.x0,
+                "top": tbf.y1, "bottom": tbf.y0}[loc]
+        if np.isfinite(meas):
+            edge = (min(edge, meas) if loc in ("right", "top")
+                    else max(edge, meas))
+    except Exception:
+        pass
+    tw, th = thick / fw, thick / fh
+    gw, gh = gap / fw, gap / fh
+    s = float(shrink)
+    boxes = [Bbox.union([a.get_position() for a in g["axes"]
+                         if a.get_visible()]) for g in groups]
+    out = []
+    if loc in ("right", "left"):
+        tracks = _cbar_tracks([g["span"] for g in groups])
+        step = tw + room / fw
+        for g, bb, t in zip(groups, boxes, tracks):
+            y0 = bb.y0 + 0.5 * (1.0 - s) * bb.height
+            x0 = (edge + gw + t * step if loc == "right"
+                  else edge - gw - tw - t * step)
+            pos = [x0, y0, tw, s * bb.height]
+            out.append((g, pos, "vertical", loc))
+    else:
+        gb = Bbox.union(boxes)
+        wts = [1.6] + [1.0] * (len(groups) - 1)
+        sep = 0.04 * gb.width if len(groups) > 1 else 0.0
+        avail = gb.width - sep * (len(groups) - 1)
+        xs = gb.x0
+        y0 = edge + gh if loc == "top" else edge - gh - th
+        for g, w in zip(groups, wts):
+            seg = avail * w / sum(wts)
+            pos = [xs + 0.5 * (1.0 - s) * seg, y0, s * seg, th]
+            out.append((g, pos, "horizontal", loc))
+            xs += seg + sep
+    bars = []
+    for g, pos, orient, tickloc in out:
+        cax = fig.add_axes(pos, label="<joint colorbar>")
+        sm = matplotlib.cm.ScalarMappable(norm=g["norm"], cmap=g["cmap"])
+        cb = fig.colorbar(sm, cax=cax, orientation=orient,
+                          ticklocation=tickloc)
+        cb.set_label(g["label"], fontsize=label_fontsize)
+        cb.ax.tick_params(labelsize=tick_fontsize)
+        bars.append(cb)
+    return bars
+
 
 def plot_ensemble_slices(
     member_files: list,
@@ -6657,6 +7000,12 @@ def plot_ensemble_slices(
     tick_fontsize: int = 6,
     label_fontsize: int = 7,
     tick_decimals: Optional[int] = None,
+    figure_title: Union[str, bool, None] = None,
+    figure_title_fontsize: Optional[float] = None,
+    panel_titles: bool = True,
+    cbar_location: Optional[str] = None,
+    cbar_shrink: float = 0.7,
+    cbar_thickness: Optional[float] = None,
     show: bool = False,
     out: bool = True,
 ) -> None:
@@ -6721,6 +7070,36 @@ def plot_ensemble_slices(
         (default) keeps the previous formatting unchanged: ``:g``
         auto-precision for depth, plain Matplotlib auto-ticks for
         easting/northing.
+    figure_title
+        Overall title (suptitle) of the joint figure and of the per-member
+        figures.  ``None`` or ``"auto"`` (default) -> ``"Ensemble  (N
+        members)"`` and ``"Ensemble member i  --  <file name>"``, as before;
+        ``False`` / ``""`` -> no title; a string is used as given with
+        ``{n_members}``, ``{index}`` (member figures), ``{file}`` (member
+        figures), ``{label}`` (member figures) filled in; a dict
+        ``{"joint": spec, 0: spec, 1: spec, ..., "default": spec}`` gives
+        one entry per figure (member figures by member index).
+        See ``resolve_title``.
+    figure_title_fontsize
+        Font size of the figure title.  ``None`` -> ``label_fontsize + 4``
+        (joint figure) / ``label_fontsize + 3`` (member figures), as before.
+    panel_titles
+        ``True`` (default) -> the top row of panels carries the slice titles.
+        ``False`` -> no panel titles (also not those of the slice specs).
+    cbar_location
+        ``None`` or ``"panel"`` (default) -> one colour bar next to every
+        panel, as before.  ``"right"``, ``"left"``, ``"top"`` or
+        ``"bottom"`` -> joint colour bars at that side of the panel grid: one
+        for the log10(rho) scale of the member rows (and mean / median rows),
+        one for the ``"std"`` row if present.  At the right / left every bar
+        runs along the rows it belongs to; at top / bottom the bars share the
+        strip side by side.
+    cbar_shrink
+        Joint bars only: length as a fraction of the side they run along
+        (default 0.7).
+    cbar_thickness
+        Joint bars only: thickness [inch]; ``None`` -> ``1.5 *
+        label_fontsize / 72`` (at least 0.15).
     show
         If True, also display the joint figure interactively via
         ``plt.show()`` -- in addition to saving, when ``plot_file`` is
@@ -6748,6 +7127,12 @@ def plot_ensemble_slices(
         raise ImportError(
             "matplotlib is required for plot_ensemble_slices."
         )
+
+    _cb_loc = check_cbar_location(cbar_location)
+    if not (0.0 < float(cbar_shrink) <= 1.0):
+        raise ValueError(
+            f"plot_ensemble_slices: cbar_shrink must be in (0, 1], "
+            f"got {cbar_shrink!r}.")
 
     member_files = list(member_files)
     if not member_files:
@@ -6863,7 +7248,7 @@ def plot_ensemble_slices(
             ax.invert_yaxis()
         if show_ylabel:
             ax.set_ylabel(row_label, fontsize=label_fontsize, labelpad=4)
-        if mappable is not None:
+        if mappable is not None and _cb_loc is None:
             cb = fig_ref.colorbar(mappable, ax=ax, fraction=0.046, pad=0.04)
             cb.set_label(cb_label, fontsize=label_fontsize)
             cb.ax.tick_params(labelsize=tick_fontsize)
@@ -7002,8 +7387,10 @@ def plot_ensemble_slices(
 
     # -- colormap / normalisation ----------------------------------------------
     def _get_cmap(name):
-        obj = (mcm.colormaps[name].copy() if hasattr(mcm, "colormaps")
-               else mcm.get_cmap(name).copy())
+        # plt.get_cmap exists in every Matplotlib version; matplotlib.cm no
+        # longer has .colormaps / .get_cmap in recent releases (3.11), which
+        # made plot_ensemble_slices fail there (2026-11-11).
+        obj = plt.get_cmap(name).copy()
         obj.set_bad(alpha=0.0)
         return obj
 
@@ -7088,6 +7475,49 @@ def plot_ensemble_slices(
             if sg.get("invert_x", False):
                 ax.invert_xaxis()
 
+    # -- figure titles / joint colour bars ---------------------------------------
+    def _suptitle(key, auto, **fields):
+        """Resolved suptitle text ("" = none); ``None`` means "auto"."""
+        spec = "auto" if figure_title is None else figure_title
+        return resolve_title(spec, key, auto,
+                             name="plot_ensemble_slices figure_title",
+                             n_members=n_members, **fields)
+
+    def _finish_layout(fig_ref, axes_2d, row_kinds):
+        """tight_layout, plus joint colour bars when cbar_location is set.
+
+        ``row_kinds`` names every row of ``axes_2d``: "std" for the std row,
+        anything else for rows on the log10(rho) scale.
+        """
+        if _cb_loc is None:
+            fig_ref.tight_layout()
+            return
+        main_rows = [r for r, k in enumerate(row_kinds) if k != "std"]
+        std_rows = [r for r, k in enumerate(row_kinds)
+                    if k == "std" and std_norm is not None]
+        groups = []
+        if main_rows:
+            groups.append(dict(
+                norm=norm, cmap=cmap_obj, label="log10(rho / Ohm*m)",
+                axes=[a for r in main_rows for a in axes_2d[r]],
+                span=(min(main_rows), max(main_rows))))
+        if std_rows:
+            groups.append(dict(
+                norm=std_norm, cmap=std_cmap, label="std  log10(rho)",
+                axes=[a for r in std_rows for a in axes_2d[r]],
+                span=(min(std_rows), max(std_rows))))
+        n_track = (max(_cbar_tracks([g["span"] for g in groups]) or [0]) + 1
+                   if _cb_loc in ("right", "left") else 1)
+        rect, thick, gap, room = _joint_cbar_geometry(
+            fig_ref, _cb_loc, tick_fontsize=tick_fontsize,
+            label_fontsize=label_fontsize, thickness=cbar_thickness,
+            n_track=n_track)
+        fig_ref.tight_layout(rect=tuple(rect))
+        _place_joint_colorbars(
+            fig_ref, groups, _cb_loc, rect, shrink=cbar_shrink, thick=thick,
+            gap=gap, room=room, tick_fontsize=tick_fontsize,
+            label_fontsize=label_fontsize)
+
     # -- build joint figure ----------------------------------------------------
     if out:
         print(f"  ensemble: building joint figure "
@@ -7097,9 +7527,10 @@ def plot_ensemble_slices(
         figsize=(4.5 * n_slices, 3.5 * n_rows),
         squeeze=False,
     )
-    for col, sg in enumerate(slice_geom):
-        if sg is not None:
-            axes[0, col].set_title(sg["title"], fontsize=label_fontsize + 2)
+    if panel_titles:
+        for col, sg in enumerate(slice_geom):
+            if sg is not None:
+                axes[0, col].set_title(sg["title"], fontsize=label_fontsize + 2)
 
     for row, (mf, lbl, rho_plot) in enumerate(zip(member_files, labels, rho_plots)):
         with np.errstate(divide="ignore", invalid="ignore"):
@@ -7116,8 +7547,13 @@ def plot_ensemble_slices(
         _render_row(fig, axes[row], arr,
                     stat_name.capitalize(), use_std=(stat_name == "std"))
 
-    fig.suptitle(f"Ensemble  ({n_members} members)", fontsize=label_fontsize + 4)
-    fig.tight_layout()
+    _sup = _suptitle("joint", f"Ensemble  ({n_members} members)")
+    if _sup:
+        fig.suptitle(_sup, fontsize=(figure_title_fontsize
+                                     if figure_title_fontsize is not None
+                                     else label_fontsize + 4))
+    _finish_layout(fig, axes,
+                   ["member"] * n_members + list(stat_rows))
 
     if plot_file is not None:
         fig.savefig(str(plot_file), dpi=dpi, bbox_inches="tight")
@@ -7137,16 +7573,23 @@ def plot_ensemble_slices(
                 figsize=(4.5 * n_slices, 3.5),
                 squeeze=False,
             )
-            for col, sg in enumerate(slice_geom):
-                if sg is not None:
-                    axes_m[0, col].set_title(sg["title"], fontsize=label_fontsize + 2)
+            if panel_titles:
+                for col, sg in enumerate(slice_geom):
+                    if sg is not None:
+                        axes_m[0, col].set_title(sg["title"],
+                                                 fontsize=label_fontsize + 2)
             with np.errstate(divide="ignore", invalid="ignore"):
                 log_elem = np.where(rho_plot > 0, np.log10(rho_plot), np.nan)
             _render_row(fig_m, axes_m[0], log_elem, lbl)
-            fig_m.suptitle(
-                f"Ensemble member {i}  --  {Path(mf).name}", fontsize=label_fontsize + 3
-            )
-            fig_m.tight_layout()
+            _supm = _suptitle(
+                i, f"Ensemble member {i}  --  {Path(mf).name}",
+                index=i, file=Path(mf).name, label=lbl)
+            if _supm:
+                fig_m.suptitle(_supm, fontsize=(figure_title_fontsize
+                                                if figure_title_fontsize
+                                                is not None
+                                                else label_fontsize + 3))
+            _finish_layout(fig_m, axes_m, ["member"])
             per_path = f"{_stem}_member{i}{_ext}"
             fig_m.savefig(per_path, dpi=dpi, bbox_inches="tight")
             if show:
@@ -7995,6 +8438,17 @@ class BoreholeFigureOptions:
     legend_loc: Optional[str] = "best"
     #: Colour bar next to the heat maps.
     heat_cbar: bool = True
+    #: Side of the heat-map colour bar: None / "panel" = at the right of the
+    #: panels as before; "right", "left", "top", "bottom" = at that side of
+    #: the panel grid (horizontal bar for top and bottom).
+    heat_cbar_location: Optional[str] = None
+    #: Length of the colour bar as a fraction of the panel grid side.
+    heat_cbar_shrink: float = 0.6
+    #: Thickness of the colour bar [inch]; None = automatic (as before).
+    heat_cbar_thickness: Optional[float] = None
+    #: Titles of the panels (borehole name and position): True = as before,
+    #: False = none.
+    panel_titles: bool = True
     #: Depth axis in km (True) or m.
     depth_km: bool = True
     tick_fontsize: int = 7
@@ -8152,7 +8606,8 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
             head = (
                 f"{pr['name']} - {opts.source_labels[src]}" if tagged else pr["name"]
             )
-            ax.set_title(f"{head}\n{pr['pos_str']}", fontsize=tick_fs - 2)
+            if opts.panel_titles:
+                ax.set_title(f"{head}\n{pr['pos_str']}", fontsize=tick_fs - 2)
             ax.set_xlabel("resistivity (Ohm.m)", fontsize=label_fs)
             if k % ncols_b == 0 and gi == 0:
                 ax.set_ylabel(
@@ -8196,15 +8651,33 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
     if heat_mesh is not None and opts.heat_cbar:
         # one shared colour bar, added after tight_layout so that it only
         # takes its space from the panels
-        cb = fig.colorbar(
-            heat_mesh,
-            ax=[a for a, _ in panels],
-            location="right",
-            fraction=0.03,
-            pad=0.02,
-            shrink=0.6,
-            extend=extend,
-        )
+        _hloc = check_cbar_location(opts.heat_cbar_location,
+                                    name="heat_cbar_location")
+        if not (0.0 < float(opts.heat_cbar_shrink) <= 1.0):
+            raise ValueError(
+                f"plot_boreholes: heat_cbar_shrink must be in (0, 1], got "
+                f"{opts.heat_cbar_shrink!r}.")
+        if _hloc is None and opts.heat_cbar_thickness is None:
+            # the placement of earlier versions (shrink 0.6 unless set)
+            cb = fig.colorbar(
+                heat_mesh,
+                ax=[a for a, _ in panels],
+                location="right",
+                fraction=0.03,
+                pad=0.02,
+                shrink=float(opts.heat_cbar_shrink),
+                extend=extend,
+            )
+        else:
+            cb = add_colorbar(
+                fig, heat_mesh, [a for a, _ in panels],
+                location=_hloc or "right",
+                shrink=float(opts.heat_cbar_shrink),
+                thickness=opts.heat_cbar_thickness,
+                pad=(0.02 if _hloc in (None, "right") else None),
+                extend=extend,
+            )
+        _hvert = _hloc in (None, "right", "left")
         cb.set_label(
             "fraction of ensemble members per bin"
             if cs["norm"] == "fraction"
@@ -8216,7 +8689,8 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
             from matplotlib import ticker
 
             cb.set_ticks(heat_log_ticks(norm))
-            cb.ax.yaxis.set_major_formatter(ticker.FormatStrFormatter("%g"))
+            (cb.ax.yaxis if _hvert else cb.ax.xaxis).set_major_formatter(
+                ticker.FormatStrFormatter("%g"))
             cb.ax.minorticks_off()
     for fmt in opts.formats:
         fname = f"{plot_base}.{fmt}"

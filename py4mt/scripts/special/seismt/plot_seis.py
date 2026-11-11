@@ -284,7 +284,7 @@ AXES_KM_COMMA    = True
 # COLORBAR_LABEL_*   : font sizes for the bar label and tick annotations
 # =====================================================================
 SHOW_COLORBAR       = True
-COLORBAR_POSITION   = "right "   # "right" | "left" | "bottom" | "top"
+COLORBAR_POSITION   = "right"    # "right" | "left" | "bottom" | "top"
 COLORBAR_SIZE       = 0.85      # bar length, fraction of the map edge
 COLORBAR_PAD        = 0.10      # inches between map axes and colorbar
 COLORBAR_ASPECT     = 20        # bar length / bar thickness
@@ -304,6 +304,11 @@ COLORBAR_NTICKS     = 7      # None = matplotlib picks automatically,
 AXIS_LABEL_SIZE = 12   # pt — "Easting (km)" / "Northing (km)" / "Depth (km)" etc.
 AXIS_TICK_SIZE  = 12   # pt — tick annotations on both axes
 AXIS_TITLE_SIZE = 12   # pt — the "Vp/Vs at ..." / "... — profile_CD" title
+# Figure titles: "auto" = the titles of before; None, False or "" = none; a
+# string with the placeholders {var}, {section} (vertical sections) or {var},
+# {depth} (depth maps; var = Vp, Vs or Vp/Vs); other braces are used as they
+# stand; or a dict {"section": spec, "map": spec, "default": spec}
+FIGURE_TITLE = "auto"
 
 # =====================================================================
 # MAP FEATURE LAYERS — simple on/off switches
@@ -737,6 +742,36 @@ def create_section_figure(w_in, h_in):
                                       size_label="section")
 
 
+def _resolve_title(spec, key=None, auto="", *, name="FIGURE_TITLE", **fields):
+    """Figure title from a title setting: "auto" / True -> ``auto``; None /
+    False / "" -> "" (no title); a string with {placeholders} filled in from
+    ``key`` ({key}) and ``fields`` (text that cannot be filled in is used as
+    it stands); a dict {key: spec, "default": spec} (else "auto").
+    The same as femtic_viz.resolve_title (2026-11-11)."""
+    if isinstance(spec, dict):
+        if key in spec:
+            spec = spec[key]
+        elif key is not None and str(key) in spec:
+            spec = spec[str(key)]
+        else:
+            spec = spec.get("default", "auto")
+    if spec is None or spec is False:
+        return ""
+    if spec is True:
+        return auto
+    text = str(spec)
+    if text.strip() == "":
+        return ""
+    if text.strip().lower() == "auto":
+        return auto
+    try:
+        return text.format(key=key, **fields)
+    except (KeyError, IndexError, ValueError, AttributeError) as exc:
+        print(f"  {name}: cannot fill in {text!r} ({exc!r}) - used as it "
+              "stands.")
+        return text
+
+
 def finish_panel_colorbar(cax, mappable, label):
     """Render the colorbar into the cax returned by create_map_figure()."""
     return plotpy.finish_panel_colorbar(cax, mappable, label, _colorbar_settings())
@@ -1005,7 +1040,10 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
                 clip_on=False, zorder=20)
 
     title_var = {"vp": "Vp", "vs": "Vs", "vps": "Vp/Vs"}[var]
-    ax.set_title(f"{title_var} — {name}", fontsize=AXIS_TITLE_SIZE)
+    _tt = _resolve_title(FIGURE_TITLE, "section", f"{title_var} — {name}",
+                         name="FIGURE_TITLE", var=title_var, section=name)
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
 
     finish_section_colorbar(cax, im, cbar_label)
     draw_annotation(ax)
@@ -1277,7 +1315,10 @@ for ii, d_index in enumerate(DEPTH_INDEX):
         if ISO_LINES_MAP:
             draw_iso_contours(ax, vx, vy, vz, ISO_LEVELS_MAP, "vps")
         draw_features(ax, eq_e, eq_n)
-        ax.set_title(f"Vp/Vs at {depth_label}", fontsize=AXIS_TITLE_SIZE)
+        _tt = _resolve_title(FIGURE_TITLE, "map", f"Vp/Vs at {depth_label}",
+                             name="FIGURE_TITLE", var="Vp/Vs", depth=depth_label)
+        if _tt:
+            ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
         finish_panel_colorbar(cax, im, "Vp/Vs")
         if AXES_UNITS == "latlon":
             add_latlon_ticks(ax)
@@ -1311,7 +1352,10 @@ for ii, d_index in enumerate(DEPTH_INDEX):
         if ISO_LINES_MAP:
             draw_iso_contours(ax, vx, vy, vz, ISO_LEVELS_MAP, "vp")
         draw_features(ax, eq_e, eq_n)
-        ax.set_title(f"Vp at {depth_label}", fontsize=AXIS_TITLE_SIZE)
+        _tt = _resolve_title(FIGURE_TITLE, "map", f"Vp at {depth_label}",
+                             name="FIGURE_TITLE", var="Vp", depth=depth_label)
+        if _tt:
+            ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
         finish_panel_colorbar(cax, im, "Vp (m/s)")
         if AXES_UNITS == "latlon":
             add_latlon_ticks(ax)
@@ -1345,7 +1389,10 @@ for ii, d_index in enumerate(DEPTH_INDEX):
         if ISO_LINES_MAP:
             draw_iso_contours(ax, vx, vy, vz, ISO_LEVELS_MAP, "vs")
         draw_features(ax, eq_e, eq_n)
-        ax.set_title(f"Vs at {depth_label}", fontsize=AXIS_TITLE_SIZE)
+        _tt = _resolve_title(FIGURE_TITLE, "map", f"Vs at {depth_label}",
+                             name="FIGURE_TITLE", var="Vs", depth=depth_label)
+        if _tt:
+            ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
         finish_panel_colorbar(cax, im, "Vs (m/s)")
         if AXES_UNITS == "latlon":
             add_latlon_ticks(ax)

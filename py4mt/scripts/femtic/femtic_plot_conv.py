@@ -39,6 +39,14 @@ Provenance:
                 utl.write_param_summary(fname, out_dir=WORK_DIR). Needs
                 the util.py of the same date (new out_dir argument).
                 AI-generated; review before production use.
+    2026-11-11  Claude Sonnet 5.5 (Anthropic)
+                PLOT_TITLE takes the forms of the title settings of all plot
+                scripts: "auto" (the default text, "FEMTIC convergence
+                history"), None / False / "" (no title), text (placeholders
+                {n_runs}, {fields}) or a dict {"default": spec}; resolved by
+                fviz.resolve_title() (femtic_viz.py of the same date). The
+                figure with the default setting is unchanged. AI-generated;
+                review before production use.
 """
 
 import os
@@ -58,6 +66,7 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
             sys.path.insert(0, str(_p))
 
 import femtic as fem
+import femtic_viz as fviz
 import util as utl
 from version import versionstrg
 
@@ -111,6 +120,9 @@ PLOT_THRESHOLDS = {"RMS": 1.0}
 # ---------------------------------------------------------------------------
 # Plot appearance
 # ---------------------------------------------------------------------------
+#: Figure title: "auto" = "FEMTIC convergence history"; None, False or "" =
+#: no title; a string, used as given ({n_runs} = number of runs, {fields} =
+#: the plotted fields, joined by ", "); a dict {"default": spec}.
 PLOT_TITLE = "FEMTIC convergence history"
 #: x-axis label. Rows are plotted at a running index (0, 1, 2, ...) over
 #: the convergence history so retrials (several rows sharing one Iter#)
@@ -274,7 +286,12 @@ for ax, field in zip(axes, _active_fields):
     ax.grid(True, alpha=0.3)
 
 axes[-1].set_xlabel(PLOT_XLABEL, fontsize=FONTSIZE)
-fig.suptitle(PLOT_TITLE, fontsize=FONTSIZE + 1)
+_title = fviz.resolve_title(
+    PLOT_TITLE, "default", "FEMTIC convergence history", name="PLOT_TITLE",
+    n_runs=len(_dirs),
+    fields=", ".join(map(str, PLOT_FIELDS)))
+if _title:
+    fig.suptitle(_title, fontsize=FONTSIZE + 1)
 
 _handles, _leg_labels = axes[0].get_legend_handles_labels()
 fig.legend(_handles, _leg_labels, loc="lower center",

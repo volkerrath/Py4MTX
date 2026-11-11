@@ -155,6 +155,21 @@ and on the same coordinate frame.
 
 ---
 
+## Figure titles (`FIGURE_TITLE`)
+
+Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use). `plot_interp.py` and `plot_interp_tacna.py` has a new setting `FIGURE_TITLE`; the default `"auto"` gives the titles of before.
+
+| Value | Title |
+|---|---|
+| `"auto"` or `True` | the titles of before |
+| `None`, `False`, `""` | no title |
+| a string | used as given; `{var}` and `{section}` (vertical sections) or `{var}` and `{depth}` (depth maps), and `{key}` (the kind of figure) are filled in (`str.format`); text with other braces (or an unknown name) is used as it stands and a note is printed |
+| a dict | `{"section": spec, "map": spec, "default": spec}` with `"default"` for the rest (else `"auto"`) |
+
+The logic is `tomomt.resolve_title` (the same as `femtic_viz.resolve_title` and `util.resolve_title`).
+
+The position of the colour bar is the existing `COLORBAR_POSITION` (`"right"`, `"left"`, `"bottom"`, `"top"`); blanks around the value are now ignored (`tomomt.build_panel_figure`, `finish_panel_colorbar`).
+
 ## Dependencies
 
 ```

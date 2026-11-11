@@ -136,6 +136,8 @@ fpn.plot_nrms_glyphs(
 | `CMAP_NRMS`, `NRMS_REFERENCE` | Diverging colormap and its centre value (default `1.0`). `NRMS_VMIN`/`NRMS_VMAX` override the auto symmetric range. |
 | `NRMS_FLAG_THRESHOLD` | `None` (off) or a cutoff above which sites get a highlighted ring and a legend entry. |
 | `TITLE_SHOW_ITERATION` | Appends `"(iteration N, overall nRMS = X)"` (from `femtic.cnv`) to the plot title. |
+| `TITLE` | Default `"FEMTIC per-site nRMS misfit"`. Figure title: `"auto"` = the same text; `None`, `False`, `""` = no title (before, `""` gave a title with only the iteration line); text with `{iter}`, `{nrms}`, `{key}`; dict `{"default": spec}`. |
+| `CBAR_LOCATION`, `CBAR_SHRINK`, `CBAR_THICKNESS` | Defaults `None`, `0.8`, `None`. nRMS colour bar: `None` / `"right"` = at the right of the map (as before); `"left"`, `"top"`, `"bottom"` (horizontal for top and bottom; the reference line is drawn across the bar); length as a fraction of the side of the map; thickness in cm. |
 | `BASEMAP_ENABLE`, `SRTM_PRODUCT`, `SRTM_LOCAL_FILE` | SRTM hillshade basemap controls; identical to `femtic_plot_distort.py`. |
 | `OUTPUT_BASENAME`, `OUTPUT_FORMATS` | Output file stem and a list of formats, e.g. `["png"]` or `["pdf", "jpg"]`. |
 
@@ -197,5 +199,6 @@ were re-tested, on synthetic rows; see the accuracy note.)*
 | 2026-09-13 | Claude Sonnet 5 (Anthropic) | Created (v1): per-site nRMS glyph map computed directly from `result_XXX.txt` residuals -- **superseded**, no tie to a specific FEMTIC iteration. |
 | 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | Migrated HDF5 input from the absent `femtic_hdf5_readers.read_data_hdf5` (`data_iter<N>.h5`) to `femtic.read_results_data` (`results_iter<N>.h5`); `DATA_ITER_TEMPLATE` -> `RESULTS_ITER_TEMPLATE`; imaginary parts now pooled (skipped for real-valued types); unmappable data types are skipped with a warning. Arithmetic checked on synthetic rows; file reading untested (no h5py). |
 | 2026-09-13 | Claude Sonnet 5 (Anthropic) | Rewritten (v2): best iteration now selected from `femtic.cnv` via `fem.get_nrms`; per-site residuals read from that iteration's `data_iter<N>.h5` via `femtic_hdf5_readers.read_data_hdf5`. Added `_resolve_station_ids` (station_id/sitenum matching with a 0-based/1-based fallback, full-containment check only) and `TITLE_SHOW_ITERATION`. Verified against a hand-written `femtic_hdf5_readers` stub (see "Verification performed"); found and fixed a partial-overlap matching bug during that testing. AI-generated; the real `femtic_hdf5_readers.py` HDF5 schema itself remains unverified against a live file (inherited from that module's own readme). |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | Title and colour bar in the form of all plot scripts: `TITLE` (`"auto"`, none, text with `{iter}` / `{nrms}`, dict), new `CBAR_LOCATION` / `CBAR_SHRINK` / `CBAR_THICKNESS`; the colour bar is drawn by `fviz.add_colorbar`. Default figure unchanged. `TITLE = ""` now means no title. Needs the `femtic_viz.py` of the same date. |
 
 Author: Volker Rath (DIAS)

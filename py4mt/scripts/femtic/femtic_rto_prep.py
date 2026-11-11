@@ -350,6 +350,21 @@ Provenance:
                 only x0/y0/z0 were converted, so a plane point would have
                 been 1000x too small.
                 AI-generated; review before production use.
+    2026-11-11  Claude Sonnet 5.5 (Anthropic)
+                Titles and colour bar position of the slice figures. New
+                settings MOD_TITLE / ENS_TITLE ("auto" = as before: the model
+                file name / "Ensemble (N members)"; None, False or "" = no
+                title; text with {placeholders}; dict per figure),
+                MOD_PANEL_TITLES / ENS_PANEL_TITLES, MOD_CBAR_LOCATION /
+                ENS_CBAR_LOCATION (None = one colour bar per panel as before;
+                "right", "left", "top", "bottom" = joint bar(s)),
+                MOD_CBAR_SHRINK / ENS_CBAR_SHRINK, MOD_CBAR_THICKNESS /
+                ENS_CBAR_THICKNESS [cm]; passed to fviz.plot_model_slices and
+                (new arguments, femtic_viz.py of the same date)
+                fviz.plot_ensemble_slices. Defaults give the same figures as
+                before. _plot_member_slices() got the arguments kind and
+                index for the title placeholders.
+                AI-generated; review before production use.
 """
 
 import os
@@ -889,6 +904,26 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_TICK_FONTSIZE  = 11    # axis tick labels, colourbar ticks
     MOD_LABEL_FONTSIZE = 11    # axis labels, panel titles, colourbar label
 
+    #: Figure title of the slice figures (PLOT_SLICES_QC and PLOT_MODEL):
+    #:   "auto" or True   the file name of the model (as before);
+    #:   None, False, ""  no title;
+    #:   a string         used as given; {label} (member directory name),
+    #:                    {index} (member number), {file} (model file name),
+    #:                    {key} ("qc" or "model") are filled in. Text with other
+    #:                    braces is used as it stands;
+    #:   a dict           {"qc": spec, "model": spec, 0: spec, "default": spec}
+    #:                    per kind of figure ("qc" / "model"); "default" (else
+    #:                    "auto") covers the rest.
+    MOD_TITLE         = "auto"
+    #: Panel titles ("Map  z = 1.0 km", ...): True = as before, False = none.
+    MOD_PANEL_TITLES  = True
+    #: Colour bar: None or "panel" = one next to every panel (as before);
+    #: "right", "left", "top", "bottom" = ONE joint bar for all panels, at that
+    #: side of the panel grid.
+    MOD_CBAR_LOCATION  = None
+    MOD_CBAR_SHRINK    = 0.7    # joint bar: length / side of the panel grid
+    MOD_CBAR_THICKNESS = None   # joint bar: thickness in cm; None = automatic
+
     # --- Ensemble slice plot (femtic_viz.plot_ensemble_slices) ---------------
     #: Set True to produce a joint member × slice figure after generation.
     PLOT_SLICES_ENS = False
@@ -910,6 +945,18 @@ if PLOT_DATA or PLOT_MODEL:
     #: joint member x slice grid uses smaller defaults so more rows fit).
     ENS_TICK_FONTSIZE  = 10
     ENS_LABEL_FONTSIZE = 10
+    #: Title / colour bars of the joint ensemble figure (and the per-member
+    #: figures, ENS_PER_MEMBER), same forms as MOD_TITLE etc. above.
+    #: ENS_TITLE: "auto" = "Ensemble (N members)" / "Ensemble member i -- file";
+    #: None, False, "" = none; text with {n_members} ({index}, {label}, {file}
+    #: for the per-member figures); dict {"joint": spec, 0: spec, "default":
+    #: spec}. ENS_CBAR_LOCATION: joint bars = one for log10(rho) (member and
+    #: mean / median rows) and one for the std row.
+    ENS_TITLE          = "auto"
+    ENS_PANEL_TITLES   = True
+    ENS_CBAR_LOCATION  = None
+    ENS_CBAR_SHRINK    = 0.7
+    ENS_CBAR_THICKNESS = None   # cm; None = automatic
 
     # --- QC slice plot of perturbed initial models ---------------------------
     #: Set True to produce one slice figure per selected member.
@@ -1171,7 +1218,13 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
               "using literal MOD_XLIM/MOD_YLIM/MOD_ZLIM instead.")
 
     # --- helper: call plot_model_slices for one model file -------------------
-    def _plot_member_slices(mod_file, out_pdf):
+    def _plot_member_slices(mod_file, out_pdf, kind="model", index=None):
+        # kind: "qc" or "model" (key of a MOD_TITLE dict); index: member number.
+        _title = fviz.resolve_title(
+            MOD_TITLE, kind, None, name="MOD_TITLE", label=(
+                f"{ENSEMBLE_NAME}{index}" if index is not None else ""),
+            index="" if index is None else index,
+            file=os.path.basename(str(mod_file)))
         fviz.plot_model_slices(
             model_file      = mod_file,
             mesh_file       = MOD_MESH,
@@ -1217,6 +1270,12 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
             alpha_file      = MOD_ALPHA_FILE,
             alpha_mode      = MOD_ALPHA_MODE,
             alpha_blank_thresh = MOD_ALPHA_BLANK_THRESH,
+            figure_title    = _title,
+            panel_titles    = bool(MOD_PANEL_TITLES),
+            cbar_location   = MOD_CBAR_LOCATION,
+            cbar_shrink     = MOD_CBAR_SHRINK,
+            cbar_thickness  = (MOD_CBAR_THICKNESS / 2.54
+                               if MOD_CBAR_THICKNESS is not None else None),
             out             = OUT,
         )
 
@@ -1232,7 +1291,7 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
                 continue
             _qc_pdf = (ENSEMBLE_DIR + ENSEMBLE_NAME
                        + f"{i_samp}/rto_qc{PLOT_STR}.pdf")
-            _plot_member_slices(_qc_files[i_samp], _qc_pdf)
+            _plot_member_slices(_qc_files[i_samp], _qc_pdf, "qc", i_samp)
             print(f"  QC slice plot saved: {_qc_pdf}")
         print("QC slice plots done.")
 
@@ -1248,7 +1307,7 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
                 continue
             _mod_pdf = (ENSEMBLE_DIR + ENSEMBLE_NAME
                         + f"{i_samp}/rto_model{PLOT_STR}.pdf")
-            _plot_member_slices(_mod_files[i_samp], _mod_pdf)
+            _plot_member_slices(_mod_files[i_samp], _mod_pdf, "model", i_samp)
             print(f"  model slice plot saved: {_mod_pdf}")
         print("model slice plots done.")
 
@@ -1285,6 +1344,12 @@ if PLOT_DATA or PLOT_MODEL:   # only runs when the viz block was entered
             ocean_value     = 0.25,
             tick_fontsize   = ENS_TICK_FONTSIZE,
             label_fontsize  = ENS_LABEL_FONTSIZE,
+            figure_title    = False if ENS_TITLE is None else ENS_TITLE,   # None = no title here
+            panel_titles    = bool(ENS_PANEL_TITLES),
+            cbar_location   = ENS_CBAR_LOCATION,
+            cbar_shrink     = ENS_CBAR_SHRINK,
+            cbar_thickness  = (ENS_CBAR_THICKNESS / 2.54
+                               if ENS_CBAR_THICKNESS is not None else None),
             per_member_file = ENS_PER_MEMBER,
             plot_file       = ENS_PLOT_FILE,
             dpi             = ENS_PLOT_DPI,

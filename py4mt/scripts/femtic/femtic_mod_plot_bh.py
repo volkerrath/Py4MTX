@@ -89,6 +89,14 @@ Provenance
     positions and the logs are taken at the wrong places. None leaves
     femtic's default, False forces no swap. AI-generated; review before
     production use.
+@modified: 2026-11-11  Claude Sonnet 5.5 (Anthropic) -- Titles in the form of
+    all plot scripts. New FIGURE_TITLE ("auto" = the block-file name, as
+    before; None / False / "" = no title; text with {placeholders}; dict per
+    model) for the single-model figure and, when BATCH_TITLE is unset, for
+    the batch figures; BATCH_TITLE now also takes "auto", False and a dict.
+    New PANEL_TITLES (False = no panel titles) and FIGURE_TITLE_FONTSIZE.
+    Defaults give the same figures as before. Needs the femtic_viz.py of the
+    same date. AI-generated; review before production use.
 """
 
 import os
@@ -157,6 +165,8 @@ BATCH_FORMATS = None
 #: path. Needs "pdf" among the formats.
 BATCH_CATALOG = None
 #: Figure title template; {label}, {iter}, {tag}, {nrms} are filled in.
+#: Same forms as FIGURE_TITLE below ("auto", False, a dict ...); None or ""
+#: = use FIGURE_TITLE instead.
 BATCH_TITLE = "{label} - iteration {iter}"
 
 #: Mesh file — always required.
@@ -297,6 +307,24 @@ BOREHOLE_MARKERS = [
     #      text="resistive basement", color="navy", fontsize=8),
 ]
 
+#: Figure title (above all panels), one model (several: see BATCH_TITLE).
+#:   "auto" or True     the block-file name (as before);
+#:   None, False or ""  no title;
+#:   a string           used as given. Placeholders: {label} run directory name,
+#:                      {tag} "iterN", {iter} the iteration ("?" if unknown),
+#:                      {nrms} nRMS (3 decimals; "n/a" if unknown), {file} the
+#:                      block-file name, {key} = {label}. Text with other
+#:                      braces is used as it stands;
+#:   a dict             one entry per model, keyed by its label, e.g.
+#:                        {"run1": "Reference", "default": "auto"}
+#:                      values as above; "default" (else "auto") covers the rest.
+FIGURE_TITLE = "auto"
+#: Font size of the figure title; None = LEGEND_FONTSIZE + 1.
+FIGURE_TITLE_FONTSIZE = None
+#: Panel titles ("Borehole resistivity logs" in the shared panel, borehole name
+#: and position above every panel otherwise): True = as before, False = none.
+PANEL_TITLES = True
+
 #: Font size for the borehole legend (shared mode) and panel titles
 #: (per-panel mode).  Tick labels are set to legend_fontsize - 2.
 LEGEND_FONTSIZE = 12
@@ -396,11 +424,25 @@ _common = dict(
     shared         = BOREHOLE_SHARED,
     markers        = BOREHOLE_MARKERS or None,
     legend_fontsize= LEGEND_FONTSIZE,
+    panel_titles   = bool(PANEL_TITLES),
+    figure_title_fontsize = FIGURE_TITLE_FONTSIZE,
     tick_fontsize  = TICK_FONTSIZE,
     label_fontsize = LABEL_FONTSIZE,
     dpi            = PLOT_DPI,
     out            = OUT,
 )
+
+def _model_title(m, spec):
+    """Figure title of model ``m`` (an entry of MODELS) from ``spec``
+    (FIGURE_TITLE / BATCH_TITLE): None = the block-file name, "" = none,
+    else the text."""
+    return fviz.resolve_title(
+        spec, m["label"], None, name="FIGURE_TITLE",
+        label=m["label"], tag=m["tag"],
+        iter="?" if m["iter"] is None else m["iter"],
+        nrms="n/a" if m["nrms"] is None else f"{m['nrms']:.3f}",
+        file=os.path.basename(str(m["file"])))
+
 
 if not BOREHOLE_SITES:
     print("  Borehole plot skipped: BOREHOLE_SITES is empty.")
@@ -408,6 +450,7 @@ elif not BATCH:
     print(f"Sampling {len(BOREHOLE_SITES)} borehole(s) …")
     fviz.plot_borehole_logs(
         model_file     = MODELS[0]["file"],
+        figure_title   = _model_title(MODELS[0], FIGURE_TITLE),
         npz_file       = (None   if BOREHOLE_NPZ is True
                           else (False if BOREHOLE_NPZ is False
                                 else BOREHOLE_NPZ)),
@@ -446,11 +489,9 @@ else:
     print(f"Sampling {len(BOREHOLE_SITES)} borehole(s) in {len(MODELS)} model(s) ...")
     try:
         for _i, _m in enumerate(MODELS, 1):
-            _title = BATCH_TITLE.format(
-                label=_m["label"], tag=_m["tag"],
-                iter="?" if _m["iter"] is None else _m["iter"],
-                nrms="n/a" if _m["nrms"] is None else f"{_m['nrms']:.3f}",
-            ) if BATCH_TITLE else None
+            _title = _model_title(
+                _m, BATCH_TITLE if BATCH_TITLE not in (None, "")
+                else FIGURE_TITLE)
             _stem = os.path.join(BATCH_OUT_DIR or _m["dir"],
                                  f"{_m['label']}_{_m['tag']}_boreholes")
             print(f"[{_i}/{len(MODELS)}] {_m['label']} / {_m['tag']}")

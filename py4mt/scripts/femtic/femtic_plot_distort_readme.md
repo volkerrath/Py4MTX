@@ -91,6 +91,8 @@ warning rather than aborting the run.
 | `COLOR_BY` | `"condition"` (sigma_max/sigma_min, Lilley 2016), `"determinant"` (`|det C|`), or `"gain"` (mean singular value). |
 | `BASEMAP_ENABLE`, `SRTM_PRODUCT`, `SRTM_LOCAL_FILE` | SRTM hillshade basemap controls; set `SRTM_LOCAL_FILE` to a pre-downloaded GeoTIFF on offline/HPC nodes. |
 | `GB_DECOMP_ENABLE` | `False` (default) / `True` -- adds a second figure: a 2x2 panel of Groom-Bailey twist/shear/gain/anisotropy maps. |
+| `TITLE`, `GB_TITLE`, `GB_PANEL_TITLES` | Defaults: the default text, `"auto"`, `True`. Figure title of the ellipse map (`TITLE`; its default text is `FEMTIC static distortion matrices`) and of the Groom-Bailey figure (`GB_TITLE`; `"auto"` = the reference line). Forms: `"auto"`, `None` / `False` / `""` = none, text, dict `{"default": spec}`. `GB_PANEL_TITLES = False` = no titles of the four panels. `TITLE = ""` now means no title. |
+| `CBAR_LOCATION`, `CBAR_SHRINK`, `CBAR_THICKNESS`; `GB_CBAR_LOCATION`, `GB_CBAR_SHRINK`, `GB_CBAR_THICKNESS` | Defaults: `None`, `0.8`, `None`; `None`, `0.85`, `None`. Colour bars of the ellipse map and of every Groom-Bailey panel: `None` / `"right"` = at the right (as before); `"left"`, `"top"`, `"bottom"` (horizontal for top and bottom); length as a fraction of the side of the map; thickness in cm. |
 | `OUTPUT_BASENAME`, `OUTPUT_FORMATS` | Output file stem and a list of formats to save, e.g. `["png"]` or `["pdf", "jpg"]`. Each format is saved as its own file; the GB panel (if enabled) is saved as `f"{OUTPUT_BASENAME}{GB_BASENAME_SUFFIX}.{fmt}"`. |
 
 ---
@@ -172,5 +174,6 @@ those sites instead.
 |---|---|---|
 | 2026-09-13 | Claude Sonnet 5 (Anthropic) | Created: `plot_distortion_ellipses()` -- distortion-ellipse map plot with optional SRTM hillshade basemap, `model`/`utm`/`latlon` coordinate choice, `full`/`prime` distortion-kind choice, and `condition`/`determinant`/`gain` severity colouring. AI-generated; not verified against a real FEMTIC run (see "Verification performed" above). |
 | 2026-09-13 | Claude Sonnet 5 (Anthropic) | Added optional Groom-Bailey decomposition panel (`GB_DECOMP_ENABLE`, `_gb_decompose`, `_plot_gb_panel`) -- 2x2 grid of twist/shear/gain/anisotropy maps, with negative-determinant sites flagged and excluded per Lilley (2016). Replaced single `OUTPUT_FILE` with `OUTPUT_BASENAME` + `OUTPUT_FORMATS` list (`_savefig_multi`), so both figures can be saved in one or more formats (e.g. `["pdf", "jpg"]`) in one run. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | Titles and colour bars in the form of all plot scripts: `TITLE` and new `GB_TITLE` / `GB_PANEL_TITLES`; new `CBAR_LOCATION` / `CBAR_SHRINK` / `CBAR_THICKNESS` and `GB_CBAR_*`; colour bars drawn by `fviz.add_colorbar`. Default figures unchanged. Needs the `femtic_viz.py` of the same date. |
 
 Author: Volker Rath (DIAS)

@@ -360,6 +360,12 @@ COLORBAR_NTICKS     = 7
 AXIS_LABEL_SIZE = 12
 AXIS_TICK_SIZE  = 12
 AXIS_TITLE_SIZE = 12
+# Figure titles: "auto" = the titles of before; None, False or "" = none; a
+# string with the placeholders {title} (the automatic title), {var} (the
+# field), {section} (name of the vertical slice; sections only); other braces
+# are used as they stand; or a dict {"section": spec, "map": spec,
+# "default": spec}
+FIGURE_TITLE = "auto"
 
 # =====================================================================
 # MAP FEATURE LAYERS — simple on/off switches; see plot_seis.py.
@@ -672,7 +678,7 @@ def _build_dual_panel_figure(panel_w_in, panel_h_in, colorbar, gap_in=0.6,
     tomomt.build_panel_figure.
     """
     show = colorbar["show"]
-    pos = colorbar["position"].lower()
+    pos = colorbar["position"].strip().lower()
     if pos not in ("right", "left", "bottom", "top"):
         raise ValueError(
             f"colorbar position {colorbar['position']!r} is not valid. "
@@ -1132,7 +1138,10 @@ def _render_depth_slice_panel(ax, cax, field3d, iz, key, cmap, cmin, cmax,
         draw_iso_contours(ax, iso_x, iso_y, data2d, ISO_LEVELS_MAP, key)
 
     draw_features(ax, eq_e, eq_n)
-    ax.set_title(title, fontsize=AXIS_TITLE_SIZE)
+    _tt = tomomt.resolve_title(FIGURE_TITLE, "map", title,
+                               name="FIGURE_TITLE", title=title, var=key)
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
     finish_panel_colorbar(cax, im, cbar_label)
     if AXES_UNITS == "latlon":
         add_latlon_ticks(ax)
@@ -1297,7 +1306,11 @@ def _render_vertical_slice_panel(ax, cax, x_arr, x_label, depth_km, section,
                 fontsize=AXIS_LABEL_SIZE, fontweight="bold",
                 color="black", clip_on=False, zorder=20)
 
-    ax.set_title(title, fontsize=AXIS_TITLE_SIZE)
+    _tt = tomomt.resolve_title(FIGURE_TITLE, "section", title,
+                               name="FIGURE_TITLE", title=title, var=key,
+                               section=vslice.get("name", ""))
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
     finish_section_colorbar(cax, im, cbar_label)
     draw_annotation(ax)
 

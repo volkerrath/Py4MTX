@@ -58,7 +58,12 @@ a PDF catalogue can also be produced.
 | `DATA_OUT` | Write augmented `.dat` files and combined file |
 | `W_REF` | If `True`, convert depth to elevation (elev − depth) |
 | `PDF_CATALOG` | Assemble a PDF catalogue |
+| `FIGURE_TITLE` | Figure title (2026-11-11), passed to `plotrjmcmc.Results(figureTitle=...)`. `"auto"` = `MT Station <station> - 1D rj-McMC Inversion` as before; `None`, `False`, `""` = none; text with `{station}`; dict `{"<station>": spec, "default": spec}`. Needs the `plotrjmcmc.py` of the same date. |
 
 ## Dependencies
 
 `numpy`, py4mt: `data_proc` (`load_edi`), `plotrjmcmc`, `util`, `version`.
+
+## Changes 2026-11-11 (titles)
+
+`FIGURE_TITLE` (table above). The position of the colour bar cannot be chosen in `plotrjmcmc` (hand-placed axes); see `plotrjmcmc_readme.md`. Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before. Only compile-checked and tested at the level of the title logic (`util.resolve_title`, `test_util_titles.py`); the script was not run end to end.

@@ -211,6 +211,7 @@ where `tag` ∈ {`ssq`, `det`, `avg`}.
 | `AVG_LW` | `3.0` | Line width of the frequency-wise average curve |
 | `AVG_COLOR` | `"red"` | Colour of the frequency-wise average curve |
 | `SITE_CMAP` | `"tab20"` | Matplotlib colormap used to colour site curves |
+| `FIGURE_TITLE` | `"auto"` | Figure title (2026-11-11). `"auto"` = `<label> — apparent resistivity & phase` as before; `None`, `False`, `""` = none; text with `{label}`, `{tag}`, `{key}` (= `{tag}`); dict per quantity `{"ssq": spec, "det": spec, "avg": spec, "default": spec}`. The script now imports `util` (`import util as utl`) for `utl.resolve_title`. |
 
 ## Internal helpers
 
@@ -262,3 +263,7 @@ path).
 (if loading a pre-built `COLL_FILE`), or `compute_invariants=True` — the
 default — in `data_proc.make_collection()` (if `BUILD_FROM_EDI = True`).
 `Zavg` requires only that `Z` is present (always the case).
+
+## Changes 2026-11-11 (titles)
+
+`FIGURE_TITLE` (table *Plot appearance*). Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before. Only compile-checked and tested at the level of the title logic (`util.resolve_title`, `test_util_titles.py`); the script was not run end to end.

@@ -47,6 +47,7 @@ Depends on the parameterisation used by the sampler:
 | `PARAM_SET` | `"auto"`, `"minmax"`, or `"max_anifac"`. |
 | `BANDS` | Uncertainty band pairs as quantiles (0–1) or percentiles (0–100). |
 | `SHOW_BAND_EDGES` | Show dashed lines at band edges in addition to shading. |
+| `FIGURE_TITLE` | Figure title (2026-11-11). `"auto"` = `<station> \| <domain>:<set>` as before; `None`, `False`, `""` = none; text with `{station}`, `{domain}`, `{param_set}`, `{key}` (= the station); dict `{"<station>": spec, "default": spec}`. |
 | `DATA_DIR` | Base data directory. |
 | `SUMM_DIR` | Directory containing sampler summary NPZ files. |
 | `PLOT_DIR` | Output directory for plots (created if missing). |
@@ -70,3 +71,7 @@ Depends on the parameterisation used by the sampler:
 ## Dependencies
 
 `matplotlib`, `arviz`; py4mt: `mcmc`, `mcmc_viz`, `util`, `version`.
+
+## Changes 2026-11-11 (titles)
+
+`FIGURE_TITLE` (table above), via `util.resolve_title` (needs the `util.py` of the same date). The figure has no panel titles of its own, so there is no `PANEL_TITLES`. Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before. Only compile-checked and tested at the level of the title logic (`util.resolve_title`, `test_util_titles.py`); the script was not run end to end.

@@ -479,6 +479,19 @@ No sparse-matrix file (`.npz`) is required.
   in Nonlinear Inverse Problems.*
   SIAM J. Sci. Comp., 2014, **36**, A1895–A1910.
 
+### Titles and colour bars of the slice figures
+
+Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use); the forms of the title settings (`"auto"`, `None` / `False` / `""`, text with `{placeholders}`, dict per figure) are described in `femtic_viz_readme.md`, *Titles and colour bars*. Defaults give the figures of before. The joint bars need the `femtic_viz.py` of the same date.
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `MOD_TITLE` | `"auto"` | Title of the QC and model slice figures. `"auto"` = the model file name (as before); `None`, `False`, `""` = none; text with `{label}` (member directory), `{index}` (member number), `{file}` (model file), `{key}` (`"qc"` or `"model"`); dict `{"qc": spec, "model": spec, 0: spec, "default": spec}` |
+| `MOD_PANEL_TITLES` | `True` | `False` = no panel titles (`Map  z = 1.0 km`, ...) |
+| `MOD_CBAR_LOCATION` | `None` | `None` / `"panel"` = one colour bar per panel (as before); `"right"`, `"left"`, `"top"`, `"bottom"` = ONE joint bar for the panel grid |
+| `MOD_CBAR_SHRINK`, `MOD_CBAR_THICKNESS` | `0.7`, `None` | Joint bar: length as a fraction of the side of the panel grid; thickness in cm (`None` = automatic) |
+| `ENS_TITLE` | `"auto"` | Title of the joint ensemble figure (and of the per-member figures with `ENS_PER_MEMBER`): `"auto"` = `Ensemble (N members)` / `Ensemble member i -- file`; text with `{n_members}` (`{index}`, `{label}`, `{file}` for the member figures); dict `{"joint": spec, 0: spec, "default": spec}` |
+| `ENS_PANEL_TITLES`, `ENS_CBAR_LOCATION`, `ENS_CBAR_SHRINK`, `ENS_CBAR_THICKNESS` | `True`, `None`, `0.7`, `None` | As the `MOD_*` settings, for the ensemble figure: with a position there are joint bars, one for log10(rho) and one for the std row |
+
 ## Provenance
 
 | Date       | Author        | Change                                                        |
@@ -506,6 +519,7 @@ No sparse-matrix file (`.npz`) is required.
 | 2026-08-24 | Claude Sonnet 5 (Anthropic) | Added `PLOT_ONLY` mode: forces `PERTURB_MOD`/`PERTURB_DAT` off and skips `generate_directories()` entirely (which would otherwise overwrite already-Kriged member models via `COPY_LIST`), then re-plots existing member files from disk via `PLOT_DATA`/`PLOT_MODEL`/`PLOT_SLICES_QC`/`PLOT_SLICES_ENS`. Required making `MOD_MESH`/`MOD_RESISTIVITY_FILE`/`MOD_REFERENCE_FILE` unconditional (previously only defined inside `if PERTURB_MOD:`, a latent `NameError` risk) and decoupling the `PLOT_DATA` block from `if PERTURB_DAT:`. Missing per-member files are warned about and skipped, never a hard error. |
 | 2026-09-19 | Claude Sonnet 5 (Anthropic) | Plot extent made consistent with `femtic_ens_post.py`: added `MOD_ROI_AUTO` / `MOD_ROI_PAD_XY` / `MOD_ROI_ZLIM` (same names, defaults and semantics). `MOD_XLIM`/`MOD_YLIM` now come from the site bounding box + padding and `MOD_ZLIM` from `MOD_ROI_ZLIM` whenever sites are available, for QC/model and ensemble slice plots alike (`ENS_*LIM` are re-linked to the result unless given a separate value). The origin/site-resolution block now also runs for `PLOT_SLICES_ENS`. `MOD_PP_ROI` (extrema-search region) is deliberately left untouched and independent of the plot extent. Also corrected stale metre-based unit wording for `MOD_XLIM`/`YLIM`/`ZLIM` and `ENS_*LIM` in this README (values are km). |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_gst_prep_summary.md` is now written to `ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | Titles and colour bars of the slice figures: new `MOD_TITLE` / `ENS_TITLE`, `MOD_PANEL_TITLES` / `ENS_PANEL_TITLES`, `MOD_CBAR_LOCATION` / `ENS_CBAR_LOCATION`, `MOD_CBAR_SHRINK` / `ENS_CBAR_SHRINK`, `MOD_CBAR_THICKNESS` / `ENS_CBAR_THICKNESS` (section *Titles and colour bars of the slice figures*). `_plot_member_slices()` got the arguments `kind` and `index` for the title placeholders. Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. Not run end to end (no site / mesh data here); the changed calls were compile-checked. |
 
 ## Author
 

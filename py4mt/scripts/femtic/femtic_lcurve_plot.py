@@ -51,6 +51,13 @@ Provenance:
                        Needs the util.py of the same date (new out_dir
                        argument). AI-generated; review before production
                        use.
+    2026-11-11  Claude Sonnet 5.5 (Anthropic)
+                       PLOT_TITLE takes the forms of the title settings of
+                       all plot scripts: "auto" ("L-curve"), None / False /
+                       "" (no title), text (placeholder {what} = PLOT_WHAT) or
+                       a dict {"default": spec}, via fviz.resolve_title()
+                       (femtic_viz.py of the same date). A plain string works
+                       as before. AI-generated; review before production use.
 """
 
 import os
@@ -70,6 +77,7 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
             sys.path.insert(0, str(_p))
 
 import femtic as fem
+import femtic_viz as fviz
 import util as utl
 from version import versionstrg
 
@@ -92,6 +100,8 @@ print(titstrng + "\n\n")
 WORK_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/l-curve/"
 PLOT_NAME = WORK_DIR + "Misti_L-curve"
 PLOT_WHAT = "nrms"  # 'nrms' or 'misfit'
+#: Figure title: "auto" = "L-curve"; None, False or "" = no title; a string,
+#: used as given ({what} = PLOT_WHAT); a dict {"default": spec}.
 PLOT_TITLE = r"Misti Volcano" #"| distcorr"
 
 FONTSIZE = 9
@@ -253,7 +263,10 @@ for k in np.arange(len(lc_sorted)):
         fontsize=FONTSIZE,
     )
 
-plt.title(PLOT_TITLE,fontsize=FONTSIZE+1 )
+_title = fviz.resolve_title(PLOT_TITLE, "default", "L-curve",
+                            name="PLOT_TITLE", what=PLOT_WHAT)
+if _title:
+    plt.title(_title, fontsize=FONTSIZE+1)
 plt.xticks(fontsize=FONTSIZE-1)
 plt.yticks(fontsize=FONTSIZE-1)
 plt.xlabel(xformula, fontsize=FONTSIZE)

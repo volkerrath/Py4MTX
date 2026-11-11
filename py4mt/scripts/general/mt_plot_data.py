@@ -8,6 +8,9 @@ diagnostic subplots. Optionally assembles a PDF catalogue.
 
 @author: vrath
 Cleanup: 4 Mar 2026 by Claude (Anthropic)
+@modified: 2026-11-11 -- FIGURE_TITLE: title of the station figures ("auto" = the
+           station name as before; None / "" = none; text with {station}; dict
+           per station); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 import os
@@ -60,6 +63,11 @@ elif USE_NPZ:
     DAT_LIST = [DAT_DIR + "observation.npz"]
 
 STRNG_OUT = ""
+
+# Figure title: "auto" = the station name (as before); None, False or "" = no
+# title; a string with the placeholder {station} (other braces are used as
+# they stand); or a dict {"<station>": spec, "default": spec}
+FIGURE_TITLE = "auto"
 
 FILES_ONLY = False
 PLT_FMT = [".png", ".pdf"]
@@ -123,7 +131,10 @@ for site in DAT_LIST:
     add_phase(df, comps="xx,yy", ax=axs[1, 1], **PLTARGS)
     add_tipper(df, ax=axs[2, 0])
     add_pt(df, ax=axs[2, 1])
-    fig.suptitle(station)
+    _sup = utl.resolve_title(FIGURE_TITLE, str(station), str(station),
+                             name="FIGURE_TITLE", station=str(station))
+    if _sup:
+        fig.suptitle(_sup)
 
     # Remove empty axes
     for ax in axs.flat:

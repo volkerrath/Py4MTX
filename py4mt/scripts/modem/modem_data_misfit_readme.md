@@ -273,6 +273,9 @@ for several singles), exactly as in `femtic_data_misfit.py`.
 | `NCOLS`, `PANEL_SIZE`, `EQUAL_ASPECT` | 4, 3.3, True | Crossplot layout |
 | `CMAP`, `COLOR_RANGE` | `"turbo"`, `"global"` | log10 f colouring |
 | `MARKER_SIZE`, `ALPHA`, `LOG_RHO`, `SHOW_ERRORBARS` | | Crossplot appearance |
+| `FIGURE_TITLE` | `"auto"` | Figure titles. `"auto"` = the titles of before; `None`, `False`, `""` = none; a string, used as given, with `{key}` and the fields below filled in (`str.format`; text that cannot be filled in is used as it stands, with a note); a dict `{"crossplot": spec, "histogram": spec, "qq": spec, "curves": spec, "default": spec}` per kind of figure. Fields: all `{title}` (the run title); crossplot `{datatype}`; histogram and Q-Q `{group}`, `{axis}`, `{per_decade}`; curves `{site}`, `{sid}`, `{nrms}` (text, already formatted, `n/a` for observed-only) |
+| `PANEL_TITLES` | `True` | `False` = no titles of the crossplot, histogram and Q-Q panels |
+| `CROSSPLOT_CBAR_LOCATION`, `CROSSPLOT_CBAR_SHRINK` | `None; 0.85` | Colour bar of the crossplots (log10 frequency): `None` = at the right as before; `"right"`, `"left"`, `"top"`, `"bottom"`; length as a fraction of the side of the panel grid. These figures use `constrained_layout`, so the thickness is not offered |
 | `HIST_BAND_AXIS` | `"frequency"` | `"frequency"` or `"period"` bands |
 | `HIST_BANDS_PER_DECADE` | 2 | Band density |
 | `HIST_BY_COMPONENT` | False | Per component instead of per data type |
@@ -432,3 +435,26 @@ written there; text tables (`*_stats.txt`, `*_fit_measures.txt`,
 name is a sub-directory of the output directory, so several singles each get
 their own; an absolute path collects everything in one directory (file names
 stay distinct through the prefix). New helper `resolve_plot_dir()`.
+
+### Changelog (2026-11-11) --- direction of the period / frequency axis
+- `CURVES_INVERT_X` now defaults to `False`: the response curves have the period increasing from left to right
+  (a frequency axis would decrease to the right). It was `True` (period decreasing to the right, the `data_viz`
+  orientation); `True` still gives that.
+- The `"frequency"` band panels of the residual histograms and Q-Q plots (`HIST_BAND_AXIS` / `QQ_BAND_AXIS`) now
+  run from high to low frequency (were low to high), i.e. from short to long period like the `"period"` bands;
+  panel order and table row order change, not the content.
+- AI-generated (Claude Sonnet 5.5, Anthropic); review before production use. Same change as in
+  `femtic_misfit.py`, whose test `test_femtic_misfit_axes.py` covers the shared logic.
+
+### Changelog (2026-11-11b) --- titles and colour bar position (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- New `FIGURE_TITLE` (`"auto"` = the titles of before; `None` / `False` / `""` = no figure title; text with
+  `{placeholders}`; dict per kind of figure `"crossplot"` / `"histogram"` / `"qq"` / `"curves"` with `"default"`),
+  `PANEL_TITLES` (`False` = no panel titles) and `CROSSPLOT_CBAR_LOCATION` (`None` = at the right as before, or
+  `"right"` / `"left"` / `"top"` / `"bottom"`) with `CROSSPLOT_CBAR_SHRINK` (`0.85` as before). Same forms as in
+  all other plot scripts (`resolve_title`; the script keeps its own copy and needs no `femtic_viz`); the plot functions have the matching keywords
+  `figure_title`, `panel_titles`, `cbar_location`, `cbar_shrink`.
+- Placeholders: `{key}` (the kind of figure) and `{title}` (run title) everywhere; `{datatype}` (crossplot);
+  `{group}`, `{axis}`, `{per_decade}` (histogram, Q-Q); `{site}`, `{sid}`, `{nrms}` (curves; `{nrms}` is text, so
+  no format specifier).
+- The defaults give the figures of before. The thickness of the colour bar is not offered because the figures use
+  `constrained_layout`. Tests: `test_modem_data_misfit_titles.py` (29 tests, synthetic data).

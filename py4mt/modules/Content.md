@@ -306,6 +306,7 @@ Visualisation for FEMTIC resistivity models operating directly on
 | RTO/GST ensemble model plots | `plot_model_ensemble` |
 | Model slice panels (map, curtains, oblique plane) | `plot_model_slices`; ensemble version `plot_ensemble_slices` |
 | Polylines on slice panels; intersection line of two slices | `plot_model_slices(polylines=...)`, `slice_intersection_polyline`, `slice_intersection_polylines` |
+| Titles and colour bar position of the plot scripts | `resolve_title`, `check_cbar_location`, `add_colorbar`; `figure_title` / `panel_titles` / `cbar_location` of `plot_ensemble_slices`, `plot_borehole_logs`, `BoreholeFigureOptions` |
 | Borehole ρ(z) logs | `plot_borehole_logs` |
 | Ensemble borehole figures (profiles, heat maps) | `plan_borehole_figures`, `draw_borehole_figures`, `plot_boreholes`, `BoreholeFigureOptions` |
 | 3-D rendering | `plot_model_3d` |
@@ -416,6 +417,7 @@ All functions assume Jacobian is pre-scaled as `J_scaled = C⁻¹/² J`.
 | Geometry | `point_inside_polygon`, `choose_data_poly`, `proj_to_line` |
 | Numerical | `KLD`, `calc_lc_corner`, `calc_rms`, `dctn`/`idctn`, `fractrans` |
 | Rotation matrices | `rot_x`, `rot_y`, `rot_z`, `rot_full` |
+| Plot title and colour bar settings | `resolve_title`, `check_cbar_location` |
 | Petrophysical models | `brine_conductivity_sen_goode`, `archie`, `simandoux`, `dual_porosity`, `rgpz`, `kozeny_carman`, `hashin_shtrikman_two_phase`, `hashin_shtrikman_n_phase` |
 
 ---

@@ -16,6 +16,7 @@ A collection NPZ file with all stations is saved at the end.
 @modified:  2026-03-30 — adapt plot block to updated data_viz: per-call ylim overrides (no PLTARGS mutation), DPLUS subplot row, remove bogus required-key guard from add_tipper/add_pt; Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-06-12 — correct_ft_convention imported from data_proc (absorbed from mt_ft_convention); Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-06-13 — compute_zavg added to INVARS block (Zavg, Zavg_err); Claude Sonnet 4.6 (Anthropic)
+@modified:  2026-11-11 -- FIGURE_TITLE: title of the station figures ("auto" = station | name as before; None / "" = none; text with {station}, {name_str}; dict per station); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 import os
@@ -147,6 +148,11 @@ if ESTIMATE_ERRORS:
 PLOT = True
 if PLOT:
     PLOT_DIR = WORK_DIR +"/plots/"
+    # Figure title: "auto" = "<station><NAME_STR with | for _>" (as before);
+    # None, False or "" = no title; a string with the placeholders {station},
+    # {name_str} (other braces are used as they stand); or a dict
+    # {"<station>": spec, "default": spec}
+    FIGURE_TITLE = "auto"
     PLTARGS = {
         "show_errors": True,
         "xlim": None,       # period limits (s), e.g. (1e-3, 1e3); None = auto
@@ -315,7 +321,11 @@ for edi in edi_files:
         fig, axs = plt.subplots(nrows, 2, figsize=(
             8, 14 + 4 * (nrows - 3)), sharex=True)
 
-        fig.suptitle(statname + NAME_STR.replace("_", " | "))
+        _sup = utl.resolve_title(
+            FIGURE_TITLE, statname, statname + NAME_STR.replace("_", " | "),
+            name="FIGURE_TITLE", station=statname, name_str=NAME_STR)
+        if _sup:
+            fig.suptitle(_sup)
 
         df_rp = dataframe_from_edi(
             data_dict, include_tipper=False, include_pt=False

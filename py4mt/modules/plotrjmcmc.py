@@ -19,6 +19,14 @@ Revision History:
 
 10/19   VR (Volker Rath)
     * adapted colorbar and sizes
+
+2026-11-11   Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+    * Results(figureTitle=...): title of the figure. "auto" (or True) =
+      "MT Station <station> - 1D rj-McMC Inversion" as before; None, False or
+      "" = no title; a string, in which {station} is replaced by the station name
+      (other braces are used as they stand); or a dict {"<station>": spec,
+      "default": spec}. The colour bar is not offered with a position: it
+      sits in its own, hand-placed axes of the page layout.
 '''
 
 import os
@@ -35,6 +43,31 @@ mplstyle.use('fast')
 #plt.rc('text', usetex=True)
 
 
+def _resolve_title(spec, key, auto, **fields):
+    """Figure title from a title setting (the same forms as
+    femtic_viz.resolve_title): "auto" / True -> ``auto``; None / False / "" ->
+    "" (no title); a string with {placeholders} filled in from ``fields``
+    (text that cannot be filled in is used as it stands); a dict
+    {key: spec, "default": spec} (else "auto")."""
+    if isinstance(spec, dict):
+        spec = spec[key] if key in spec else spec.get("default", "auto")
+    if spec is None or spec is False:
+        return ""
+    if spec is True:
+        return auto
+    text = str(spec)
+    if text.strip() == "":
+        return ""
+    if text.strip().lower() == "auto":
+        return auto
+    try:
+        return text.format(key=key, **fields)
+    except (KeyError, IndexError, ValueError, AttributeError) as exc:
+        print("plotrjmcmc: figureTitle: cannot fill in %r (%r) - used as it "
+              "stands." % (text, exc))
+        return text
+
+
 class Results():
     def __init__(
             self,
@@ -44,7 +77,8 @@ class Results():
             maxDepth=2000,
             resLims=[1., 100000.],
             zLog=False,
-            colormap='gray_r'
+            colormap='gray_r',
+            figureTitle='auto'
             ):
         self._stationDir = path
         self._outputFileName = outputFileName
@@ -93,10 +127,11 @@ class Results():
             '%s_lineardepth.pdf' %
             (self._station))
 
-        # Title
-        self._titleString = (
-            'MT Station %s - 1D rj-McMC Inversion' %
-            (self._station))
+        # Title ("auto" = the title of before, see figureTitle in the header)
+        self._titleString = _resolve_title(
+            figureTitle, self._station,
+            'MT Station %s - 1D rj-McMC Inversion' % (self._station),
+            station=self._station)
 
         # Load data
         d = np.loadtxt(os.path.join(self._stationDir, 'data.txt'))
@@ -541,7 +576,8 @@ class Results():
         else:
             self._ax2.set_ylabel('Phase [$^\circ$]')
 
-        plt.suptitle(self._titleString, x=0.3, y=1.05)
+        if self._titleString:
+            plt.suptitle(self._titleString, x=0.3, y=1.05)
         plt.subplots_adjust(
             left=0,
             bottom=0,

@@ -36,6 +36,8 @@ are written to text files and optionally plotted.
 | `PHT_OUT`, `PHT_FILE`, `PHT_PLT` | Phase tensor output and plot switches. |
 | `PLOT_FORMAT`, `PLOT_FILE` | Plot file format(s) and base name. |
 | `PLTARGS` | Dict of plotting parameters (sizes, fonts, colours, markers). |
+| `FIGURE_TITLE` | Figure titles (2026-11-11). `"auto"` = `PLTARGS["suptitle"]` as before; `None`, `False`, `""` = none; text with `{title}` (the automatic title) and `{key}` (`"imped"`, `"rhophas"` or `"phstens"`); dict `{"imped": spec, "rhophas": spec, "phstens": spec, "default": spec}`. |
+| `PANEL_TITLES` | `False` = no titles of the panels of the three figures (default `True`). |
 | `PERIODS`, `N_LAYER`, `MODEL` | Model definition (period array, layer count, parameter matrix). |
 
 ## Outputs
@@ -49,6 +51,10 @@ are written to text files and optionally plotted.
 | `*_imped.png` | Impedance plots. |
 | `*_rhophas.png` | Apparent resistivity / phase plots. |
 | `*_phstens.png` | Phase tensor plots. |
+
+## Changes 2026-11-11 (titles)
+
+`FIGURE_TITLE` and `PANEL_TITLES` (table above); both work through `util.resolve_title` (needs the `util.py` of the same date). Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before. Only compile-checked and tested at the level of the title logic (`util.resolve_title`, `test_util_titles.py`); the script was not run end to end.
 
 ## Bugs fixed during cleanup
 

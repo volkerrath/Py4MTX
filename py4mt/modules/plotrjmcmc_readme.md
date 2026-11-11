@@ -19,6 +19,7 @@ Volker Rath (2019).
 | Original author | Rakib Hassan (Geoscience Australia) — 2017/10/17 |
 | Python port | rakib.hassan@ga.gov.au — 2018 |
 | py4mt adaptation | Volker Rath (DIAS) — 2019 (colorbar, sizes) |
+| Modified | 2026-11-11 — `figureTitle` (Claude Sonnet 5.5, AI-generated, review before use) |
 
 ---
 
@@ -50,6 +51,7 @@ Results(
 | `resLims` | Resistivity axis limits `[min, max]` (default `[1, 100000]`) |
 | `zLog` | If `True`, use log scale on the depth axis |
 | `colormap` | Matplotlib colormap for probability density plots (default `"gray_r"`) |
+| `figureTitle` | Figure title (suptitle), default `"auto"`: `"auto"` or `True` = `MT Station <station> - 1D rj-McMC Inversion` as before; `None`, `False`, `""` = no title; a string, in which `{station}` is replaced by the station name (other braces are used as they stand); a dict `{"<station>": spec, "default": spec}` |
 
 **Plot flags** (set on the instance before calling plot methods):
 
@@ -58,6 +60,12 @@ Results(
 | `_plotLowestMisfitModels` | `False` | Overlay the lowest-misfit models |
 | `_plotMisfits` | `True` | Include misfit convergence panel |
 | `_plotSynthetic` | `False` | Overlay synthetic data (if available) |
+
+---
+
+**Colour bar:** its position cannot be chosen. It sits in its own,
+hand-placed axes of the page layout, so no `cbar_location` is offered here
+(use `transdim_viz.py`, which has one).
 
 ---
 

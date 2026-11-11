@@ -268,6 +268,11 @@ COLORBAR_NTICKS = 7
 AXIS_LABEL_SIZE = 12
 AXIS_TICK_SIZE = 12
 AXIS_TITLE_SIZE = 12
+# Figure titles: "auto" = the titles of before; None, False or "" = none; a
+# string with the placeholders {field}, {section} (vertical sections) or
+# {depth} (depth maps); other braces are used as they stand; or a dict
+# {"section": spec, "map": spec, "default": spec}
+FIGURE_TITLE = "auto"
 
 # =====================================================================
 # MAP AXES UNITS
@@ -1063,7 +1068,10 @@ def plot_vertical_slice(polys_km, vals, e_ends, n_ends, L, lbl_start, lbl_end,
                 fontsize=AXIS_LABEL_SIZE, fontweight="bold", color="black",
                 clip_on=False, zorder=20)
 
-    ax.set_title(f"{title_field} — {name}", fontsize=AXIS_TITLE_SIZE)
+    _tt = tomomt.resolve_title(FIGURE_TITLE, "section", f"{title_field} — {name}",
+                               name="FIGURE_TITLE", field=title_field, section=name)
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
     if im is not None:
         finish_section_colorbar(cax, im, cbar_label)
     draw_annotation(ax)
@@ -1111,7 +1119,10 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
         im = None
 
     draw_features(ax, eq_e, eq_n)
-    ax.set_title(f"log$_{{10}}$ρ at {label}", fontsize=AXIS_TITLE_SIZE)
+    _tt = tomomt.resolve_title(FIGURE_TITLE, "map", f"log$_{{10}}$ρ at {label}",
+                               name="FIGURE_TITLE", depth=label)
+    if _tt:
+        ax.set_title(_tt, fontsize=AXIS_TITLE_SIZE)
     if im is not None:
         finish_panel_colorbar(cax, im, "log$_{10}$(ρ / Ω·m)")
     if AXES_UNITS == "latlon":

@@ -91,6 +91,9 @@ The defaults are those in the script; paths are shortened.
 | `NCOLS`, `PANEL_SIZE`, `EQUAL_ASPECT` | `4; 3.3; True` | Crossplot layout |
 | `CMAP`, `COLOR_RANGE` | `'turbo'; 'global'` | log10 f colouring |
 | `MARKER_SIZE`, `ALPHA`, `LOG_RHO`, `SHOW_ERRORBARS` | `14.0; 0.85; True; False` | Crossplot appearance |
+| `FIGURE_TITLE` | `"auto"` | Figure titles. `"auto"` = the titles of before; `None`, `False`, `""` = none; a string, used as given, with `{key}` and the fields below filled in (`str.format`; text that cannot be filled in is used as it stands, with a note); a dict `{"crossplot": spec, "histogram": spec, "qq": spec, "curves": spec, "default": spec}` per kind of figure. Fields: all `{title}` (the run title); crossplot `{datatype}`; histogram and Q-Q `{group}`, `{axis}`, `{per_decade}`; curves `{site}`, `{sid}`, `{nrms}` (text, already formatted, `n/a` for observed-only) |
+| `PANEL_TITLES` | `True` | `False` = no titles of the crossplot, histogram and Q-Q panels |
+| `CROSSPLOT_CBAR_LOCATION`, `CROSSPLOT_CBAR_SHRINK` | `None; 0.85` | Colour bar of the crossplots (log10 frequency): `None` = at the right as before; `"right"`, `"left"`, `"top"`, `"bottom"`; length as a fraction of the side of the panel grid. These figures use `constrained_layout`, so the thickness is not offered |
 | `HIST_BAND_AXIS` | `'frequency'` | `"frequency"` or `"period"` bands |
 | `HIST_BANDS_PER_DECADE` | `2` | Band density |
 | `HIST_BY_COMPONENT` | `False` | Per component instead of per data type |
@@ -121,7 +124,7 @@ The defaults are those in the script; paths are shortened.
 | `CURVES_OBS_ERRORS` | `'bar'` | Observed errors: `"bar"`, `"shade"`, `"none"` |
 | `CURVES_OBSERVED_ONLY` | `False` | `True`: plot only the observed data (markers and errors); no calculated response, no nRMS in the title |
 | `CURVES_OBS_MARKERSIZE`, `CURVES_LINEWIDTH` | `3.5; 1.2` | Appearance |
-| `CURVES_INVERT_X` | `True` | `data_viz` orientation (period decreasing to the right) |
+| `CURVES_INVERT_X` | `False` | Period increasing to the right (a frequency axis would decrease to the right). `True` = flipped, the old `data_viz` orientation (period decreasing to the right); default `True` before 2026-11-11 |
 | `CURVES_PERIOD_LIM`, `CURVES_YLIM` | `None; {'rho': None, 'phase': (-180.0,...` | Period limits; dict of y limits per panel |
 | `CURVES_PANEL_SIZE` | `(4.2, 3.4)` | Panel width, height [in] |
 | `CURVES_LEGEND_LOC` | `'below'` | `"below"`, a matplotlib `loc`, or `None` |
@@ -239,6 +242,25 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### 2026-11-11b -- titles and colour bar position (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- New `FIGURE_TITLE` (`"auto"` = the titles of before; `None` / `False` / `""` = no figure title; text with
+  `{placeholders}`; dict per kind of figure `"crossplot"` / `"histogram"` / `"qq"` / `"curves"` with `"default"`),
+  `PANEL_TITLES` (`False` = no panel titles) and `CROSSPLOT_CBAR_LOCATION` (`None` = at the right as before, or
+  `"right"` / `"left"` / `"top"` / `"bottom"`) with `CROSSPLOT_CBAR_SHRINK` (`0.85` as before). Same forms as in
+  all other plot scripts (`femtic_viz.resolve_title`); the plot functions have the matching keywords
+  `figure_title`, `panel_titles`, `cbar_location`, `cbar_shrink`.
+- Placeholders: `{key}` (the kind of figure) and `{title}` (run title) everywhere; `{datatype}` (crossplot);
+  `{group}`, `{axis}`, `{per_decade}` (histogram, Q-Q); `{site}`, `{sid}`, `{nrms}` (curves; `{nrms}` is text, so
+  no format specifier).
+- The defaults give the figures of before. The thickness of the colour bar is not offered because the figures use
+  `constrained_layout`. Tests: `test_femtic_misfit_titles.py` (28 tests, synthetic data).
+
+### 2026-11-11 -- direction of the period / frequency axis (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- `CURVES_INVERT_X` now defaults to `False`: the response curves have the period increasing from left to right
+  (it was `True`: period decreasing to the right; `True` still gives that). The `"frequency"` band panels of
+  the histograms and Q-Q plots now run from high to low frequency (were low to high). The work is done in
+  `femtic_misfit.py` (see its readme).
 
 ### 2026-11-10 -- site list, higher moments, output directory (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
 - `"curves"`: a list in `CURVES_SITES` (ids and/or names of the local

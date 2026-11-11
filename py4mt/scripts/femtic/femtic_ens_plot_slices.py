@@ -957,34 +957,19 @@ def _title_for(key, auto, label=""):
     """Figure title of the figure `key`, from MOD_TITLE.
 
     Returns `auto` for "auto" (None = file name of the block file), "" for
-    no title, otherwise the text with its placeholders filled in.
+    no title, otherwise the text with its placeholders filled in (the
+    function is fviz.resolve_title, shared by the plot scripts).
     """
-    spec = MOD_TITLE
-    if isinstance(spec, dict):
-        spec = spec.get(key, spec.get("default", "auto"))
-    if spec is None or spec is False:
-        return ""
-    if spec is True:
-        return auto
-    spec = str(spec)
-    if spec.strip() == "":
-        return ""
-    if spec.strip().lower() == "auto":
-        return auto
-    try:
-        return spec.format(
-            key=key,
-            label=label,
-            prefix=P,
-            n=len(model_list),
-            source=_ENS_SRC,
-            best=_best_member,
-            iter=_best_iter,
-            nrms=_best_nrms,
-        )
-    except (KeyError, IndexError, ValueError, AttributeError) as _exc:
-        print(f"  MOD_TITLE: cannot fill in {spec!r} ({_exc!r}) - used as it stands.")
-        return spec
+    return fviz.resolve_title(
+        MOD_TITLE, key, auto, name="MOD_TITLE",
+        label=label,
+        prefix=P,
+        n=len(model_list),
+        source=_ENS_SRC,
+        best=_best_member,
+        iter=_best_iter,
+        nrms=_best_nrms,
+    )
 
 
 _alpha_block = None

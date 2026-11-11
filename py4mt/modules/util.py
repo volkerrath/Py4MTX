@@ -27,6 +27,7 @@ Modified: 2026-05-23 — added utm_zone_from_latlon(), latlon_to_utm_zn(), utm_t
 Modified: 2026-05-25 — moved KL divergence, L-curve, DCT wrappers, fractional derivative, and residual-norm helpers to inverse.py; removed shims; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-08-13 — added write_param_summary() (writes a per-script Markdown summary of UPPERCASE user-set parameters, script path, and run date/time); Claude Sonnet 5 (Anthropic)
 Modified: 2026-10-28 -- write_param_summary(): new out_dir argument, so the summary can be written to the working directory set in the calling script instead of next to it (falls back to the script directory if out_dir cannot be used); Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
+Modified: 2026-11-11 -- new section "Plot title and colour bar settings": resolve_title() and check_cbar_location(), the title and colour bar location settings shared by the plot scripts (same logic as femtic_viz.resolve_title / check_cbar_location, repeated here so that scripts need no femtic_viz); Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
 """
 
 from __future__ import annotations
@@ -3534,3 +3535,82 @@ def load_hdf5(filename, items=None, flat=False):
                 _read_item(hdf, path, data)
 
     return data
+
+
+# ---------------------------------------------------------------------------
+# Plot title and colour bar settings
+# ---------------------------------------------------------------------------
+def resolve_title(spec, key=None, auto="", *, name="TITLE", **fields):
+    """Figure title from a title setting: ``"auto"``, none, text or a dict.
+
+    ``spec`` is the setting of the script (the same forms everywhere):
+
+    ``"auto"`` (or ``True``)
+        the script's automatic title, passed as ``auto``;
+    ``None``, ``False`` or ``""``
+        no title (returns ``""``);
+    a string
+        used as given, with its ``{placeholders}`` filled in from ``key``
+        (``{key}``) and the keyword ``fields`` of the call (as offered by the
+        script; format specifiers such as ``{nrms:.3f}`` work). Text whose
+        braces cannot be filled in (unknown name, stray brace) is used as it
+        stands and a note is printed;
+    a dict
+        one entry per figure, ``{key: value, "default": value}`` with the
+        values of this list; ``key`` selects the entry, ``"default"`` (else
+        ``"auto"``) covers the keys not listed (a key is also found by its
+        text form, so ``0`` matches ``"0"``).
+
+    Returns ``auto`` for the automatic title, ``""`` for no title, else the
+    text.
+
+    The same function as ``femtic_viz.resolve_title``.
+
+    Added 2026-11-11, Claude Sonnet 5.5 (Anthropic).
+    """
+    if isinstance(spec, dict):
+        if key in spec:
+            spec = spec[key]
+        elif key is not None and str(key) in spec:
+            spec = spec[str(key)]
+        else:
+            spec = spec.get("default", "auto")
+    if spec is None or spec is False:
+        return ""
+    if spec is True:
+        return auto
+    text = str(spec)
+    if text.strip() == "":
+        return ""
+    if text.strip().lower() == "auto":
+        return auto
+    try:
+        return text.format(key=key, **fields)
+    except (KeyError, IndexError, ValueError, AttributeError) as exc:
+        print(f"  {name}: cannot fill in {text!r} ({exc!r}) - used as it "
+              "stands.")
+        return text
+
+
+def check_cbar_location(location, *, name="cbar_location"):
+    """Normalise a colour bar location setting.
+
+    ``None``, ``""``, ``"panel"`` or ``"default"`` -> ``None`` (the plot's own
+    placement, i.e. what the script did before the setting existed);
+    ``"right"``, ``"left"``, ``"top"`` or ``"bottom"`` (any case, surrounding
+    blanks ignored) -> that string. Anything else raises ``ValueError``.
+
+    The same function as ``femtic_viz.check_cbar_location``.
+
+    Added 2026-11-11, Claude Sonnet 5.5 (Anthropic).
+    """
+    if location is None or location is False:
+        return None
+    loc = str(location).strip().lower()
+    if loc in ("", "panel", "default", "none"):
+        return None
+    if loc not in ("right", "left", "top", "bottom"):
+        raise ValueError(
+            f"{name} must be None, 'panel', 'right', 'left', 'top' or "
+            f"'bottom', got {location!r}.")
+    return loc

@@ -57,6 +57,21 @@ local site.dat, any case, and/or site ids) writes one file per site and format
 
 Changelog
 ---------
+2026-11-11b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            titles and colour bar position, in the form of all plot scripts:
+            FIGURE_TITLE ("auto" = as before; None / False / "" = none; text
+            with {placeholders}; dict per kind of figure), PANEL_TITLES,
+            CROSSPLOT_CBAR_LOCATION (None = at the right as before; "right",
+            "left", "top", "bottom"), CROSSPLOT_CBAR_SHRINK. The work is done
+            in femtic_misfit.py of the same date (see its changelog).
+2026-11-11  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            CURVES_INVERT_X now defaults to False: the response curves have
+            the period increasing from left to right (it was True: period
+            decreasing to the right, the data_viz orientation; True still
+            gives that). The band panels of the histograms / Q-Q plots with
+            *_BAND_AXIS = "frequency" now run from high to low frequency
+            (were low to high). The work is done in femtic_misfit.py (see its
+            changelog).
 2026-11-10  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             output goes to the directory <run dir>/<OUT_PREFIX>/ (new
             OUT_PREFIX_DIR); CURVES_SITES list -> single pdf / jpg files
@@ -140,6 +155,16 @@ FIT_MEASURES: bool = True   # overall table of fit measures (per data type
                             # and pooled) -> <prefix>_fit_measures.txt
 SHOW: bool = False
 
+# --- titles (all figures) ---
+# "auto" = the titles of before; None, False or "" = no figure title; a string,
+# used as given ({title} = the run description, {datatype} / {group} = data
+# type or group of the figure, {axis}, {per_decade} for histogram / Q-Q,
+# {site}, {sid}, {nrms} for curves, {key} = the kind of figure); a dict
+# {"crossplot": spec, "histogram": spec, "qq": spec, "curves": spec,
+# "default": spec}
+FIGURE_TITLE: Union[str, bool, None, dict] = "auto"
+PANEL_TITLES: bool = True     # titles of the panels (crossplot, histogram, Q-Q)
+
 # --- selection (None = everything) ---
 DATATYPES: Optional[Sequence[str]] = None     # e.g. ["MT", "VTF"]
 COMPONENTS: Optional[Sequence[str]] = None    # e.g. ["Zxy", "Zyx"]
@@ -154,6 +179,9 @@ MARKER_SIZE: float = 14.0
 ALPHA: float = 0.85
 LOG_RHO: bool = True          # log-log axes for rho* components
 SHOW_ERRORBARS: bool = False
+CROSSPLOT_CBAR_LOCATION: Optional[str] = None   # None = at the right (as before);
+                                                # "right", "left", "top", "bottom"
+CROSSPLOT_CBAR_SHRINK: float = 0.85   # length / side of the panel grid
 
 # --- residual histograms ---
 HIST_BAND_AXIS: str = "frequency"   # "frequency" | "period"
@@ -230,8 +258,10 @@ CURVES_OBS_MARKERSIZE: float = 3.5
 CURVES_LINEWIDTH: float = 1.2      # calculated / median line
 
 # axes
-CURVES_INVERT_X: bool = True       # True = as data_viz (period decreasing
-                                   # to the right); False = period increasing
+CURVES_INVERT_X: bool = False      # False = period increasing to the right
+                                   # (long periods at the right; the same as frequency
+                                   # decreasing to the right); True = flipped (the
+                                   # old data_viz orientation)
 CURVES_PERIOD_LIM: Optional[Tuple[float, float]] = None   # (Tmin, Tmax) [s]
 CURVES_YLIM: Dict[str, Optional[Tuple[float, float]]] = {
     "rho": None, "phase": (-180.,+180.,), "tipper": (-0.5,+0.5,), "pt": None}

@@ -370,6 +370,11 @@ OCEAN_COLOR = "#6baed6"
 # COLORBAR SETTINGS
 # =====================================================================
 COLORBAR_POSITION   = "right"   # "right" | "left" | "bottom" | "top"
+# Figure titles: "auto" = the titles of before; None, False or "" = none; a
+# string with the placeholders {section}, {swath} (vertical sections) or
+# {depth} (depth maps); other braces are used as they stand; or a dict
+# {"section": spec, "map": spec, "default": spec}
+FIGURE_TITLE = "auto"
 COLORBAR_SIZE       = 0.05
 COLORBAR_PAD        = 0.10      # inches
 COLORBAR_ASPECT     = 20
@@ -724,8 +729,38 @@ def draw_north_arrow(ax, x_km, y_km, length_km=4.0):
 # ------------------------------------------------------------------
 # Colourbar
 # ------------------------------------------------------------------
+def _resolve_title(spec, key=None, auto="", *, name="FIGURE_TITLE", **fields):
+    """Figure title from a title setting: "auto" / True -> ``auto``; None /
+    False / "" -> "" (no title); a string with {placeholders} filled in from
+    ``key`` ({key}) and ``fields`` (text that cannot be filled in is used as
+    it stands); a dict {key: spec, "default": spec} (else "auto").
+    The same as femtic_viz.resolve_title (2026-11-11)."""
+    if isinstance(spec, dict):
+        if key in spec:
+            spec = spec[key]
+        elif key is not None and str(key) in spec:
+            spec = spec[str(key)]
+        else:
+            spec = spec.get("default", "auto")
+    if spec is None or spec is False:
+        return ""
+    if spec is True:
+        return auto
+    text = str(spec)
+    if text.strip() == "":
+        return ""
+    if text.strip().lower() == "auto":
+        return auto
+    try:
+        return text.format(key=key, **fields)
+    except (KeyError, IndexError, ValueError, AttributeError) as exc:
+        print(f"  {name}: cannot fill in {text!r} ({exc!r}) - used as it "
+              "stands.")
+        return text
+
+
 def add_colorbar(fig, ax, mappable, label):
-    pos = COLORBAR_POSITION.lower()
+    pos = COLORBAR_POSITION.strip().lower()
     if pos in ("right", "left"):
         orientation = "vertical"
     elif pos in ("bottom", "top"):
@@ -1159,7 +1194,11 @@ def plot_vertical_slice(dist_km, depth_km, section, e_ends, n_ends,
                 color="black",
                 clip_on=False, zorder=20)
 
-    ax.set_title(f"log$_{{10}}$ρ — {name}  (swath ±{swath} km)", fontsize=9)
+    _tt = _resolve_title(
+        FIGURE_TITLE, "section", f"log$_{{10}}$ρ — {name}  (swath ±{swath} km)",
+        name="FIGURE_TITLE", section=name, swath=swath)
+    if _tt:
+        ax.set_title(_tt, fontsize=9)
 
     if ve != 1.0:
         ax.text(0.99, 0.01, f"VE = {ve:.1f}×",
@@ -1459,7 +1498,10 @@ for ii, d_km in enumerate(DEPTH_SLICES_KM):
                                [vx.min(), vx.max(), vy.min(), vy.max()],
                                zorder=6)
     draw_features(ax, eq_e, eq_n)
-    ax.set_title(f"log$_{{10}}$ρ at {label}", fontsize=9)
+    _tt = _resolve_title(FIGURE_TITLE, "map", f"log$_{{10}}$ρ at {label}",
+                         name="FIGURE_TITLE", depth=label)
+    if _tt:
+        ax.set_title(_tt, fontsize=9)
     add_colorbar(fig, ax, im, "log$_{10}$(ρ / Ω·m)")
     if SHOW_LATLON_AXES:
         add_latlon_ticks(ax)
