@@ -132,8 +132,9 @@ BOREHOLE_SITES = [
 | `WORK_DIR` | Working directory prefix for all paths |
 | `MODEL_FILE` | `resistivity_block_iterX.dat` to sample; or a list / glob / run directories (batch, see above) |
 | `MODEL_ITER`, `BATCH_*` | Batch settings, see "Several models (batch)" |
+| `CNV_FILE` | Convergence file used for `MODEL_ITER = "last"` / `"best"`: one name or a list of candidate names (default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`; the first one that exists is used). |
 | `MESH_FILE` | `mesh.dat` |
-| `MESH_SWAP_XY` | `True` | Swap of the first two node-coordinate columns when the mesh is read (`femtic.read_femtic_mesh`). `mesh.dat` holds x = northing, y = easting; the plots, sites and slice positions use x = easting, y = northing, so `True` (default) gives the right orientation. `False` draws the model transposed (NNE structures appear as ENE) and is only for meshes already written as x = easting, y = northing; `None` = leave femtic's module default (no swap). |
+| `MESH_SWAP_XY` (default `True`) | Swap of the first two node-coordinate columns when the mesh is read (`femtic.read_femtic_mesh`). `mesh.dat` holds x = northing, y = easting; the plots, sites and slice positions use x = easting, y = northing, so `True` (default) gives the right orientation. `False` draws the model transposed (NNE structures appear as ENE) and is only for meshes already written as x = easting, y = northing; `None` = leave femtic's module default (no swap). |
 | `SITE_DAT` | `mt_make_sitelist.py` CSV (`name,lat,lon,elev,sitenum,easting,northing`); used for origin estimation only; `None` to disable |
 
 ### Ocean / air
@@ -274,3 +275,4 @@ Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 | 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | **Several models in one run:** `MODEL_FILE` may be a list, a glob or run directories (`MODEL_ITER` selects the iteration), giving one figure and NPZ per model plus an optional catalog PDF (`BATCH_*`); new `femtic.resolve_model_files`, `fviz.append_catalog_page`; `fviz.plot_borehole_logs` now returns its figure. One model behaves exactly as before (checked: figure and NPZ identical). AI-generated; review before production use. |
 | 2026-11-10 | Claude Sonnet 5.5 (Anthropic) | New `MESH_SWAP_XY` (default `True`), applied before the mesh is read; without it the mesh is transposed relative to the borehole positions and the logs are taken at the wrong places. AI-generated; review before production use. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | `FIGURE_TITLE` takes the forms of all plot scripts (`"auto"`, none, text with placeholders, dict per model label); new `FIGURE_TITLE_FONTSIZE`, `PANEL_TITLES`; `BATCH_TITLE` also knows `{file}`. Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. |
+| 2026-11-11b | Claude Sonnet 5.5 (Anthropic) | New `CNV_FILE` (one name or a list of candidate names; default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`), passed to `fem.resolve_model_files()` as `cnv_name`. Needs the `femtic.py` of the same date. AI-generated; review before production use. |

@@ -58,6 +58,12 @@ Provenance:
                        a dict {"default": spec}, via fviz.resolve_title()
                        (femtic_viz.py of the same date). A plain string works
                        as before. AI-generated; review before production use.
+    2026-11-11b Claude Sonnet 5.5 (Anthropic)
+                       A run directory without any of the CNV_FILE names is
+                       skipped with a message instead of stopping the script
+                       (read_cnv raises FileNotFoundError, now caught).
+                       Needs the femtic.py of the same date. AI-generated;
+                       review before production use.
 """
 
 import os
@@ -151,7 +157,7 @@ l_curve = []
 for directory in dir_list:
     try:
         _rows = fem.read_cnv(directory, filename=CNV_FILE)["rows"]
-    except ValueError:
+    except (ValueError, OSError):
         print(directory, "does not contain a valid .cnv file")
         continue
     if not _rows:

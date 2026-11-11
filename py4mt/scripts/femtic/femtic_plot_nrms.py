@@ -52,6 +52,11 @@ the default settings is unchanged. AI-generated; review before use. (A
 TITLE = "" now means no title; before it gave a title with only the
 iteration line.)
 
+2026-11-11b (Claude Sonnet 5.5): new setting CNV_FILE (one name or a list of
+candidate names of the convergence file, default ["femtic.cnv",
+"FEMTIC-DABIC.cnv"]), passed to fem.get_nrms(); needs the femtic.py of the
+same date. AI-generated; review before use.
+
 2026-10-11 (Claude Sonnet 5.5): the HDF5 reading was migrated from the
 separately supplied `femtic_hdf5_readers.read_data_hdf5` (per-station-type
 groups, `data_iter<N>.h5`) to `femtic.read_results_data` (structured rows
@@ -110,6 +115,11 @@ import util as utl  # noqa: F401  (imported for consistency with py4mt scripts;
 # iteration) and the results_iter<N>.h5 files (used for the per-site
 # residual breakdown at that iteration).
 FEMTIC_DIR = "."
+
+# Name of the convergence file inside FEMTIC_DIR: one name or a list of
+# candidate names (the first one that exists is used; names are also matched
+# ignoring upper / lower case).
+CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
 # Filename template for the per-iteration HDF5 results file, relative to
 # FEMTIC_DIR. Must contain the literal "{iter}" placeholder, filled in
@@ -214,11 +224,11 @@ def _select_best_iteration(femtic_dir):
     "where does the authoritative nRMS come from" step is visible and
     separately testable from the per-site HDF5 breakdown below.
     """
-    num_best, nrm_best = fem.get_nrms(femtic_dir)
+    num_best, nrm_best = fem.get_nrms(femtic_dir, CNV_FILE)
     if num_best < 0:
         raise RuntimeError(
             f"fem.get_nrms found no usable rows in "
-            f"{os.path.join(femtic_dir, 'femtic.cnv')!r}."
+            f"{str(fem.resolve_cnv_path(femtic_dir, CNV_FILE))!r}."
         )
     return num_best, nrm_best
 

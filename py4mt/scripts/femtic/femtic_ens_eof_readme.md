@@ -20,6 +20,7 @@ Empirical Orthogonal Function (EOF) analysis of a FEMTIC model ensemble.
 | 2026-03-03 | Claude | Renamed file to femtic_ens_eof; params to UPPERCASE.            |
 | 2026-08-13 | Claude Sonnet 5 | Added `femtic_ens_eof_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_ens_eof_summary.md` is now written to `ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `CNV_FILE` (one name or a list of candidate names; default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`), passed to `fem.find_cnv_file()` and `fem.get_nrms()`. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
 
 ## Purpose
 
@@ -35,9 +36,10 @@ data-driven decomposition of the ensemble variability.
 | `ENSEMBLE_DIR` | Root directory containing inversion sub-directories. |
 | `ENSEMBLE_NAME` | Prefix pattern for directory matching (e.g. `ann_`). |
 | `MIN_RMS` | Maximum acceptable nRMS for inclusion. |
+| `CNV_FILE` | Name of the convergence file in each run directory: one name or a list of candidate names (default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`; the first one that exists is used). |
 | `MESH_FILE` | Relative path to the FEMTIC mesh file within each run directory. |
 
-Each run directory must contain `femtic.cnv`, `mesh.dat`, and the final
+Each run directory must contain the convergence file (`CNV_FILE`, default `femtic.cnv` or `FEMTIC-DABIC.cnv`), `mesh.dat`, and the final
 `resistivity_block_iter<N>.dat`.
 
 ## Outputs

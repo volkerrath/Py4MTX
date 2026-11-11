@@ -113,7 +113,7 @@ borehole heat-map figure (BOREHOLE_HEATMAP_FILE) + histograms .npz
 |---|---|
 | `WORK_DIR` | Base directory for all relative paths |
 | `MESH_FILE` | `mesh.dat` |
-| `MESH_SWAP_XY` | `True` | Swap of the first two node-coordinate columns when the mesh is read (`femtic.read_femtic_mesh`). `mesh.dat` holds x = northing, y = easting; the plots, sites and slice positions use x = easting, y = northing, so `True` (default) gives the right orientation. `False` draws the model transposed (NNE structures appear as ENE) and is only for meshes already written as x = easting, y = northing; `None` = leave femtic's module default (no swap). |
+| `MESH_SWAP_XY` (default `True`) | Swap of the first two node-coordinate columns when the mesh is read (`femtic.read_femtic_mesh`). `mesh.dat` holds x = northing, y = easting; the plots, sites and slice positions use x = easting, y = northing, so `True` (default) gives the right orientation. `False` draws the model transposed (NNE structures appear as ENE) and is only for meshes already written as x = easting, y = northing; `None` = leave femtic's module default (no swap). |
 | `OBSERVE_FILE` | `observe.dat` (fallback site source) |
 | `SITE_DAT` | `site.dat` CSV from `mt_make_sitelist.py` |
 
@@ -122,7 +122,7 @@ borehole heat-map figure (BOREHOLE_HEATMAP_FILE) + histograms .npz
 |---|---|
 | `ENSEMBLE_DIR` | Directory containing one sub-directory per member |
 | `ENSEMBLE_NAME` | Member sub-directories matched via `"<ENSEMBLE_NAME>*"` |
-| `CNV_FILE` | Convergence file name in each member directory (default `"femtic.cnv"`; a list gives candidates, first existing wins) -- keep equal to `femtic_ens_post.py`'s value |
+| `CNV_FILE` | Convergence file name in each member directory (default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`; a list gives candidates, first existing wins) -- keep equal to `femtic_ens_post.py`'s value |
 | `NRMS_MAX` | Max accepted nRMS from `femtic.cnv` — keep equal to `femtic_ens_post.py`'s value |
 | `ENS_LABELS` | Labels for member plots/filenames; `None` → directory basenames |
 | `ENS_MODEL_SOURCE` | `"converged"` (default), `"perturbed"` or `"both"`: which model of each member the **ensemble-based borehole figures** use; `"both"` = heat maps of both on one colour bar; see "Perturbed references" and "Borehole heat map" below |
@@ -742,3 +742,4 @@ Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
   `util.py` of the same date. AI-generated; review before production use.
 - **2026-11-10 (Claude Sonnet 5.5, Anthropic):** New `MESH_SWAP_XY` (default `True`), applied before the mesh is read (slice maps and borehole search). `mesh.dat` holds x = northing, y = easting; since 2026-10-11 `femtic.read_femtic_mesh` does not swap by default, which drew the maps transposed (a NNE structure as ENE) and put the boreholes in the wrong tetrahedra. `None` keeps femtic's default, `False` forces no swap. AI-generated; review before production use.
 - **2026-11-11b (Claude Sonnet 5.5 (Anthropic)):** Titles and colour bars: `PLOT_TITLE`, `PLOT_PANEL_TITLES`, `PLOT_CBAR_LOCATION`, `PLOT_CBAR_SHRINK`, `PLOT_CBAR_THICKNESS`, `BOREHOLE_HEAT_TITLE`, `BOREHOLE_HEAT_PANEL_TITLES`, `BOREHOLE_HEAT_CBAR_LOCATION`, `BOREHOLE_HEAT_CBAR_SHRINK`, `BOREHOLE_HEAT_CBAR_THICKNESS` (section *Titles and colour bars*). Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. Not run end to end (needs an ensemble directory); the changed calls were compile-checked. AI-generated; review before production use.
+- **2026-11-11c (Claude Sonnet 5.5, Anthropic):** `CNV_FILE` now defaults to the list `["femtic.cnv", "FEMTIC-DABIC.cnv"]` (as in `femtic_ens_post.py`); the member directories are searched with `fem.find_cnv_file()` (names also matched ignoring case). Needs the `femtic.py` of the same date. AI-generated; review before production use.

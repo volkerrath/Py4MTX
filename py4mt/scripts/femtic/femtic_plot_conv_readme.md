@@ -86,6 +86,7 @@ sequence)"`).
 | `WORK_DIR` | — | Base directory |
 | `RUN_DIRS` | `None` | Explicit list of run directories (relative to `WORK_DIR`, or absolute). A single-element list plots just one run. `None` → discover via `WORK_DIR` + `SEARCH_STRNG` glob instead. |
 | `SEARCH_STRNG` | `"ann_reg*"` | Glob pattern used when `RUN_DIRS is None`, matching `femtic_lcurve_plot.py`'s convention. |
+| `CNV_FILE` | `["femtic.cnv", "FEMTIC-DABIC.cnv"]` | Name of the convergence file in each run directory: one name or a list of candidate names (the first one that exists is used; names are also matched ignoring case). A directory with none of them is skipped with a message. |
 | `RUN_LABELS` | `None` | One label per `RUN_DIRS` entry (legend / console messages); `None` = each directory's basename. Ignored (basenames used) when `RUN_DIRS is None`. |
 
 ### Fields
@@ -197,5 +198,6 @@ python femtic_plot_conv.py
 | 2026-09-07 | Claude Sonnet 5 (Anthropic) | Created. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_plot_conv_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | `PLOT_TITLE` takes the forms of the title settings of all plot scripts (`"auto"` = the former text, which is still the default). The figure with the default is unchanged. Needs the `femtic_viz.py` of the same date. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `CNV_FILE` (one name or a list of candidate names; default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`), passed to `fem.read_cnv()`. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
 
 Author: Volker Rath (DIAS)

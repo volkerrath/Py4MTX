@@ -42,6 +42,13 @@ Provenance:
                 spec}, via fviz.resolve_title() (femtic_viz.py of the same
                 date). The figures with the default are unchanged.
                 AI-generated; review before production use.
+    2026-11-11b Claude Sonnet 5.5 (Anthropic)
+                CNV_FILE now defaults to the list ["femtic.cnv",
+                "FEMTIC-DABIC.cnv"] (as in the other femtic_* scripts); a run
+                directory without any of the files is skipped with a message
+                (read_cnv raises FileNotFoundError, now caught). Needs the
+                femtic.py of the same date. AI-generated; review before
+                production use.
 """
 
 import os
@@ -81,7 +88,7 @@ PLOT_WHAT = "rough"  # Options: 'misfit', 'rms', 'rough'
 
 #: Name of the FEMTIC convergence file inside each run directory. A single
 #: name or a list of candidate names (first existing one is used).
-CNV_FILE = "femtic.cnv"
+CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
 #: Figure title: "auto" = PLOT_NAME and the first alpha (as before); None,
 #: False or "" = no title; a string, used as given ({plot_name} = PLOT_NAME,
@@ -105,7 +112,7 @@ for directory in dir_list:
     # Beta/Distortion columns.
     try:
         rows = fem.read_cnv(directory, filename=CNV_FILE)["rows"]
-    except ValueError as err:
+    except (ValueError, OSError) as err:
         print(cnv_path, "does not contain a valid .cnv file:", err)
         continue
 

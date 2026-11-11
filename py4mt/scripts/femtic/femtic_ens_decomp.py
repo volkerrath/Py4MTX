@@ -25,6 +25,15 @@ Provenance:
                        out_dir=ENSEMBLE_DIR). Needs the util.py of the
                        same date (new out_dir argument). AI-generated;
                        review before production use.
+    2026-11-11  Claude Sonnet 5.5 (Anthropic)
+                       New setting CNV_FILE (one name or a list of candidate
+                       names of the convergence file; default
+                       ["femtic.cnv", "FEMTIC-DABIC.cnv"]). The file is found
+                       with fem.find_cnv_file() and its last row is read by
+                       column name (fem.read_cnv_last()) instead of fixed
+                       positions 0 and 8, which fitted only the layout with
+                       distortion columns. Needs the femtic.py of the same
+                       date. AI-generated; review before production use.
 """
 
 import os
@@ -61,6 +70,12 @@ ENSEMBLE_DIR = r"/home/vrath/work/Ensembles/RTO/"
 ENSEMBLE_NAME = "rto_*"
 NRMS_MAX = 1.4
 
+#: Name of the FEMTIC convergence file inside each run directory: one name
+#: or a list of candidate names (the first one that exists is used; names are
+#: also matched ignoring upper / lower case). Same setting in all femtic_*
+#: scripts; the default list is fem.CNV_DEFAULT_NAMES.
+CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
+
 PROC = "pca"  # Options: 'pca', 'increment', 'ica'
 PERCENTILES = [2.3, 15.9, 50.0, 84.1, 97.7]  # 2-sigma / 1-sigma bounds
 ENSEMBLE_RESULTS = ENSEMBLE_DIR + "PCA.npz"
@@ -77,17 +92,19 @@ model_count = -1
 
 for directory in dir_list:
     print("\nInversion run", directory)
-    cnv_file = directory + "/femtic.cnv"
-    if not os.path.isfile(cnv_file):
-        print(cnv_file, "not found, run skipped.")
+    cnv_file = fem.find_cnv_file(directory, CNV_FILE)
+    if cnv_file is None:
+        print(directory, ": none of", ", ".join(fem.cnv_names(CNV_FILE)),
+              "found, run skipped.")
         continue
 
-    with open(cnv_file) as file:
-        cnv = file.readlines()
-
-    info = cnv[-1].split()
-    numit = int(info[0])
-    nrms = float(info[8])
+    # Last row of the convergence file, columns taken by name from its header.
+    last = fem.read_cnv_last(cnv_file)
+    if last is None:
+        print(cnv_file, "has no usable rows, run skipped.")
+        continue
+    numit = int(round(last["Iter"]))
+    nrms = float(last["RMS"])
 
     if nrms > NRMS_MAX:
         print(directory, "nRMS =", nrms, "- not converged, run skipped.")

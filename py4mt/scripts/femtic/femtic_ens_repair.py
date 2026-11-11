@@ -173,6 +173,12 @@ Provenance:
                 fem.append_scan_report); the local copies are removed, the
                 report is unchanged.
                 AI-generated; review before production use.
+    2026-11-11b Claude Sonnet 5.5 (Anthropic)
+                The member directories are searched for the convergence file
+                with fem.find_cnv_file() (names of CNV_FILE tried in order,
+                then ignoring case); the scan report is unchanged. Needs the
+                femtic.py of the same date. AI-generated; review before
+                production use.
 """
 from __future__ import annotations
 
@@ -510,10 +516,10 @@ for d in dir_list:
 
     print(f"\n  Inversion run: {d}")
     _label = os.path.basename(os.path.normpath(d))
-    cnv_file = str(fem.resolve_cnv_path(d, CNV_FILE))
-    if not os.path.isfile(cnv_file):
-        print(f"    {os.path.basename(cnv_file)} not found -- skipped.")
-        _names = [CNV_FILE] if isinstance(CNV_FILE, str) else list(CNV_FILE)
+    cnv_file = fem.find_cnv_file(d, CNV_FILE)
+    if cnv_file is None:
+        _names = fem.cnv_names(CNV_FILE)
+        print(f"    none of {', '.join(_names)} found -- skipped.")
         conv_list.append(dict(label=_label, dir=d, nrms=None, status="missing_cnv",
                               reason="no_cnv_file",
                               detail="none of " + ", ".join(map(str, _names))
@@ -527,9 +533,10 @@ for d in dir_list:
     # indices selected by a "4.3"/"5." version string silently matched
     # only one specific column layout and misread nRMS for any run whose
     # actual column count didn't match that assumption.
+    cnv_file = str(cnv_file)
     try:
         _rows = fem.read_cnv(cnv_file)["rows"]
-    except ValueError as _e:
+    except (ValueError, OSError) as _e:
         print(f"    {_e}")
         conv_list.append(dict(label=_label, dir=d, nrms=None, status="missing_cnv",
                               reason="cnv_unreadable",

@@ -249,6 +249,17 @@ Modified: 2026-11-11 by Claude Sonnet 5.5 (Anthropic) -- new
     slices.py) to the metre dict that femtic_viz.plot_model_slices(
     polylines=...) takes. Nothing else changed. AI-generated code --
     review before production use.
+Modified: 2026-11-11b by Claude Sonnet 5.5 (Anthropic) -- one way to find
+    and read the convergence file: CNV_DEFAULT_NAMES (the candidate names,
+    default ["femtic.cnv", "FEMTIC-DABIC.cnv"]), cnv_names(),
+    find_cnv_file() (first existing candidate, then the same names
+    case-insensitively; None if there is none) and read_cnv_last() (last
+    row by column name). resolve_cnv_path(), read_cnv(), get_nrms() and
+    resolve_model_files() now take the whole list when no name is given
+    (before: "femtic.cnv" only) and a directory without any of the files
+    gives a FileNotFoundError that names the candidates. A single name
+    still works as before. AI-generated code -- review before production
+    use.
 """
 from __future__ import annotations
 
@@ -374,31 +385,86 @@ def _cnv_canonical_name(token: str) -> str:
     return raw
 
 
-CNV_DEFAULT_NAME = "femtic.cnv"
+#: Candidate names of the FEMTIC convergence file, in order of preference.
+#: All readers (read_cnv, get_nrms, read_cnv_last, resolve_cnv_path,
+#: find_cnv_file, resolve_model_files) use this list when they are not given
+#: a name of their own; the scripts' CNV_FILE setting takes the same forms
+#: (one name or a list of names).
+CNV_DEFAULT_NAMES = ("femtic.cnv", "FEMTIC-DABIC.cnv")
+#: First of CNV_DEFAULT_NAMES (kept for older callers).
+CNV_DEFAULT_NAME = CNV_DEFAULT_NAMES[0]
 
 
-def resolve_cnv_path(directory, filename=CNV_DEFAULT_NAME):
+def cnv_names(names=None) -> list:
+    """Normalise a convergence-file name setting to a list of names.
+
+    ``None`` (or nothing usable) -> ``list(CNV_DEFAULT_NAMES)``; one name
+    (str or path) -> ``[name]``; a list/tuple of names -> that list with
+    empty entries and repeated names removed, order kept.
+    """
+    if names is None:
+        return list(CNV_DEFAULT_NAMES)
+    if isinstance(names, (str, os.PathLike)):
+        seq = [names]
+    else:
+        seq = list(names)
+    out = []
+    for n in seq:
+        n = os.fspath(n)
+        if n and n not in out:
+            out.append(n)
+    return out or list(CNV_DEFAULT_NAMES)
+
+
+def find_cnv_file(directory, names=None):
+    """Return the convergence file of ``directory`` as a ``Path``, or None.
+
+    ``names`` is one name or a list of candidate names (default
+    :data:`CNV_DEFAULT_NAMES`). The candidates are tried in the order given;
+    the first one that exists wins. If none exists under its exact name, the
+    same names are tried again ignoring the case of the letters (so
+    ``FEMTIC.CNV`` is found for ``femtic.cnv``); this second pass applies to
+    plain file names only. A name with a directory part is taken relative to
+    ``directory`` (an absolute name is used as it is).
+    """
+    directory = Path(directory)
+    cands = cnv_names(names)
+    for n in cands:
+        p = directory / n
+        if p.is_file():
+            return p
+    try:
+        listing = {}
+        for e in sorted(os.scandir(directory), key=lambda x: x.name):
+            if e.is_file():
+                listing.setdefault(e.name.lower(), e.name)
+    except OSError:
+        return None
+    for n in cands:
+        if os.sep in n or (os.altsep and os.altsep in n):
+            continue
+        hit = listing.get(n.lower())
+        if hit is not None:
+            return directory / hit
+    return None
+
+
+def resolve_cnv_path(directory, filename=None):
     """Return the path of the convergence file inside ``directory``.
 
-    ``filename`` is either a single file name or a list/tuple of candidate
-    names; with several candidates the first one that exists is returned.
-    If none exists, the path built from the first candidate is returned
-    (so the caller gets a meaningful FileNotFoundError).
+    ``filename`` is a single file name or a list/tuple of candidate names
+    (default :data:`CNV_DEFAULT_NAMES`); see :func:`find_cnv_file` for how
+    they are tried. If none exists, the path built from the first candidate
+    is returned (so the caller gets a meaningful FileNotFoundError).
     """
-    if filename is None:
-        filename = CNV_DEFAULT_NAME
-    names = [filename] if isinstance(filename, (str, os.PathLike)) else list(filename)
-    if not names:
-        names = [CNV_DEFAULT_NAME]
-    directory = Path(directory)
-    for n in names:
-        if (directory / n).is_file():
-            return directory / n
-    return directory / names[0]
+    found = find_cnv_file(directory, filename)
+    if found is not None:
+        return found
+    return Path(directory) / cnv_names(filename)[0]
 
 
 def read_cnv(source, *, columnar: bool = False,
-             filename=CNV_DEFAULT_NAME) -> dict:
+             filename=None) -> dict:
     """Read a FEMTIC convergence file (default ``femtic.cnv``) using its own header
     row to determine column positions.
 
@@ -431,8 +497,9 @@ def read_cnv(source, *, columnar: bool = False,
     filename : str | sequence of str, optional
         Name of the convergence file looked up when ``source`` is a
         directory (ignored if ``source`` is a file path). May be a list or
-        tuple of candidate names; the first existing one is used.
-        Default ``"femtic.cnv"``.
+        tuple of candidate names; the first existing one is used (see
+        :func:`find_cnv_file`). Default ``None`` = :data:`CNV_DEFAULT_NAMES`,
+        i.e. ``["femtic.cnv", "FEMTIC-DABIC.cnv"]``.
     columnar : bool, optional
         If True, also build a ``"data"`` entry: a dict mapping each header
         column name to a 1-D ``np.ndarray`` of that column's values across
@@ -463,6 +530,9 @@ def read_cnv(source, *, columnar: bool = False,
 
     Raises
     ------
+    FileNotFoundError
+        If ``source`` is a directory that holds none of the candidate files
+        (the message names them), or a file path that does not exist.
     ValueError
         If no header row (a line naming both an "Iter"-like and an
         "RMS"-like column, matched case-insensitively) is found before
@@ -474,7 +544,12 @@ def read_cnv(source, *, columnar: bool = False,
     """
     path = Path(source)
     if path.is_dir():
-        path = resolve_cnv_path(path, filename)
+        found = find_cnv_file(path, filename)
+        if found is None:
+            raise FileNotFoundError(
+                f"read_cnv: no convergence file in {path} "
+                f"(tried: {', '.join(cnv_names(filename))})")
+        path = found
 
     columns: Optional[dict] = None
     rows: list = []
@@ -514,7 +589,7 @@ def read_cnv(source, *, columnar: bool = False,
     return result
 
 
-def get_nrms(directory=None, filename=CNV_DEFAULT_NAME):
+def get_nrms(directory=None, filename=None):
     '''
     Get best (smallest) nRMS from FEMTIC run.
 
@@ -524,7 +599,7 @@ def get_nrms(directory=None, filename=CNV_DEFAULT_NAME):
         Directory containing FEMTIC convergence file. The default is None.
     filename : str | sequence of str, optional
         Name of the convergence file (or list of candidate names; first
-        existing wins). The default is ``"femtic.cnv"``.
+        existing wins). The default is ``None`` = :data:`CNV_DEFAULT_NAMES`.
 
     Returns
     -------
@@ -562,6 +637,28 @@ def get_nrms(directory=None, filename=CNV_DEFAULT_NAME):
         num_best = int(round(rows[index_min]["Iter"]))
 
     return num_best, nrm_best
+
+def read_cnv_last(source, filename=None):
+    """Last data row of a convergence file, or None.
+
+    The row is the dict of :func:`read_cnv` (canonical column names as keys,
+    e.g. ``row["Iter"]``, ``row["Alpha"]``, ``row["RMS"]``), found by the
+    column names of the file's own header, not by column numbers. This is
+    the value the scripts take as the result of a finished inversion (final
+    iteration and nRMS).
+
+    ``source`` is a convergence file or a directory; for a directory,
+    ``filename`` (one name or a list of candidates, default
+    :data:`CNV_DEFAULT_NAMES`) says which file to look for. None is returned
+    if there is no such file, if it has no usable header row, or if it has
+    no data row; use :func:`find_cnv_file` to tell the first case apart.
+    """
+    try:
+        rows = read_cnv(source, filename=filename)["rows"]
+    except (ValueError, OSError):
+        return None
+    return rows[-1] if rows else None
+
 
 def _detect_block_format(region_line: str) -> str:
     """Detect whether a resistivity-block region line is v4 or v5 format.
@@ -10269,7 +10366,7 @@ def resolve_model_files(
     spec,
     iteration="last",
     *,
-    cnv_name=CNV_DEFAULT_NAME,
+    cnv_name=None,
     block_name="resistivity_block_iter{n}.dat",
     out=True,
 ):
@@ -10299,8 +10396,10 @@ def resolve_model_files(
         an RTO member the perturbed prior).  A list gives one model per
         selector and run, grouped by run (e.g. ``[0, "last"]`` = prior and
         best-fit figure of each member).
-    cnv_name : str | sequence of str
-        Name(s) of the convergence file inside a run directory.
+    cnv_name : str | sequence of str | None
+        Name(s) of the convergence file inside a run directory (candidates
+        in order of preference, see :func:`find_cnv_file`); ``None`` =
+        :data:`CNV_DEFAULT_NAMES`.
     block_name : str
         File name pattern of a block file; ``{n}`` is the iteration.
     out : bool

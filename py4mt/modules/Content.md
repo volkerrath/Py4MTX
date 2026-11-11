@@ -271,7 +271,7 @@ in `ensembles.py` (they are no longer re-exported here: call `ens.get_roughness`
 | Distortion file I/O | `read_distortion_file`, `read_results_distortion` |
 | Mesh I/O | `read_femtic_mesh(path, swap_xy=None)` → `(nodes, conn)`, the **only** mesh reader (`femtic_viz` calls it); `write_femtic_mesh`. `mesh.dat` is x = northing, y = easting, z positive down; `swap_xy=True` or the module default `MESH_SWAP_XY` swaps x/y for old conventions. |
 | Results HDF5 (`results_iterN.h5`) | `read_results_hdf5`, `read_results_model`, `read_results_data` (structured rows with observed and calculated values), `read_results_distortion`; `read_h5_sensitivity` |
-| Convergence file | `read_cnv`, `get_nrms`, `resolve_cnv_path` |
+| Convergence file (a name or a list of candidate names, default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`) | `read_cnv`, `read_cnv_last`, `get_nrms`, `find_cnv_file`, `resolve_cnv_path`, `cnv_names` |
 | Sites and positions | `read_site_dat`, `read_site_position`, `utm_to_model`, `latlon_to_model`, `estimate_utm_origin`, `resolve_slice_positions` |
 | Borehole sampling | `extract_borehole_log` |
 | Ensemble results file (`femtic_ens_post.py` `.npz`) | `read_ensemble_results`, `ensemble_stat_map`, `resolve_results_template`, `write_nrms_table`, `read_nrms_table` |

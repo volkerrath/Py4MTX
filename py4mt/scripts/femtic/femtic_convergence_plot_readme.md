@@ -21,6 +21,7 @@ Plot iteration-by-iteration convergence curves from FEMTIC inversions.
 | 2026-08-13 | Claude Sonnet 5 | Added `femtic_convergence_plot_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-10-08 | Claude Sonnet 5.5 | Convergence file name configurable via `CNV_FILE` (default `femtic.cnv`; list of candidates allowed); column positions now read from the header row via `fem.read_cnv()` instead of fixed indices. AI-generated; review before production use. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_convergence_plot_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | `CNV_FILE` now defaults to the list `["femtic.cnv", "FEMTIC-DABIC.cnv"]` (as in the other `femtic_*` scripts); a run directory without any of the files is skipped with a message (`read_cnv` raises `FileNotFoundError`, now caught). Needs the `femtic.py` of the same date. AI-generated; review before production use. |
 
 ## Purpose
 
@@ -42,9 +43,9 @@ chosen quantity evolves with iteration number.
 |------|-------------|
 | `WORK_DIR` | Directory containing inversion sub-directories. |
 | `SEARCH_STRNG` | Glob pattern to find sub-directories (e.g. `kra*`). |
-| `CNV_FILE` | Convergence file name in each sub-directory (default `"femtic.cnv"`; a list gives candidates, first existing wins). |
+| `CNV_FILE` | Convergence file name in each sub-directory (default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`; a list gives candidates, first existing wins; a directory with none of them is skipped). |
 
-Each sub-directory must contain the convergence file (`CNV_FILE`, default `femtic.cnv`) with a header row naming (at least) Alpha, Roughness, Misfit and RMS; positions are read from the header via `fem.read_cnv()`.
+Each sub-directory must contain the convergence file (`CNV_FILE`, default `femtic.cnv` or `FEMTIC-DABIC.cnv`) with a header row naming (at least) Alpha, Roughness, Misfit and RMS; positions are read from the header via `fem.read_cnv()`.
 
 ## Outputs
 

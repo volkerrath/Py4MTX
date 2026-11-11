@@ -68,7 +68,7 @@ used from each file.
 | `PLOT_YLIM` | `list` or `None` | `None` | y-axis limits `[ymin, ymax]`; `None` = matplotlib auto |
 | `SCALE_ROUGH` | `float` or `None` | `None` | Divide roughness values by this factor before plotting; shown as "×10ⁿ" next to the roughness label. `None`/`1` disables. |
 | `SCALE_MISFIT` | `float` or `None` | `None` | Divide misfit values by this factor before plotting; shown as "×10ⁿ" next to the misfit label. Ignored when `PLOT_WHAT = "nrms"`. `None`/`1` disables. |
-| `CNV_FILE` | `str` or `list` | `"femtic.cnv"` | Convergence file name in each run directory; a list gives candidate names (first existing wins) |
+| `CNV_FILE` | `str` or `list` | `["femtic.cnv", "FEMTIC-DABIC.cnv"]` | Convergence file name in each run directory; a list gives candidate names (first existing wins) |
 | `SEARCH_STRNG` | `str` | `"*L2"` | Glob pattern passed to `utl.get_filelist` to identify run directories |
 
 ### `PLOT_WHAT` detail
@@ -152,3 +152,4 @@ offset tuple `ann_offset` in the script if crowding still occurs.
 | 2026-10-08 | Claude Sonnet 5.5 (Anthropic) | Convergence file name configurable via `CNV_FILE` (default `femtic.cnv`), passed to `fem.read_cnv(..., filename=)`. AI-generated; review before production use. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_lcurve_plot_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | `PLOT_TITLE` takes the forms of the title settings of all plot scripts (`"auto"` = `L-curve`, none, text with `{what}`, dict). A plain string works as before. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | A run directory without any of the `CNV_FILE` names is skipped with a message instead of stopping the script (`read_cnv` raises `FileNotFoundError`, now caught). Needs the `femtic.py` of the same date. AI-generated; review before production use. |

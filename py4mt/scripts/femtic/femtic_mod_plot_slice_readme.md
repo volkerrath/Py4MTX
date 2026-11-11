@@ -71,7 +71,8 @@ and
 Files are named `<label>_<tag>_slices.<ext>` (label = run directory, tag =
 `iterN`), e.g. `ens_003_iter0_slices.pdf`. The nRMS (and alpha) of that
 iteration is read from `femtic.cnv` of the run directory and annotated on the
-figure (in the single-model case from `CNV_FILE`, as before). The same
+figure (in the single-model case from `CNV_FILE`: the first of its names found
+in the directory of the model file, else in `WORK_DIR`). The same
 mesh (`MESH_FILE`), origin, slices and colour settings are used for all models.
 
 Example: prior and best-fit figure of every member of an RTO ensemble, with a
@@ -275,8 +276,9 @@ For a standalone borehole figure (higher DPI, separate PDF), use
 | `WORK_DIR` | Working directory prefix for all paths |
 | `MODEL_FILE` | `resistivity_block_iterX.dat` to display; or a list / glob / run directories (batch, see above) |
 | `MODEL_ITER`, `BATCH_*` | Batch settings, see "Several models (batch)" |
+| `CNV_FILE` | Convergence file: one name or a list of candidate names (default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`; the first one that exists is used, names are also matched ignoring case; a full path still works). Used for `MODEL_ITER = "last"` / `"best"` and for the nRMS / alpha annotation. It is read by column name, so the old setting `DISTORTION` is gone. |
 | `MESH_FILE` | `mesh.dat` |
-| `MESH_SWAP_XY` | `True` | Swap of the first two node-coordinate columns when the mesh is read (`femtic.read_femtic_mesh`). `mesh.dat` holds x = northing, y = easting; the plots, sites and slice positions use x = easting, y = northing, so `True` (default) gives the right orientation. `False` draws the model transposed (NNE structures appear as ENE) and is only for meshes already written as x = easting, y = northing; `None` = leave femtic's module default (no swap). |
+| `MESH_SWAP_XY` (default `True`) | Swap of the first two node-coordinate columns when the mesh is read (`femtic.read_femtic_mesh`). `mesh.dat` holds x = northing, y = easting; the plots, sites and slice positions use x = easting, y = northing, so `True` (default) gives the right orientation. `False` draws the model transposed (NNE structures appear as ENE) and is only for meshes already written as x = easting, y = northing; `None` = leave femtic's module default (no swap). |
 | `OBSERVE_FILE` | `observe.dat` — fallback site source |
 | `SITE_DAT` | `mt_make_sitelist.py` CSV (`name,lat,lon,elev,sitenum,easting,northing`); `None` to disable |
 
@@ -410,3 +412,4 @@ Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 | 2026-11-10 | Claude Sonnet 5.5 (Anthropic) | New `MESH_SWAP_XY` (default `True`), applied before the mesh is read. Slice maps were drawn transposed (x = easting and y = northing exchanged; a NNE structure appeared as ENE). Cause: since 2026-10-11 `femtic.read_femtic_mesh` does not swap the node columns by default, but `mesh.dat` holds x = northing, y = easting. `None` keeps femtic's default, `False` forces no swap. Only the orientation changes. Checked on a synthetic mesh with a N30E block, not on real data. AI-generated; review before production use. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `PLOT_POLYLINES = {name: entry}` (metres; `{}` = none): lines drawn on the slice panels. Maps: plan view, optional `z_range`; ns / ew / plane / profile sections: the parts within `max_dist` (default `PROJECTION_DIST`) of the section plane, projected into it. Points model-local m or CRS-tagged (`"utm"` metres, `"latlon"` degrees, longitude first); `style`, `label`, `kinds`. Passed to `fviz.plot_model_slices(polylines=...)` in the shared options (every figure of a batch). The intersection line of two slices is available as `fviz.slice_intersection_polyline` / `slice_intersection_polylines` (example in the section above); it is not drawn automatically. With `PLOT_POLYLINES = {}` the figures are unchanged. Needs the `femtic_viz.py` of the same date. Tested on a synthetic mesh only. AI-generated; review before production use. |
 | 2026-11-11b | Claude Sonnet 5.5 (Anthropic) | Titles and colour bars: `FIGURE_TITLE` takes the forms of all plot scripts (`"auto"`, none, text with `{label}`, `{tag}`, `{iter}`, `{nrms}`, `{alpha}`, `{file}`, dict per model label); `BATCH_TITLE` also knows `{alpha}`, `{file}`; new `PANEL_TITLES`, `CBAR_LOCATION` (`"panel"` default), `CBAR_SHRINK`, `CBAR_THICKNESS`. Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. |
+| 2026-11-11c | Claude Sonnet 5.5 (Anthropic) | Convergence file from a list of names: `CNV_FILE` is now a name or a list of candidate names (default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`), no longer `WORK_DIR + "femtic.cnv"`; it is passed to `fem.resolve_model_files()` and, for the annotation of a single model, searched first in the directory of the model file, then in `WORK_DIR`. The last row is read by column name (`fem.read_cnv_last()`); the setting `DISTORTION` and the guess from the number of columns are removed. Needs the `femtic.py` of the same date. AI-generated; review before production use. |

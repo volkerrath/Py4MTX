@@ -959,6 +959,13 @@ Provenance
             instead of next to the script. AI-generated code -- review
             before production use.
 
+2026-11-11  Claude Sonnet 5.5 (Anthropic)
+            The member directories are searched for the convergence file
+            with fem.find_cnv_file() (names of CNV_FILE tried in order,
+            then ignoring case); the scan report is unchanged. Needs the
+            femtic.py of the same date. AI-generated code -- review before
+            production use.
+
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
 """
@@ -1675,10 +1682,10 @@ for d in dir_list:
     print(f"\n  Inversion run: {d}")
     _lbl = os.path.basename(os.path.normpath(d))  # scan report label
     _fb_rec = None  # set if accepted via ITER_FALLBACK (scan report)
-    cnv_file = str(fem.resolve_cnv_path(d, CNV_FILE))
-    if not os.path.isfile(cnv_file):
-        print(f"    {os.path.basename(cnv_file)} not found — skipped.")
-        _names = [CNV_FILE] if isinstance(CNV_FILE, str) else list(CNV_FILE)
+    cnv_file = fem.find_cnv_file(d, CNV_FILE)
+    if cnv_file is None:
+        _names = fem.cnv_names(CNV_FILE)
+        print(f"    none of {', '.join(_names)} found — skipped.")
         scan_not_accepted.append(dict(
             label=_lbl, reason="no_cnv_file",
             detail="none of " + ", ".join(map(str, _names)) + " found"))
@@ -1692,9 +1699,10 @@ for d in dir_list:
     # the plain-4.3 position). A version-string switch conflated the two
     # and silently misread nRMS for 4.3-with-distortion runs. Fixed
     # 2026-09-02 -- see femtic_readme.md's read_cnv() entry.
+    cnv_file = str(cnv_file)
     try:
         _cnv = fem.read_cnv(cnv_file)
-    except ValueError as e:
+    except (ValueError, OSError) as e:
         print(f"    {e} — skipped.")
         scan_not_accepted.append(dict(
             label=_lbl, reason="cnv_unreadable",

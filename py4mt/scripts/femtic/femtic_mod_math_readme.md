@@ -55,7 +55,8 @@ Ensemble directories / block files
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `NRMS_MAX` | float | `1.4` | Members whose final nRMS (last line of `femtic.cnv`) exceeds this value are skipped.  Set to `np.inf` to disable. |
+| `NRMS_MAX` | float | `1.4` | Members whose final nRMS (last row of the convergence file `CNV_FILE`) exceeds this value are skipped.  Set to `np.inf` to disable. |
+| `CNV_FILE` | str or list | `["femtic.cnv", "FEMTIC-DABIC.cnv"]` | Name of the convergence file in each member directory; a list gives candidate names (the first one that exists is used). |
 | `SUBSET_LIST` | list of int or `None` | `None` | 0-based indices into the nRMS-filtered, sorted file list.  `None` = all converged members.  Same format as `ENS_LIST` in `femtic_rto_prep.py`. |
 
 ### Output
@@ -234,3 +235,4 @@ pass restores spatial continuity while preserving the robustness advantage.
 | 2026-06-11 | vrath / Claude Sonnet 4.6 (Anthropic) | Created. |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_mod_math_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_mod_math_summary.md` is now written to `ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `CNV_FILE` (one name or a list of candidate names; default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`). The file is found with `fem.find_cnv_file()` and its last row is read by column name (`fem.read_cnv_last()`) instead of the fixed positions 0 and 8, which fitted only the layout with distortion columns. Needs the `femtic.py` of the same date. AI-generated; review before production use. |

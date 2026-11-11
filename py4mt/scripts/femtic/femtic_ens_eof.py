@@ -24,6 +24,13 @@ Provenance:
                        out_dir=ENSEMBLE_DIR). Needs the util.py of the
                        same date (new out_dir argument). AI-generated;
                        review before production use.
+    2026-11-11  Claude Sonnet 5.5 (Anthropic)
+                       New setting CNV_FILE (one name or a list of candidate
+                       names of the convergence file; default
+                       ["femtic.cnv", "FEMTIC-DABIC.cnv"]), passed to
+                       fem.find_cnv_file() and fem.get_nrms(). Needs the
+                       femtic.py of the same date. AI-generated; review
+                       before production use.
 """
 
 import os
@@ -65,6 +72,12 @@ MESH_FILE = "/mesh.dat"
 
 MIN_RMS = 1.5
 
+#: Name of the FEMTIC convergence file inside each run directory: one name
+#: or a list of candidate names (the first one that exists is used; names are
+#: also matched ignoring upper / lower case). Same setting in all femtic_*
+#: scripts; the default list is fem.CNV_DEFAULT_NAMES.
+CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
+
 GET_COMPONENTS = False
 OUT_STRNG = "_comp" if GET_COMPONENTS else "_trunc"
 
@@ -81,12 +94,11 @@ ens_num = -1
 for directory in dir_list:
     ens_num += 1
     print("\n", directory)
-    cnv = directory + "/femtic.cnv"
-    if not os.path.isfile(cnv):
-        print("file femtic.cnv does not exist!")
+    if fem.find_cnv_file(directory, CNV_FILE) is None:
+        print("none of", ", ".join(fem.cnv_names(CNV_FILE)), "exists!")
         continue
 
-    num_best, nrm_best = fem.get_nrms(directory)
+    num_best, nrm_best = fem.get_nrms(directory, CNV_FILE)
     if nrm_best > MIN_RMS:
         print(nrm_best, "is larger than required minimum:", MIN_RMS)
         continue

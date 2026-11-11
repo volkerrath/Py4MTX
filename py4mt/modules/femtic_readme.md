@@ -550,7 +550,7 @@ drawing is `femtic_viz.plan_borehole_figures()` / `draw_borehole_figures()`.
 
 | Function | Purpose |
 |---|---|
-| `resolve_model_files(spec, iteration="last", *, cnv_name="femtic.cnv", block_name="resistivity_block_iter{n}.dat", out=True)` | `spec` = a block file, a run directory, a glob, or a list of them; for run directories `iteration` is `"last"` (last row of `femtic.cnv`), `"best"` (lowest nRMS), an integer / `"iterN"` (0 = starting model), or a list of those. Returns one dict per model: `file`, `dir`, `label` (unique), `tag` (`"iter21"`), `iter`, `nrms`, `alpha` (from the `.cnv` row of that iteration, or `None`), `selector`. Entries without a block file are skipped with a message. Used by `femtic_mod_plot_slice.py` and `femtic_mod_plot_bh.py`. |
+| `resolve_model_files(spec, iteration="last", *, cnv_name=None, block_name="resistivity_block_iter{n}.dat", out=True)` | `spec` = a block file, a run directory, a glob, or a list of them; for run directories `iteration` is `"last"` (last row of the convergence file), `"best"` (lowest nRMS), an integer / `"iterN"` (0 = starting model), or a list of those. Returns one dict per model: `file`, `dir`, `label` (unique), `tag` (`"iter21"`), `iter`, `nrms`, `alpha` (from the `.cnv` row of that iteration, or `None`), `selector`. Entries without a block file are skipped with a message. Used by `femtic_mod_plot_slice.py` and `femtic_mod_plot_bh.py`. |
 
 ### Directory scan report
 
@@ -1020,6 +1020,31 @@ Author: Volker Rath (DIAS)
   (or a list/tuple of candidates; first existing wins). New helper
   `resolve_cnv_path(directory, filename)`. Defaults unchanged. AI-generated
   (Claude Sonnet 5.5, Anthropic); review before production use.
+
+### Changelog (2026-11-11b) --- one way to find and read the convergence file
+- New `CNV_DEFAULT_NAMES = ("femtic.cnv", "FEMTIC-DABIC.cnv")` and
+  `cnv_names(names=None)`: a setting that is one name, a list of names or
+  `None` (= the defaults) becomes a list (empty and repeated entries dropped).
+- New `find_cnv_file(directory, names=None)` returns the first existing file
+  of the list as a `Path`, or `None`; if no name exists exactly, the names are
+  tried again ignoring upper / lower case. An absolute name is used as it is.
+  `resolve_cnv_path()` returns that file, or the path of the first name.
+- `read_cnv`, `get_nrms` and `resolve_model_files` (`cnv_name`) use the same
+  finder; with no name given they now also find `FEMTIC-DABIC.cnv` (before:
+  `femtic.cnv` only). A directory without any of the files gives a
+  `FileNotFoundError` that names the candidates.
+- New `read_cnv_last(source, filename=None)`: last row of the file as a dict
+  (`row["Iter"]`, `row["RMS"]`, `row["Alpha"]`, ...), or `None` if there is no
+  such file, no usable header or no data row.
+- Scripts: all `femtic_*` scripts that read the file now have the setting
+  `CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]`. `femtic_ens_decomp.py`,
+  `femtic_mod_math.py` and `femtic_mod_plot_slice.py` read the last row by
+  column name instead of the fixed positions 0 / 8 (which fitted only the
+  layout with distortion columns); `femtic_mod_plot_slice.py` no longer has
+  `DISTORTION`. Readers catch `(ValueError, OSError)`.
+- `CNV_DEFAULT_NAME` is kept (= first of the list).
+- Tests: `test_femtic_cnv.py`, 19 cases. AI-generated (Claude Sonnet 5.5,
+  Anthropic); review before production use.
 
 ### Changelog (2026-10-11) --- single mesh reader, optional x/y swap
 

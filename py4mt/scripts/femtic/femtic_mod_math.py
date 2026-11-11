@@ -73,6 +73,15 @@ Provenance
                 utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR).
                 Needs the util.py of the same date (new out_dir argument).
                 AI-generated; review before production use.
+    2026-11-11  Claude Sonnet 5.5 (Anthropic)
+                New setting CNV_FILE (one name or a list of candidate names
+                of the convergence file; default ["femtic.cnv",
+                "FEMTIC-DABIC.cnv"]). The file is found with
+                fem.find_cnv_file() and its last row is read by column name
+                (fem.read_cnv_last()) instead of fixed positions 0 and 8,
+                which fitted only the layout with distortion columns. Needs
+                the femtic.py of the same date. AI-generated; review before
+                production use.
 
 @author: vrath
 """
@@ -154,6 +163,12 @@ OUT_DIR = ENSEMBLE_DIR + "math_members/"
 #: Maximum nRMS accepted from femtic.cnv.  Members above this value are
 #: skipped.  Set to np.inf to accept all converged runs.
 NRMS_MAX = 1.4
+
+#: Name of the FEMTIC convergence file inside each ensemble member directory: one name
+#: or a list of candidate names (the first one that exists is used; names are
+#: also matched ignoring upper / lower case). Same setting in all femtic_*
+#: scripts; the default list is fem.CNV_DEFAULT_NAMES.
+CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
 #: Subset of member indices (0-based position in the sorted, nRMS-filtered
 #: list) to include.  None = use all converged members.
@@ -459,20 +474,18 @@ if BLOCK_FILES is not None:
         if not os.path.isfile(bf):
             print(f"  WARNING: {bf} not found — skipped.")
             continue
-        cnv_file = str(Path(bf).parent / "femtic.cnv")
-        if os.path.isfile(cnv_file):
-            with open(cnv_file) as _fh:
-                _lines = _fh.readlines()
-            _info = _lines[-1].split()
-            _nrms = float(_info[8])
-            _nit  = int(_info[0])
+        _last = fem.read_cnv_last(Path(bf).parent, CNV_FILE)
+        if _last is not None:
+            _nrms = float(_last["RMS"])
+            _nit  = int(round(_last["Iter"]))
             if _nrms > NRMS_MAX:
                 print(f"  {bf}: nRMS={_nrms:.4f} > NRMS_MAX={NRMS_MAX} — skipped.")
                 continue
         else:
             _nrms = np.nan
             _nit  = -1
-            print(f"  {bf}: no femtic.cnv found — nRMS check skipped.")
+            print(f"  {bf}: no usable {', '.join(fem.cnv_names(CNV_FILE))} "
+                  f"found — nRMS check skipped.")
         model_list.append(dict(file=bf, nit=_nit, nrms=_nrms))
 else:
     # --- directory scan mode ---
@@ -485,15 +498,13 @@ else:
 
     model_list = []
     for d in dir_list:
-        cnv_file = os.path.join(d, "femtic.cnv")
-        if not os.path.isfile(cnv_file):
-            print(f"  {d}: femtic.cnv not found — skipped.")
+        _last = fem.read_cnv_last(d, CNV_FILE)
+        if _last is None:
+            print(f"  {d}: no usable {', '.join(fem.cnv_names(CNV_FILE))} "
+                  f"found — skipped.")
             continue
-        with open(cnv_file) as _fh:
-            _lines = _fh.readlines()
-        _info  = _lines[-1].split()
-        _nit   = int(_info[0])
-        _nrms  = float(_info[8])
+        _nit   = int(round(_last["Iter"]))
+        _nrms  = float(_last["RMS"])
         if _nrms > NRMS_MAX:
             print(f"  {d}: nRMS={_nrms:.4f} > NRMS_MAX={NRMS_MAX} — skipped.")
             continue

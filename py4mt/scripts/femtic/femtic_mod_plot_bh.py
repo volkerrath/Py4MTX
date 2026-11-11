@@ -97,6 +97,12 @@ Provenance
     New PANEL_TITLES (False = no panel titles) and FIGURE_TITLE_FONTSIZE.
     Defaults give the same figures as before. Needs the femtic_viz.py of the
     same date. AI-generated; review before production use.
+@modified: 2026-11-11b  Claude Sonnet 5.5 (Anthropic) -- New setting CNV_FILE
+    (one name or a list of candidate names of the convergence file, default
+    ["femtic.cnv", "FEMTIC-DABIC.cnv"]; the first one that exists is used),
+    passed to fem.resolve_model_files() as cnv_name; it matters for
+    MODEL_ITER = "last" / "best" with run directories. Needs the femtic.py of
+    the same date. AI-generated; review before production use.
 """
 
 import os
@@ -152,6 +158,12 @@ MODEL_FILE = WORK_DIR + "resistivity_block_iter17.dat"
 #:   a list - e.g. [0, "last"]: one figure per entry and run
 #: Does not apply to block files given as files.
 MODEL_ITER = "last"
+
+#: Name of the FEMTIC convergence file inside each run directory (used for
+#: MODEL_ITER = "last" / "best"): one name or a list of candidate names (the
+#: first one that exists is used; names are also matched ignoring upper /
+#: lower case). Same setting as in all femtic_* scripts.
+CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
 #: With more than one model: one figure and NPZ per model, named
 #: <label>_<tag>_boreholes.<ext> (label = run directory, tag = "iterN").
@@ -350,7 +362,8 @@ PLOT_DPI = 600
 # ===========================================================================
 
 # --- (0) Resolve the model(s) to plot --------------------------------------
-MODELS = fem.resolve_model_files(MODEL_FILE, MODEL_ITER, out=OUT)
+MODELS = fem.resolve_model_files(MODEL_FILE, MODEL_ITER,
+                                 cnv_name=CNV_FILE, out=OUT)
 if not MODELS:
     sys.exit(f"No model found for MODEL_FILE = {MODEL_FILE!r} "
              f"(MODEL_ITER = {MODEL_ITER!r}).")

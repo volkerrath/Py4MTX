@@ -254,6 +254,21 @@ Provenance
                 still shows 3 decimals). Needs the femtic_viz.py of the same
                 date.
                 AI-generated; review before production use.
+
+    2026-11-11c Claude Sonnet 5.5 (Anthropic)
+                Convergence file from a list of names. CNV_FILE is now a name
+                or a list of candidate names (default ["femtic.cnv",
+                "FEMTIC-DABIC.cnv"]; the first one that exists is used, names
+                are also matched ignoring case; a full path still works),
+                no longer WORK_DIR + "femtic.cnv". It is passed on to
+                fem.resolve_model_files() (cnv_name) and, for the nRMS /
+                alpha annotation of a single model, searched first in the
+                directory of the model file, then in WORK_DIR. The last row
+                is read by column name (fem.read_cnv_last()); the setting
+                DISTORTION and the guess from the number of columns (10 =
+                distortion) are removed, since the header row decides. Needs
+                the femtic.py of the same date.
+                AI-generated; review before production use.
 """
 
 import os
@@ -375,7 +390,12 @@ OBSERVE_FILE = WORK_DIR + "observe.dat"
 #: fem.utm_to_model using the mesh-centre origin.
 #: Set to None to fall back to the observe.dat / SITE_NUMBER path.
 SITE_DAT = WORK_DIR + "site.dat"   # set to None to disable
-CNV_FILE = WORK_DIR + "femtic.cnv"
+#: Name of the FEMTIC convergence file: one name or a list of candidate names
+#: (the first one that exists is used; names are also matched ignoring upper /
+#: lower case). Searched in each run directory (MODEL_FILE = run directories)
+#: and, for one model file, in the directory of that file, then in WORK_DIR.
+#: A full path is also accepted. Same setting as in all femtic_* scripts.
+CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
 # ---------------------------------------------------------------------------
 # Verbose output
@@ -548,10 +568,6 @@ CBAR_LOCATION = "panel"
 #: 1.5 x LABEL_FONTSIZE points).
 CBAR_SHRINK = 0.7
 CBAR_THICKNESS = None  # cm
-#: True if the inversion used distortion correction (adds extra columns).
-#: None → auto-detect from the number of columns in the last cnv line
-#:        (10 cols → distortion, 8 cols → no distortion).
-DISTORTION = None
 #: Panel index (0-based) on which to place the nRMS annotation.
 #: None → first panel.
 CNV_PANEL = None
@@ -730,7 +746,7 @@ ORIGIN_METHOD = "box"   # None | "box" | "average"
 # --- (0) Resolve the model(s) to plot --------------------------------------
 MODELS = fem.resolve_model_files(
     MODEL_FILE, MODEL_ITER,
-    cnv_name=os.path.basename(CNV_FILE) if CNV_FILE else fem.CNV_DEFAULT_NAME,
+    cnv_name=CNV_FILE if CNV_FILE else fem.CNV_DEFAULT_NAMES,
     out=OUT)
 if not MODELS:
     sys.exit(f"No model found for MODEL_FILE = {MODEL_FILE!r} "
@@ -905,33 +921,31 @@ def _figure_title(m, template, nrms=None, alpha=None):
         file=os.path.basename(str(m["file"])))
 
 if not BATCH:
-    # --- one model: PLOT_FILE; nRMS and alpha from the last line of CNV_FILE
-    # Read final nRMS from femtic.cnv
-    _cnv_path = CNV_FILE if CNV_FILE is not None else os.path.join(WORK_DIR, "femtic.cnv")
+    # --- one model: PLOT_FILE; nRMS and alpha from the last row of the
+    # convergence file (first of CNV_FILE found in the directory of the model
+    # file, else in WORK_DIR); columns are taken by name from its header row.
     _nrms_annotation = None
-    if os.path.isfile(_cnv_path):
-        try:
-            with open(_cnv_path) as _cnv:
-                _last = _cnv.readlines()[-1].split()
-            # Column layout (0-based):
-            #   8 cols  (no distortion): alpha=2, rough=4, misfit=5, nRMS=6, obj=7
-            #   10 cols (distortion):    alpha=2, rough=5, dist=6,   misfit=7, nRMS=8, obj=9
-            _ncols_cnv = len(_last)
-            _has_dist  = (DISTORTION if DISTORTION is not None
-                          else _ncols_cnv == 10)
-            _nrms_col = 8 if _has_dist else 6
-            _alpha_col = 2
-            _nrms_val  = float(_last[_nrms_col])
-            _alpha_val = float(_last[_alpha_col])
+    _cnv_path = None
+    for _cdir in (os.path.dirname(os.path.abspath(str(MODELS[0]["file"]))),
+                  WORK_DIR):
+        _cnv_path = fem.find_cnv_file(_cdir, CNV_FILE)
+        if _cnv_path is not None:
+            break
+    if _cnv_path is None:
+        print(f"  cnv: none of {', '.join(fem.cnv_names(CNV_FILE))} found "
+              f"-- nRMS annotation skipped.")
+    else:
+        _last = fem.read_cnv_last(_cnv_path)
+        if _last is None:
+            print(f"  Warning: could not read {_cnv_path} "
+                  f"-- nRMS annotation skipped.")
+        else:
+            _nrms_val  = float(_last["RMS"])
+            _alpha_val = float(_last["Alpha"])
             _nrms_annotation = dict(nrms=_nrms_val, alpha=_alpha_val,
                                     panel=CNV_PANEL)
-            print(f"  cnv: alpha={_alpha_val}, nRMS={_nrms_val:.4f}"
-                  f"  ({'distortion' if _has_dist else 'no distortion'}"
-                  f"{'' if DISTORTION is not None else ', auto-detected'})")
-        except Exception as _e:
-            print(f"  Warning: could not read {_cnv_path}: {_e}")
-    else:
-        print(f"  cnv: {_cnv_path} not found — nRMS annotation skipped.")
+            print(f"  cnv: {os.path.basename(str(_cnv_path))}: "
+                  f"alpha={_alpha_val}, nRMS={_nrms_val:.4f}")
 
     print(f"Plotting model: {MODELS[0]['file']}")
     fviz.plot_model_slices_robust(

@@ -47,6 +47,13 @@ Provenance:
                 fviz.resolve_title() (femtic_viz.py of the same date). The
                 figure with the default setting is unchanged. AI-generated;
                 review before production use.
+    2026-11-11b Claude Sonnet 5.5 (Anthropic)
+                New setting CNV_FILE (one name or a list of candidate names
+                of the convergence file; default ["femtic.cnv",
+                "FEMTIC-DABIC.cnv"]), passed to fem.read_cnv(); a run
+                directory without any of them is skipped with a message.
+                Needs the femtic.py of the same date. AI-generated; review
+                before production use.
 """
 
 import os
@@ -89,6 +96,12 @@ WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/lcurve/"
 #: discover directories via WORK_DIR + SEARCH_STRNG (glob), matching
 #: femtic_lcurve_plot.py's convention.
 RUN_DIRS = None
+
+#: Name of the FEMTIC convergence file inside each run directory: one name
+#: or a list of candidate names (the first one that exists is used; names are
+#: also matched ignoring upper / lower case). Same setting in all femtic_*
+#: scripts; the default list is fem.CNV_DEFAULT_NAMES.
+CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
 #: Glob pattern used to discover run directories when RUN_DIRS is None.
 SEARCH_STRNG = "ann_reg*"
@@ -204,8 +217,8 @@ for _d, _label in zip(_dirs, _labels):
         print(f"  {_label}: {_d} is not a directory — skipped.")
         continue
     try:
-        _cnv = fem.read_cnv(_d, columnar=True)
-    except ValueError as _e:
+        _cnv = fem.read_cnv(_d, columnar=True, filename=CNV_FILE)
+    except (ValueError, OSError) as _e:
         print(f"  {_label}: {_e}")
         continue
     if not _cnv["rows"]:

@@ -424,6 +424,12 @@ Provenance
                 BOREHOLE_HEAT_CBAR_THICKNESS [cm]. Needs the femtic_viz.py of
                 the same date. With the defaults the figures are unchanged.
                 AI-generated; review before production use.
+    2026-11-11b Claude Sonnet 5.5 (Anthropic)
+                CNV_FILE now defaults to the list ["femtic.cnv",
+                "FEMTIC-DABIC.cnv"] (as in femtic_ens_post.py); the member
+                directories are searched with fem.find_cnv_file() (names also
+                matched ignoring case). Needs the femtic.py of the same date.
+                AI-generated; review before production use.
 """
 
 import os
@@ -516,7 +522,7 @@ SITE_DAT = ENSEMBLE_DIR + "/templates/site.dat"   # set to None to disable
 #: Name of the FEMTIC convergence file inside each member directory. A single
 #: name or a list of candidate names (first existing one is used).  Keep this
 #: equal to CNV_FILE in femtic_ens_post.py.
-CNV_FILE = "femtic.cnv"
+CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
 #: Maximum normalised RMS accepted from the convergence file.  Keep this equal to
 #: NRMS_MAX in femtic_ens_post.py so this script plots exactly the
@@ -2574,10 +2580,11 @@ for _d in dir_list:
         continue
 
     print(f"\n  Inversion run: {_d}")
-    _cnv_file = str(fem.resolve_cnv_path(_d, CNV_FILE))
-    if not os.path.isfile(_cnv_file):
-        print(f"    {os.path.basename(_cnv_file)} not found -- skipped.")
+    _cnv_file = fem.find_cnv_file(_d, CNV_FILE)
+    if _cnv_file is None:
+        print(f"    none of {', '.join(fem.cnv_names(CNV_FILE))} found -- skipped.")
         continue
+    _cnv_file = str(_cnv_file)
 
     # Column positions are read from this file's own header row via
     # fem.read_cnv() (case-insensitive substring match, e.g. "rms" ->
@@ -2588,7 +2595,7 @@ for _d in dir_list:
     # actual column count didn't match that assumption.
     try:
         _rows = fem.read_cnv(_cnv_file)["rows"]
-    except ValueError as _e:
+    except (ValueError, OSError) as _e:
         print(f"    {_e}")
         continue
     if not _rows:

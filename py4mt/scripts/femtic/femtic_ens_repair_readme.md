@@ -64,7 +64,7 @@ Ensemble sub-directories  (rto_*, gst_*, member_*, …)
 | `ENSEMBLE_NAME` | str | — | Glob matched against sub-directory names. Only actual directories among the matches are scanned (`os.path.isdir()` checked in step (1)); a stray file that happens to match the glob is skipped. |
 | `ENSEMBLE_PREFIX` | str | — | Prefix for default file/figure names. |
 | `ENSEMBLE_INDEX_RANGE` | tuple or None | `None` | Expected member numbers `(first, last)`, inclusive, e.g. `(0, 255)` for 256 members named `<ENSEMBLE_NAME>0` ... `<ENSEMBLE_NAME>255`. Used only by the "Directory numbering" part of the scan report in the parameter summary. `None` = the range found in the names (cannot show a missing first or last member). |
-| `CNV_FILE` | str or list | `"femtic.cnv"` | Convergence file name in each member directory; a list gives candidate names (first existing wins). Directories without it are tagged `"missing_cnv"`. |
+| `CNV_FILE` | str or list | `["femtic.cnv", "FEMTIC-DABIC.cnv"]` | Convergence file name in each member directory; a list gives candidate names (first existing wins). Directories without it are tagged `"missing_cnv"`. |
 | `NRMS_MAX` | float | `1.5` | Members whose **best** nRMS (smallest over all iterations > 0, not the last iteration) exceeds this value are tagged `"rejected_nrms"`. |
 | `ITER_FALLBACK` | bool | `True` | If the best-nRMS iteration `N` has no `resistivity_block_iter<N>.dat`, use the best iteration that does have one (usually `N-1`); `NRMS_MAX` is then applied to that iteration's nRMS. `False` = tag the member `"missing_model"` instead. Same meaning as in `femtic_ens_post.py` -- keep the two equal. |
 
@@ -277,3 +277,4 @@ skipped.
 
 Author: Volker Rath (DIAS)
 | 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | The scan-report helpers (`_scan_reason_text`, `_index_check`, building and appending the "Directory scan report") were copies of the ones in `femtic_ens_post.py`; both scripts now use the shared `femtic.build_scan_report` / `femtic.append_scan_report` (script shortened by about 200 lines). No change in the report or the settings. `femtic_ens_post.py` itself no longer draws figures (see `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py`, `femtic_data_misfit.py`). |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | The member directories are searched for the convergence file with `fem.find_cnv_file()` (names of `CNV_FILE` tried in order, then ignoring case); the scan report is unchanged. Needs the `femtic.py` of the same date. AI-generated; review before production use. |

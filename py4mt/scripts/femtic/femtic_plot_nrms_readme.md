@@ -119,6 +119,7 @@ fpn.plot_nrms_glyphs(
 | Input | Role |
 |---|---|
 | `FEMTIC_DIR` | Directory containing `femtic.cnv` and the `results_iter<N>.h5` files. |
+| `CNV_FILE` | Name of the convergence file in `FEMTIC_DIR`: one name or a list of candidate names (default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`; the first one that exists is used). |
 | `RESULTS_ITER_TEMPLATE` | Filename template (relative to `FEMTIC_DIR`) for the per-iteration HDF5 results file (renamed from `DATA_ITER_TEMPLATE`, default now `results_iter{iter}.h5`); must contain the literal `{iter}` placeholder. |
 | `STATION_TYPES` | `None` (pool every data type present, e.g. `MT` + `VTF` + `PT`; names as in `fem.RESULTS_H5_DATATYPE_NAMES`) or a list to restrict to specific types. |
 | `SITE_DAT` | Sitelist CSV (`mt_make_sitelist.py` format), read via `fem.read_site_dat` for coordinates and matched to the results file's `site_id` (see accuracy note above). |
@@ -200,5 +201,6 @@ were re-tested, on synthetic rows; see the accuracy note.)*
 | 2026-10-11 | Claude Sonnet 5.5 (Anthropic) | Migrated HDF5 input from the absent `femtic_hdf5_readers.read_data_hdf5` (`data_iter<N>.h5`) to `femtic.read_results_data` (`results_iter<N>.h5`); `DATA_ITER_TEMPLATE` -> `RESULTS_ITER_TEMPLATE`; imaginary parts now pooled (skipped for real-valued types); unmappable data types are skipped with a warning. Arithmetic checked on synthetic rows; file reading untested (no h5py). |
 | 2026-09-13 | Claude Sonnet 5 (Anthropic) | Rewritten (v2): best iteration now selected from `femtic.cnv` via `fem.get_nrms`; per-site residuals read from that iteration's `data_iter<N>.h5` via `femtic_hdf5_readers.read_data_hdf5`. Added `_resolve_station_ids` (station_id/sitenum matching with a 0-based/1-based fallback, full-containment check only) and `TITLE_SHOW_ITERATION`. Verified against a hand-written `femtic_hdf5_readers` stub (see "Verification performed"); found and fixed a partial-overlap matching bug during that testing. AI-generated; the real `femtic_hdf5_readers.py` HDF5 schema itself remains unverified against a live file (inherited from that module's own readme). |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | Title and colour bar in the form of all plot scripts: `TITLE` (`"auto"`, none, text with `{iter}` / `{nrms}`, dict), new `CBAR_LOCATION` / `CBAR_SHRINK` / `CBAR_THICKNESS`; the colour bar is drawn by `fviz.add_colorbar`. Default figure unchanged. `TITLE = ""` now means no title. Needs the `femtic_viz.py` of the same date. |
+| 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `CNV_FILE` (one name or a list of candidate names; default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`), passed to `fem.get_nrms()`. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
 
 Author: Volker Rath (DIAS)
