@@ -260,6 +260,24 @@ Modified: 2026-11-11b by Claude Sonnet 5.5 (Anthropic) -- one way to find
     gives a FileNotFoundError that names the candidates. A single name
     still works as before. AI-generated code -- review before production
     use.
+Modified: 2026-11-11c by Claude Sonnet 5.5 (Anthropic) -- new
+    select_ensemble_source(res, source): applies the setting
+    ENS_MODEL_SOURCE ("auto" | "converged" | "perturbed" | "both") of the
+    stand-alone borehole scripts to the dict of read_ensemble_results()
+    (new constant ENS_MODEL_SOURCES). "auto" returns the dict unchanged.
+    AI-generated code -- review before production use.
+Modified: 2026-11-12 by Claude Sonnet 5.5 (Anthropic) -- dipping plane
+    from two surface points (a fault). resolve_pos_two_point_profile()
+    takes a new keyword `dip` (default 90 = vertical fence, output
+    unchanged). With 0 < dip < 180 (dip != 90) the two end points define
+    a DIPPING plane: strike = azimuth p1 -> p2, point = midpoint at depth
+    z_top, dips towards strike + 90 (to the right of p1 -> p2; a dip of
+    180 - d dips d degrees to the left), and the spec carries the
+    down-dip range `ylim` = [0, (z_bot - z_top) / sin(dip)] instead of
+    `zlim`. resolve_slice_positions() passes the `dip` key of a
+    kind="profile" spec on (it was ignored before; default 90 = as
+    before) and prints the dip direction in verbose mode. Nothing else
+    changed. AI-generated code -- review before production use.
 """
 from __future__ import annotations
 
@@ -7644,13 +7662,16 @@ def resolve_pos_two_point_profile(p1_raw, p2_raw,
                                    zone: int, northern: bool,
                                    origin_E: float, origin_N: float,
                                    z_top: float = 0.0,
-                                   z_bot: float = 20000.0) -> dict:
-    """Derive a vertical ``plane`` slice spec from two endpoint positions.
+                                   z_bot: float = 20000.0,
+                                   dip: float = 90.0) -> dict:
+    """Derive a ``plane`` slice spec from two endpoint positions.
 
-    The two endpoints define a vertical fence (curtain) section.  The
-    horizontal midpoint of the segment becomes the plane anchor ``point``;
-    the azimuth from *p1* to *p2* (clockwise from North) is the ``strike``;
-    ``dip`` is fixed at 90° (strictly vertical plane).
+    The two endpoints define a fence (curtain) section.  The horizontal
+    midpoint of the segment becomes the plane anchor ``point``; the azimuth
+    from *p1* to *p2* (clockwise from North) is the ``strike``.  With the
+    default ``dip=90`` the plane is strictly vertical; with another ``dip``
+    it is the dipping plane through the two points (a fault given by two
+    surface points and a dip angle, see below).
 
     Each endpoint is a CRS-tagged position spec accepted by
     ``resolve_pos_point``.  Accepted forms:
@@ -7675,14 +7696,26 @@ def resolve_pos_two_point_profile(p1_raw, p2_raw,
     z_bot : float
         Deepest depth for the slice panel [m, z-positive-down].
         Default 20 000 m.
+    dip : float
+        Dip of the plane in degrees below the horizontal, ``0 < dip < 180``
+        (default 90 = vertical).  The plane dips towards ``strike + 90``,
+        i.e. to the RIGHT of the direction *p1* -> *p2* (right-hand rule),
+        by ``dip`` degrees; ``dip = 180 - d`` dips ``d`` degrees to the left
+        instead (the same plane as swapping *p1* and *p2* with ``dip = d``).
+        For ``dip != 90`` the plane contains the line *p1*-*p2* at depth
+        ``z_top`` (default 0 = model reference level; for a trace at
+        elevation h use ``z_top = -h``), and ``z_top`` / ``z_bot`` bound the
+        panel in depth.  ``0 < dip < 180`` otherwise raises ``ValueError``.
 
     Returns
     -------
     dict
         A ``kind="plane"`` slice spec (resolved to model-local metres) with
-        keys ``kind``, ``point``, ``strike``, ``dip``, ``zlim``,
-        ``p1_model``, ``p2_model`` (the two resolved endpoint model-local
-        [x, y] pairs, for reference / axis-limit computation).
+        keys ``kind``, ``point``, ``strike``, ``dip``, ``zlim`` (``dip = 90``)
+        or ``ylim`` (``dip != 90``: down-dip range [m] relative to ``point``,
+        ``[0, (z_bot - z_top) / sin(dip)]``), ``p1_model``, ``p2_model`` (the
+        two resolved endpoint model-local [x, y] pairs, for reference /
+        axis-limit computation).
 
     Raises
     ------
@@ -7695,7 +7728,15 @@ def resolve_pos_two_point_profile(p1_raw, p2_raw,
     to *p2*.  Use ``invert_x=True`` in the slice spec to reverse the sense.
 
     VR 2026-06-19, Claude Sonnet 4.6 (Anthropic)
+    Modified 2026-11-12, Claude Sonnet 5.5 (Anthropic) -- new keyword ``dip``
+    (dipping plane through the two points); default output unchanged.
     """
+    dip = float(dip)
+    if not 0.0 < dip < 180.0:
+        raise ValueError(
+            f"resolve_pos_two_point_profile: dip must satisfy 0 < dip < 180 "
+            f"degrees, got {dip!r}."
+        )
     # ------------------------------------------------------------------
     # Resolve each endpoint to model-local [x, y] (ignore / discard z)
     # ------------------------------------------------------------------
@@ -7747,6 +7788,24 @@ def resolve_pos_two_point_profile(p1_raw, p2_raw,
     x_mid = 0.5 * (x1 + x2)
     y_mid = 0.5 * (y1 + y2)
 
+    if abs(dip - 90.0) >= 1e-6:
+        # Dipping plane through the two points (2026-11-12). The viz frame
+        # of a plane (femtic_viz._strike_dip_frame) dips towards strike + 90
+        # for dip < 90 and towards strike - 90 (by 180 - dip) for dip > 90,
+        # so the spec simply carries strike (p1 -> p2) and dip. The panel
+        # is bounded by depth [z_top, z_bot]: down-dip distance v from
+        # `point` (at depth z_top) is (z - z_top) / sin(dip).
+        return {
+            "kind":     "plane",
+            "point":    [x_mid, y_mid, float(z_top)],
+            "strike":   strike_deg,
+            "dip":      dip,
+            "ylim":     [0.0, (float(z_bot) - float(z_top))
+                         / math.sin(math.radians(dip))],
+            "p1_model": [x1, y1],
+            "p2_model": [x2, y2],
+        }
+
     return {
         "kind":     "plane",
         "point":    [x_mid, y_mid, float(z_top)],
@@ -7772,10 +7831,15 @@ def resolve_slice_positions(slices: list,
     ``strike``, ``dip``, ``kind``) pass through unchanged.
     The original *slices* list is not mutated.
 
-    For ``kind="profile"`` specs (two-point vertical fence definition), the
-    spec is converted into a resolved ``kind="plane"`` dict with ``dip=90``
-    before being appended.  See :func:`resolve_pos_two_point_profile` for
-    the full endpoint CRS syntax.
+    For ``kind="profile"`` specs (two-point fence definition), the spec is
+    converted into a resolved ``kind="plane"`` dict before being appended:
+    vertical (``dip=90``, the default) or, with an optional ``dip`` key
+    (0 < dip < 180), the dipping plane through the two points -- a fault
+    given by two surface points and a dip (towards the right of p1 -> p2;
+    see :func:`resolve_pos_two_point_profile`).  Other keys of the spec,
+    e.g. ``overlay`` (see ``femtic_viz.slice_overlay_polylines``), pass
+    through.  See :func:`resolve_pos_two_point_profile` for the full
+    endpoint CRS syntax.
 
     Parameters
     ----------
@@ -7791,6 +7855,8 @@ def resolve_slice_positions(slices: list,
 
     VR 2026-05-23, Claude Sonnet 4.6 (Anthropic)
     Modified 2026-06-19, Claude Sonnet 4.6 (Anthropic) — added kind="profile"
+    Modified 2026-11-12, Claude Sonnet 5.5 (Anthropic) -- optional ``dip`` key
+    of kind="profile" (dipping plane through the two points).
     """
     resolved = []
     for i, spec in enumerate(slices):
@@ -7814,10 +7880,11 @@ def resolve_slice_positions(slices: list,
                 )
             z_top = float(s.pop("z_top", 0.0))
             z_bot = float(s.pop("z_bot", 20000.0))
+            dip   = float(s.pop("dip", 90.0))
             plane_spec = resolve_pos_two_point_profile(
                 s.pop("p1"), s.pop("p2"),
                 zone, northern, origin_E, origin_N,
-                z_top=z_top, z_bot=z_bot,
+                z_top=z_top, z_bot=z_bot, dip=dip,
             )
             # Merge any remaining per-panel overrides (xlim, invert_x, title …)
             # but do NOT let them clobber the geometry keys just derived.
@@ -7831,13 +7898,26 @@ def resolve_slice_positions(slices: list,
             if verbose:
                 p1m = s["p1_model"]
                 p2m = s["p2_model"]
-                print(
-                    f"  slice[{i}] profile → plane  "
-                    f"p1=({p1m[0]:.0f}, {p1m[1]:.0f}) m  "
-                    f"p2=({p2m[0]:.0f}, {p2m[1]:.0f}) m  "
-                    f"strike={s['strike']:.1f} deg  dip=90  "
-                    f"zlim={s['zlim']} m (model-local)"
-                )
+                if abs(float(s["dip"]) - 90.0) >= 1e-6:
+                    _d = float(s["dip"])
+                    _az = (s["strike"] + (90.0 if _d < 90.0 else -90.0)) % 360.0
+                    print(
+                        f"  slice[{i}] profile -> dipping plane  "
+                        f"p1=({p1m[0]:.0f}, {p1m[1]:.0f}) m  "
+                        f"p2=({p2m[0]:.0f}, {p2m[1]:.0f}) m  "
+                        f"strike={s['strike']:.1f} deg  "
+                        f"dips {min(_d, 180.0 - _d):.1f} deg towards "
+                        f"azimuth {_az:.1f}  "
+                        f"through depth {s['point'][2]:.0f} m at the trace"
+                    )
+                else:
+                    print(
+                        f"  slice[{i}] profile → plane  "
+                        f"p1=({p1m[0]:.0f}, {p1m[1]:.0f}) m  "
+                        f"p2=({p2m[0]:.0f}, {p2m[1]:.0f}) m  "
+                        f"strike={s['strike']:.1f} deg  dip=90  "
+                        f"zlim={s['zlim']} m (model-local)"
+                    )
 
             resolved.append(s)
             continue
@@ -8910,6 +8990,117 @@ def ensemble_stat_map(res):
         stat["simrc_corr"] = (
             res["simrc_corr"], "log10 SimRC cumulative |correlation|")
     return stat, value_keys
+
+
+#: Values of the setting ENS_MODEL_SOURCE of the plotting scripts that read a
+#: results file (see select_ensemble_source).
+ENS_MODEL_SOURCES = ("auto", "converged", "perturbed", "both")
+
+
+def select_ensemble_source(res, source="auto", *, out=True):
+    """Choose which models of a results file are drawn (ENS_MODEL_SOURCE).
+
+    A results file of femtic_ens_post.py holds the converged models, or the
+    perturbed models (written with ``ENS_MODEL_SOURCE = "perturbed"``), or the
+    converged models with the perturbed ones of the same members in addition
+    (``"both"``). This applies the setting of the same name of the plotting
+    scripts to the dict ``res`` of read_ensemble_results():
+
+    ``"auto"`` (also ``None``)
+        ``res`` unchanged: whatever the file holds.
+    ``"converged"``
+        The converged models only; the perturbed models of a ``"both"`` file
+        are left out (``res["pert"] = None``). A file with perturbed models
+        only is an error.
+    ``"perturbed"``
+        The perturbed models only. A file written with ``"perturbed"`` is
+        used as it is. For a ``"both"`` file the perturbed models become the
+        ensemble (``res["ens"]``, ``res["model_source"] = "perturbed"``) and
+        the statistics ``avg, var, err, med, mad, prc`` are recomputed from
+        them; ``qdiff``, the bootstrap, ``sens`` and SimRC statistics belong to
+        the converged models and are dropped. ``res["source_swapped"]`` is
+        True, so that a script can give its outputs another name. Rows keep
+        the order of the members: ``model_list``, ``best_index`` and
+        ``best_file`` still describe the converged inversions.
+    ``"both"``
+        The file must hold the converged and the perturbed models.
+
+    Returns a new dict (``res`` is not changed). Raises ValueError for an
+    unknown value, or when the file cannot give what is asked for; the
+    message says how the file was made.
+    """
+    src = "auto" if source is None else str(source).strip().lower()
+    if src not in ENS_MODEL_SOURCES:
+        raise ValueError(
+            f"ENS_MODEL_SOURCE={source!r}: use one of {list(ENS_MODEL_SOURCES)}."
+        )
+    held = str(res.get("model_source", "converged"))
+    has_pert = res.get("pert") is not None
+    path = res.get("path", "the results file")
+    what = f"{held} models" + (" and perturbed models" if has_pert else "")
+    if src == "auto":
+        return res
+    if src == "converged":
+        if held != "converged":
+            raise ValueError(
+                f"ENS_MODEL_SOURCE = 'converged', but {path} holds {what} "
+                f"only (femtic_ens_post.py ran with ENS_MODEL_SOURCE = "
+                f"'perturbed'). Use 'auto' or 'perturbed', or the results "
+                f"file of the converged run."
+            )
+        if not has_pert:
+            return res
+        new = dict(res)
+        new["pert"] = None
+        if out:
+            print("  ENS_MODEL_SOURCE = 'converged': the perturbed models of "
+                  "the file are left out.")
+        return new
+    if src == "both":
+        if held != "converged" or not has_pert:
+            raise ValueError(
+                f"ENS_MODEL_SOURCE = 'both' needs a results file written by "
+                f"femtic_ens_post.py with ENS_MODEL_SOURCE = 'both'; {path} "
+                f"holds {what}."
+            )
+        return res
+    # src == "perturbed"
+    if held == "perturbed":
+        return res
+    if not has_pert:
+        raise ValueError(
+            f"ENS_MODEL_SOURCE = 'perturbed', but {path} holds {what} only. "
+            f"Run femtic_ens_post.py with ENS_MODEL_SOURCE = 'perturbed' or "
+            f"'both'."
+        )
+    ens = np.asarray(res["pert"], dtype=float)
+    levels = list(res["prc_levels"])
+    var = np.var(ens, axis=0)
+    med = np.median(ens, axis=0)
+    new = dict(res)
+    new.update(
+        ens=ens,
+        pert=None,
+        model_source="perturbed",
+        avg=np.mean(ens, axis=0),
+        var=var,
+        err=np.sqrt(var),
+        med=med,
+        mad=np.median(np.abs(ens - med[np.newaxis, :]), axis=0),
+        prc=np.percentile(ens, levels, axis=0),
+        qdiff={},
+        var_boot=None,
+        err_boot=None,
+        var_boot_se=None,
+        sens={},
+        simrc_coef=None,
+        simrc_corr=None,
+        source_swapped=True,
+    )
+    if out:
+        print("  ENS_MODEL_SOURCE = 'perturbed': the perturbed models of the "
+              "file are drawn alone; their statistics are recomputed.")
+    return new
 
 
 def resolve_results_template(res, template=None, *, ocean=None):

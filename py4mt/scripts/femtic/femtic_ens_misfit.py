@@ -12,8 +12,9 @@ Methods (METHODS):
 
   "crossplot"  observed vs. calculated, one panel per data type / component
   "histogram"  normalized-residual histograms in frequency (or period) bands,
-               RMS1 and RMS2 after Baba (2023), with the synthesized error
-               taken from the spread of the members
+               RMS1 after Baba (2023); RMS2 (with the synthesized error taken
+               from the spread of the members, i.e. a modelling error) only if
+               SHOW_RMS2 = True, which is not the default
   "qq"         normal Q-Q plots of the same residuals in the same bands
   "curves"     optional: response curves per site; the members drawn as thin
                curves, as a per-period density, or as percentile bands
@@ -58,6 +59,13 @@ local site.dat, any case, and/or site ids) writes one file per site and format
 
 Changelog
 ---------
+2026-11-11c Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            nRMS2 switched off: no modelling error is used. New setting
+            SHOW_RMS2 (default False): the crossplot panels show "nRMS" only,
+            the histograms and Q-Q plots use the conventional RMS1
+            normalization, and the tables drop the err+syn rows. True gives
+            the former output (RMS1 and RMS2). The work is done in
+            femtic_misfit.py of the same date (see its changelog).
 2026-11-11b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             titles and colour bar position, in the form of all plot scripts:
             FIGURE_TITLE ("auto" = as before; None / False / "" = none; text
@@ -124,6 +132,10 @@ ENSEMBLE_OBS: str = "mean"     # observed values/errors: "mean" over members
 REF_MEMBER: Optional[int] = None   # RMS1 reference: None = ensemble mean;
                                    # integer = calculated response of that
                                    # member (as in Baba's "6th model")
+SHOW_RMS2: bool = False            # Baba's RMS2 (observed error plus the error
+                                   # synthesized from the ensemble spread, i.e. a
+                                   # modelling error): False = not shown, plots and
+                                   # tables use RMS1 only; True = RMS1 and RMS2
 
 # --- sites ---
 SITE_MERGE_BY_POSITION: bool = True   # data types often number the same station

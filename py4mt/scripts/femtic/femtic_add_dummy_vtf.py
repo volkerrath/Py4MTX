@@ -115,8 +115,8 @@ from typing import Dict, List, Tuple
 # ===========================================================================
 
 # Input file in the simple layout, and output file (must be different).
-INPUT_FILE = "observe.dat"
-OUTPUT_FILE = "observe_dummyVTF.dat"
+INPUT_FILE = "/home/vrath/work/krafla_inversion_new/observe.dat"
+OUTPUT_FILE = "/home/vrath/work/krafla_inversion_new/observe_dummyVTF.dat"
 
 # "land"     : E from downward element (0), H from upward element (1)
 # "seafloor" : E from upward element (1),   H from downward element (0)

@@ -11,7 +11,8 @@ FEMTIC ``results_iterN.h5`` files.
                   component, log10 frequency as colour.
   2. "histogram"  normalized-residual histograms in frequency (or period)
                   bands, after Baba (2023): RMS1 (observed error only) and,
-                  for M > 1 syntheses, RMS2 (observed and synthesized error).
+                  for M > 1 syntheses and SHOW_RMS2 = True (default False),
+                  RMS2 (observed and synthesized error).
   3. "qq"         normal Q-Q plots of the same residuals, in the same bands.
   4. "curves"     optional: response curves per site (data_viz plotters);
                   for an ensemble as curves, density or percentile bands.
@@ -48,6 +49,17 @@ Notice      : This code is AI-generated. Review and test it before any
 
 Changelog
 ---------
+2026-11-11c Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            nRMS2 switched off. No modelling error is used, so RMS2 (observed
+            plus synthesized error, Baba 2023) is no longer shown: new setting
+            SHOW_RMS2, default False. With False the crossplot panels show
+            "nRMS" only, the histograms and Q-Q plots use the conventional
+            RMS1 normalization (no RMS2 bars / dots, no RMS1 outline, no
+            slope2), and the statistics tables, which list what the plots
+            show, drop the err+syn rows / "2" columns. SHOW_RMS2 = True gives
+            the former output for an ensemble (M > 1). The y label of the
+            crossplot still reads "calculated (ensemble mean)" for M > 1
+            (new keyword ensemble_mean of plot_crossplot_datatype).
 2026-11-11b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             titles and colour bar position, in the form of all plot scripts.
             New settings FIGURE_TITLE ("auto" = the titles of before; None /
@@ -149,6 +161,11 @@ class Settings:
     REF_MEMBER: Optional[int] = None   # RMS1 reference: None = ensemble mean;
                                        # integer = calculated response of that
                                        # member (as in Baba's "6th model")
+    SHOW_RMS2: bool = False        # Baba's RMS2 (observed error plus the error
+                                   # synthesized from the ensemble spread, i.e.
+                                   # a modelling error). False = not shown: plots
+                                   # and tables use the conventional RMS1 only.
+                                   # True = RMS1 and RMS2 (ensemble, M > 1)
 
     # --- sites ---
     SITE_MERGE_BY_POSITION: bool = True   # data types often number the same station
@@ -863,8 +880,12 @@ def plot_crossplot_datatype(
     alpha: float, log_rho: bool, show_errorbars: bool, equal_aspect: bool,
     figure_title: Optional[str] = None, panel_titles: bool = True,
     cbar_location: Optional[str] = None, cbar_shrink: float = 0.85,
+    ensemble_mean: Optional[bool] = None,
 ):
     """One figure with all crossplot panels of a data type.
+
+    has_syn: show nRMS1 and nRMS2 (else nRMS = nRMS1 only). ensemble_mean:
+    the calculated values are the ensemble mean (y label); None = as has_syn.
 
     figure_title: None = the automatic title, "" = none, else the text.
     panel_titles: False = no panel titles. cbar_location: None = at the right
@@ -924,7 +945,9 @@ def plot_crossplot_datatype(
         if panel_titles:
             ax.set_title(p["label"], fontsize=10)
         ax.set_xlabel("observed", fontsize=9)
-        ax.set_ylabel("calculated (ensemble mean)" if has_syn else "calculated", fontsize=9)
+        ax.set_ylabel("calculated (ensemble mean)"
+                      if (has_syn if ensemble_mean is None else ensemble_mean)
+                      else "calculated", fontsize=9)
         ax.tick_params(labelsize=8)
         ax.grid(True, which="major", lw=0.3, alpha=0.5)
     for ax in axf[n:]:
@@ -2030,9 +2053,10 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
 # ---------------------------------------------------------------------------
 # Text tables (plain ASCII)
 # ---------------------------------------------------------------------------
-FIT_MEASURE_NOTE = (
-    "# r = error-normalized residuals; norm 'err' = conventional (Baba RMS1),\n"
-    "# 'err+syn' = obs + synthesized error (Baba RMS2, ensemble only).\n"
+_NOTE_HEAD = "# r = error-normalized residuals; norm 'err' = conventional (Baba RMS1)"
+_NOTE_SYN = ("# 'err+syn' = obs + synthesized error (Baba RMS2; ensemble with "
+             "SHOW_RMS2 only).\n")
+_NOTE_REST = (
     "# nrms = sqrt(mean(r^2)); r_mae = sqrt(pi/2)*mean(|r|); r_med = median(|r|)/0.6745;\n"
     "# q95 = 95th percentile of |r|; mean = bias.\n"
     "# std = sqrt(mean((r-mean)^2)); skew = m3/m2^1.5; kurt = m4/m2^2 - 3 (EXCESS kurtosis),\n"
@@ -2041,6 +2065,15 @@ FIT_MEASURE_NOTE = (
     "# std = 1, skew = kurt = 0 (standard errors ~ sqrt(6/n), sqrt(24/n) for independent r).\n"
     "# kurt > 0: heavy tails / outliers; skew > 0: tail towards observed > calculated."
 )
+FIT_MEASURE_NOTE = _NOTE_HEAD + ",\n" + _NOTE_SYN + _NOTE_REST   # RMS1 and RMS2
+FIT_MEASURE_NOTE_RMS1 = _NOTE_HEAD + ".\n" + _NOTE_REST          # RMS1 only
+
+
+def fit_measure_note(has_syn: bool) -> str:
+    """Header note of the tables: with RMS2 (`has_syn`) or RMS1 only."""
+    return FIT_MEASURE_NOTE if has_syn else FIT_MEASURE_NOTE_RMS1
+
+
 _MK = ("nrms", "r_mae", "r_med", "q95", "skew", "kurt")
 _MN = {"nrms": "nrms", "r_mae": "rmae", "r_med": "rmed", "q95": "q95",
        "skew": "skew", "kurt": "kurt"}
@@ -2315,11 +2348,16 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
                        ref_member=opts.REF_MEMBER,
                        site_merge_tol=opts.SITE_MERGE_TOL if opts.SITE_MERGE_BY_POSITION else None)
     M = ds["M"]
-    has_syn = M > 1
+    ensemble = M > 1
+    has_syn = ensemble and bool(opts.SHOW_RMS2)     # RMS2 only on request
     print(f"femtic_misfit: mode={mode}, members M={M}, rows={ds['freq'].size}, "
           f"dropped (non-finite calc)={ds['n_dropped_nan']}")
     if mode == "ensemble" and M == 1:
-        print("femtic_misfit: WARNING: ensemble with one member; RMS2 = RMS1.")
+        print("femtic_misfit: WARNING: ensemble with one member"
+              + ("; RMS2 = RMS1." if opts.SHOW_RMS2 else "."))
+    if ensemble and not has_syn:
+        print("femtic_misfit: RMS2 (observed + synthesized error) is switched off "
+              "(SHOW_RMS2 = False); plots and tables show RMS1 only.")
     runs_txt = format_runs(runs)
     if M <= 30:
         print(runs_txt)
@@ -2350,13 +2388,14 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
         print(table)
         if opts.WRITE_STATS:
             _write(os.path.join(out_dir, f"{prefix}_fit_measures.txt"),
-                   f"# {title_extra}\n{FIT_MEASURE_NOTE}", table)
+                   f"# {title_extra}\n{fit_measure_note(has_syn)}", table)
 
     if "crossplot" in opts.METHODS:
         crange = global_logf_range(panels) if opts.COLOR_RANGE == "global" else None
         for dname, lst in panels.items():
             fig = plot_crossplot_datatype(
-                dname, lst, title_extra=title_extra, has_syn=has_syn, ncols=opts.NCOLS,
+                dname, lst, title_extra=title_extra, has_syn=has_syn,
+                ensemble_mean=ensemble, ncols=opts.NCOLS,
                 panel_size=opts.PANEL_SIZE, cmap=opts.CMAP, color_range=crange,
                 marker_size=opts.MARKER_SIZE, alpha=opts.ALPHA, log_rho=opts.LOG_RHO,
                 show_errorbars=opts.SHOW_ERRORBARS, equal_aspect=opts.EQUAL_ASPECT,
@@ -2375,12 +2414,12 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
         print(table)
         if opts.WRITE_STATS:
             _write(os.path.join(out_dir, f"{prefix}_crossplot_stats.txt"),
-                   f"# {title_extra}\n{FIT_MEASURE_NOTE}\n"
-                   "# columns with suffix 1 / 2: conventional / obs+syn normalization "
-                   "(ensemble only); rmae = r_mae, rmed = r_med", table)
+                   f"# {title_extra}\n{fit_measure_note(has_syn)}\n"
+                   + ("# columns with suffix 1 / 2: conventional / obs+syn normalization; "
+                      if has_syn else "# ") + "rmae = r_mae, rmed = r_med", table)
 
     if "histogram" in opts.METHODS:
-        if not has_syn:
+        if opts.SHOW_RMS2 and not ensemble:
             print("femtic_misfit: single run: no synthesized error available, "
                   "histograms show the conventional (RMS1) normalization only.")
         all_stats: Dict[str, List[dict]] = {}
@@ -2414,7 +2453,7 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
         if opts.WRITE_STATS:
             _write(os.path.join(out_dir, f"{prefix}_hist_stats.txt"),
                    f"# {title_extra}; bands: {opts.HIST_BANDS_PER_DECADE} per decade "
-                   f"({opts.HIST_BAND_AXIS})\n{FIT_MEASURE_NOTE}\n"
+                   f"({opts.HIST_BAND_AXIS})\n{fit_measure_note(has_syn)}\n"
                    "# n_out: values of the plotted variant outside +/- HIST_LIMIT", table)
 
     if "qq" in opts.METHODS:
@@ -2451,7 +2490,8 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
                    f"# {title_extra}; bands: {opts.QQ_BANDS_PER_DECADE} per decade "
                    f"({opts.QQ_BAND_AXIS})\n"
                    "# skew, kurt (excess): higher moments of the plotted residuals "
-                   "(RMS2-normalized if ensemble, else RMS1); 0 for a Gaussian\n"
+                   + ("(RMS2-normalized)" if has_syn else "(RMS1-normalized)")
+                   + "; 0 for a Gaussian\n"
                    "# (definitions: see the fit-measure note of the other tables)", table)
 
     if "curves" in opts.METHODS:

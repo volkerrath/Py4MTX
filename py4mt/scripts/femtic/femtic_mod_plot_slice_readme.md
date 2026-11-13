@@ -113,17 +113,37 @@ Conversion chain: `lat/lon → UTM → model-local`.
 | `"ns"` | `x0` | N-S vertical section at easting `x0` |
 | `"ew"` | `y0` | E-W vertical section at northing `y0` |
 | `"plane"` | `point`, `strike`, `dip` | Arbitrary oblique plane |
-| `"profile"` | `p1`, `p2`, `z_top`, `z_bot` | Vertical fence section between two endpoints; strike auto-derived |
+| `"profile"` | `p1`, `p2`, `z_top`, `z_bot`, `dip` | Fence section between two endpoints (vertical, or dipping: a fault from two surface points); strike auto-derived |
 
 ### `kind="profile"` keys
 
 | Key | Type | Default | Description |
 |---|---|---|---|
 | `p1`, `p2` | position spec | required | Endpoint positions. Each accepts a bare 2-element list (model-local metres), `([x, y], "model")`, `([E, N], "utm")`, or `([lon, lat], "latlon")`. A 3-element `[x, y, z]` form is also accepted (z ignored). |
-| `z_top` | float | `0.0` | Shallowest depth of the panel [m, z-positive-down] |
+| `z_top` | float | `0.0` | Shallowest depth of the panel [m, z-positive-down]; for `dip != 90` also the depth at which the plane contains the trace p1-p2 (`-elevation` for a trace above sea level) |
 | `z_bot` | float | `20000.0` | Deepest depth of the panel [m, z-positive-down] |
+| `dip` | float | `90.0` | `0 < dip < 180`. `90` = vertical fence section. Otherwise the plane through *p1*-*p2* dips by `dip` degrees to the **right** of the direction *p1* -> *p2* (`dip = 180 - d` dips `d` degrees to the left, same as swapping *p1* and *p2*); the panel axes are along strike and down dip (`ylim = [0, (z_bot - z_top) / sin(dip)]`) |
+| `overlay` | `True` / dict | none | Any slice kind: also draw this slice as a line on every other panel (fault trace on maps, dipping line on sections); a dict gives `Line2D` keywords and an optional `label` |
+| `panel` | bool | `True` | Any slice kind: `False` = the entry is **not** a panel, it only supplies its `overlay` line (the fault trace in all the other slices, without a fault panel). At least one entry must stay a panel |
 
-The resolver converts a `"profile"` spec into a `kind="plane"` dict with `dip=90` before passing it to `fviz.plot_model_slices`. The horizontal axis of the panel runs along-strike from *p1* to *p2*; use `invert_x=True` to reverse the sense.
+The resolver converts a `"profile"` spec into a `kind="plane"` dict (`dip=90` unless `dip` is given) before passing it to `fviz.plot_model_slices`. For `dip = 90` the horizontal axis of the panel runs along-strike from *p1* to *p2*; use `invert_x=True` to reverse the sense.
+
+**Fault from two surface points.** With `dip != 90` the profile is the fault plane; with `overlay` it is also drawn on all other panels. Add `panel=False` if you want the trace in the other slices but no panel of the fault itself (a slice along the fault is the same entry without `panel=False`, or a `kind="plane"`):
+
+```python
+PLOT_SLICES = [
+    dict(kind="map", z0=0.0), dict(kind="map", z0=3000.0),
+    dict(kind="ns", x0=0.0),
+    dict(kind="profile",
+         p1=([6.030869, 45.962166], "latlon"),
+         p2=([6.115936, 45.910655], "latlon"),
+         dip=70.0, z_top=0.0, z_bot=20000.0,
+         overlay=dict(color="k", linewidth=1.5), title="fault",
+         panel=False),                 # trace only; remove for a fault panel too
+]
+```
+
+`xlim=[-L/2, L/2]` (m along strike, relative to the midpoint of p1-p2) limits the fault to the segment of length `L`. Details and limits: `femtic_viz_readme.md`, "Fault planes: a panel and an overlay". Needs `femtic.py` and `femtic_viz.py` of 2026-11-12.
 
 ### Plane slices (`kind="plane"`)
 
@@ -201,6 +221,7 @@ PLOT_POLYLINES = {
 | `kinds` | all panels | `"map"`, `"ns"`, `"ew"`, `"plane"` (also the `"profile"` panels), `"vertical"` (= ns + ew + plane) or a list of these. |
 | `max_dist` | `PROJECTION_DIST` | m; vertical sections only: the parts of the polyline within `max_dist` of the section plane are projected into it (slab, like the site markers). `0` = only parts lying in the section plane. If `PROJECTION_DIST` is `None` the whole polyline is projected. |
 | `z_range` | none | `[zmin, zmax]` m; maps only: draw only on maps whose `z0` lies in the range. Default: plan view on every map. |
+| `panels` | all | A panel index or list of 0-based indices into `PLOT_SLICES`; draw the line on those panels only (2026-11-12). |
 
 Maps show the whole polyline in plan view. The polylines never change the axis
 limits; parts outside the panel are clipped by the axes.
@@ -223,7 +244,8 @@ PLOT_POLYLINES["map 5 km x ns 0"] = dict(
 
 `max_dist=0.0` draws the line only on the panels that contain it, `z_range`
 only on the map at that depth. There is no automatic switch that draws the
-intersections of all `PLOT_SLICES`. Slices with a CRS-tagged position or an
+intersections of all `PLOT_SLICES`; a slice that carries `overlay` is drawn on
+every other panel (see the fault paragraph above). Slices with a CRS-tagged position or an
 unresolved `"profile"` must be resolved to model-local metres first
 (`slices_resolved` in the script).
 
@@ -413,3 +435,4 @@ Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `PLOT_POLYLINES = {name: entry}` (metres; `{}` = none): lines drawn on the slice panels. Maps: plan view, optional `z_range`; ns / ew / plane / profile sections: the parts within `max_dist` (default `PROJECTION_DIST`) of the section plane, projected into it. Points model-local m or CRS-tagged (`"utm"` metres, `"latlon"` degrees, longitude first); `style`, `label`, `kinds`. Passed to `fviz.plot_model_slices(polylines=...)` in the shared options (every figure of a batch). The intersection line of two slices is available as `fviz.slice_intersection_polyline` / `slice_intersection_polylines` (example in the section above); it is not drawn automatically. With `PLOT_POLYLINES = {}` the figures are unchanged. Needs the `femtic_viz.py` of the same date. Tested on a synthetic mesh only. AI-generated; review before production use. |
 | 2026-11-11b | Claude Sonnet 5.5 (Anthropic) | Titles and colour bars: `FIGURE_TITLE` takes the forms of all plot scripts (`"auto"`, none, text with `{label}`, `{tag}`, `{iter}`, `{nrms}`, `{alpha}`, `{file}`, dict per model label); `BATCH_TITLE` also knows `{alpha}`, `{file}`; new `PANEL_TITLES`, `CBAR_LOCATION` (`"panel"` default), `CBAR_SHRINK`, `CBAR_THICKNESS`. Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. |
 | 2026-11-11c | Claude Sonnet 5.5 (Anthropic) | Convergence file from a list of names: `CNV_FILE` is now a name or a list of candidate names (default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`), no longer `WORK_DIR + "femtic.cnv"`; it is passed to `fem.resolve_model_files()` and, for the annotation of a single model, searched first in the directory of the model file, then in `WORK_DIR`. The last row is read by column name (`fem.read_cnv_last()`); the setting `DISTORTION` and the guess from the number of columns are removed. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
+| 2026-11-12 | Claude Sonnet 5.5 (Anthropic) | Fault from two surface points. `kind="profile"` takes `dip` (default 90 = as before; otherwise the dipping plane through p1 -> p2, dipping to the right of p1 -> p2) and any slice may carry `overlay` (`True` or `Line2D` keywords, + `label`): that plane is also drawn on every other panel (trace on maps, dipping line on sections). New polyline-entry key `panels`. Documentation block and commented example in the script. Needs `femtic.py` and `femtic_viz.py` of the same date. Without `dip` / `overlay` the figures are unchanged. Tested on a synthetic mesh only. AI-generated; review before production use. New slice-spec key `panel=False`: the entry is no panel, it only draws its `overlay` line on all the other panels (fault trace without a fault panel). |

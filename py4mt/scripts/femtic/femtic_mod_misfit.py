@@ -19,8 +19,8 @@ set of figures and tables per run, for the iteration chosen by ITERATION
   "curves"     optional: observed data with errors against the calculated
                response, per site
 
-The ensemble counterpart is femtic_ens_misfit.py (also: RMS2, member curves,
-nRMS histogram of all scanned members). Both call femtic_misfit.py (the
+The ensemble counterpart is femtic_ens_misfit.py (also: RMS2 on request, member
+curves, nRMS histogram of all scanned members). Both call femtic_misfit.py (the
 engine of femtic_data_misfit.py, which stays as it is and does both jobs in
 one script).
 

@@ -269,6 +269,28 @@ Provenance
                 distortion) are removed, since the header row decides. Needs
                 the femtic.py of the same date.
                 AI-generated; review before production use.
+
+    2026-11-12  Claude Sonnet 5.5 (Anthropic)
+                Fault from two surface points. kind="profile" takes an
+                optional `dip` (default 90 = vertical fence as before): with
+                dip != 90 it is the dipping plane through p1 -> p2 (dips to
+                the right of p1 -> p2). Any slice entry may carry `overlay`
+                (True or Line2D keywords, + label): that plane is also drawn
+                on every other panel (trace on maps, dipping line on
+                sections). Documentation block and commented example under
+                PLOT_SLICES. Needs femtic.py and femtic_viz.py of the same
+                date. Entries without `dip` / `overlay`: figures unchanged.
+                Tested on a synthetic mesh only.
+                AI-generated; review before production use.
+
+    2026-11-12  Claude Sonnet 5.5 (Anthropic)
+                Fault trace without a fault panel: `panel=False` on an
+                entry with `overlay` makes it no panel, it only draws its
+                line on all the other panels. Documentation block and
+                commented example under PLOT_SLICES extended. Needs
+                femtic_viz.py of the same date. Tested on a synthetic mesh
+                only.
+                AI-generated; review before production use.
 """
 
 import os
@@ -600,8 +622,9 @@ ALPHA_BLANK_THRESH = 0.0
 #:            "ns"      — N-S vertical section at x = x0   (y vs depth)
 #:            "ew"      — E-W vertical section at y = y0   (x vs depth)
 #:            "plane"   — arbitrary plane by strike / dip / point
-#:            "profile" — vertical fence section defined by two endpoints;
-#:                        strike is computed automatically from p1→p2 azimuth
+#:            "profile" — fence section defined by two endpoints (vertical,
+#:                        or dipping with ``dip``: a fault from two surface
+#:                        points); strike is computed from the p1->p2 azimuth
 #:   z0     : (map     only)  depth in metres
 #:   x0     : (ns      only)  easting — plain float = model-local metres;
 #:            or (value, "utm") / (value, "latlon") for CRS tagging
@@ -615,9 +638,19 @@ ALPHA_BLANK_THRESH = 0.0
 #:              ([lon, lat], "latlon")  decimal degrees
 #:            A 3-element [x, y, z] variant is also accepted (z ignored).
 #:   z_top  : (profile only)  shallowest depth of fence panel [m, z-down]
-#:            default 0.0
+#:            default 0.0; for dip != 90 also the depth at which the plane
+#:            contains the trace p1-p2 (-elevation for a trace above sea level)
 #:   z_bot  : (profile only)  deepest depth of fence panel [m, z-down]
 #:            default 20 000 m
+#:   dip    : (profile only)  0 < dip < 180, default 90 (vertical). The plane
+#:            dips to the RIGHT of p1 -> p2; dip = 180 - d dips d degrees to the
+#:            left (same as swapping p1 and p2)
+#:   overlay: (any kind)  True or Line2D keywords (+ label): also draw this
+#:            slice as a line on every other panel (fault trace on maps,
+#:            dipping line on sections)
+#:   panel  : (any kind)  False = not a panel: the entry only supplies its
+#:            overlay line (fault trace in all the slices, no fault panel).
+#:            Default True. At least one entry must stay a panel.
 #:   strike : (plane   only)  azimuth of the strike line, degrees clockwise
 #:            from North (every dip)
 #:   dip    : (plane   only)  degrees below the horizontal, 0..180; the plane
@@ -651,6 +684,16 @@ PLOT_SLICES = [
     dict(kind="ew",  y0=(-16.3450, "latlon"), title="Ubinas crater"),
     # dict(kind="map", z0=-4000.0),
     # dict(kind="map", z0= 5000.0),
+    # Fault from two surface points + dip, drawn as a panel (the model on the
+    # plane) and, with overlay, as a line on every other panel (uncomment to
+    # use). With panel=False there is no fault panel, only its trace in all
+    # the other slices:
+    # dict(kind="profile",
+    #      p1=([-71.536, -16.197], "latlon"),
+    #      p2=([-71.406, -16.299], "latlon"),
+    #      dip=70.0, z_top=0.0, z_bot=25000.0,
+    #      overlay=dict(color="k", linewidth=1.5), title="fault",
+    #      panel=False),
     # Two-point vertical profile example (uncomment to use):
     # dict(kind="profile",
     #      p1=([-71.536, -16.197], "latlon"),

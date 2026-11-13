@@ -22,16 +22,19 @@ Methods (`METHODS`):
 1. **crossplot** -- observed vs. ensemble-mean response, one panel per data type
    / component.
 2. **histogram** -- normalized-residual histograms in frequency (or period)
-   bands, after Baba (2023): bars = RMS2 normalization (observed + synthesized
-   error, the synthesized error being the spread of the members), orange step
-   outline = conventional RMS1.
-3. **qq** -- normal Q-Q plots of the same residuals (RMS2 dots, RMS1 in orange).
+   bands, after Baba (2023): bars = conventional RMS1 normalization (observed
+   error only). With `SHOW_RMS2 = True` (not the default) the bars use the RMS2
+   normalization (observed + synthesized error, the synthesized error being
+   the spread of the members) and the orange step outline is RMS1.
+3. **qq** -- normal Q-Q plots of the same residuals (RMS1 dots; with
+   `SHOW_RMS2 = True` RMS2 dots and RMS1 in orange).
 4. **curves** (optional) -- response curves per site; the members are shown as
    curves, as a density, or as percentile bands (`CURVES_ENS_MODE`).
 5. **nrms** -- histogram of the best nRMS of all scanned members (accepted and
    rejected), from the results `.npz` of `femtic_ens_post.py`.
 
-RMS2 needs M > 1; with a single member RMS2 = RMS1.
+RMS2 is off by default (`SHOW_RMS2 = False`, no modelling error is used); it needs
+M > 1; with a single member RMS2 = RMS1.
 
 The same code does the work in `femtic_data_misfit.py` (`RUN_MODE = "ensemble"`)
 and here; the difference is only that the settings of this script do not have
@@ -93,6 +96,7 @@ layers exist only in this script (not in `femtic_mod_misfit.py`).
 | `METHODS` | `('crossplot', 'histogram', 'qq'...` | `"crossplot"`, `"histogram"`, `"qq"`, `"curves"`, `"nrms"` |
 | `ENSEMBLE_OBS` | `'mean'` | Observed data across members |
 | `REF_MEMBER` | `None` | RMS1 reference (None = ensemble mean) |
+| `SHOW_RMS2` | `False` | Show Baba's RMS2 (observed plus synthesized error, i.e. a modelling error) in plots and tables; `False` = not shown, RMS1 only (no modelling error is used); `True` = RMS1 and RMS2 for an ensemble (M > 1) |
 | `OUT_DIR` | `'.../ann_rto_orig-err/results256/'` | `None` = the directory `<common parent of the members>/<OUT_PREFIX>/`, made if missing; or a path, used as given (no `OUT_PREFIX` sub-directory) |
 | `OUT_PREFIX` | `'Misfits'` | File prefix; also the NAME OF THE OUTPUT DIRECTORY while `OUT_DIR` is `None` |
 | `OUT_PREFIX_DIR` | `True` | `False`: with `OUT_DIR` `None` write into the common parent of the members itself (no `OUT_PREFIX` sub-directory) |
@@ -178,7 +182,7 @@ residuals r, using the routines in `inverse.py` (`nrms`, `r_mae`, `r_med`,
 they stay near their expected values while `nrms` is large, a few outliers
 rather than a general misfit are the likely cause. Each is given for both
 normalizations: `err` (observed error only, conventional, Baba's RMS1) and
-`err+syn` (observed plus synthesized error, RMS2; ensemble only).
+`err+syn` (observed plus synthesized error, RMS2; only with `SHOW_RMS2 = True`).
 
 The higher moments are taken about the sample mean (so a bias does not enter)
 with the plain 1/n estimators of `scipy.stats.skew` / `scipy.stats.kurtosis`
@@ -195,7 +199,7 @@ Where they appear:
 - `<prefix>_fit_measures.txt` (switch `FIT_MEASURES`): pooled over all data
   (`ALL`) and per data type; also printed.
 - `<prefix>_crossplot_stats.txt`: per panel (data type / component / part);
-  columns with suffix 1 / 2 are the two normalizations (ensemble only);
+  columns with suffix 1 / 2 are the two normalizations (only with `SHOW_RMS2 = True`);
   of the higher moments only `skew` and `kurt` are listed.
 - `<prefix>_hist_stats.txt`: per band (and pooled), one row per
   normalization, plus `n_out`.
@@ -204,7 +208,7 @@ The crossplot and histogram statistics use the same residuals (the RMS1
 reference is the ensemble mean, or the `REF_MEMBER` response if set). The
 Q-Q table keeps its own robust slope/intercept statistics and adds
 `skew` and `kurt` of the plotted residuals (RMS2-normalized for an
-ensemble, else RMS1).
+ensemble with `SHOW_RMS2 = True`, else RMS1).
 
 ## Site ids: one id per position
 
@@ -273,6 +277,16 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### 2026-11-11c -- nRMS2 switched off (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- No modelling error is used, so RMS2 (observed plus synthesized error, Baba 2023) is no longer shown. New setting
+  `SHOW_RMS2`, default `False`. With `False`: the crossplot panels show `nRMS` only (was `nRMS1` and `nRMS2` for an
+  ensemble); the histograms and Q-Q plots use the conventional RMS1 normalization (bars / dots = RMS1, no orange RMS1
+  outline, no `slope2`); the statistics tables, which list what is plotted, drop the `err+syn` rows and the `2`
+  columns, and their header notes no longer mention RMS2. `SHOW_RMS2 = True` gives the former output for an ensemble.
+- The crossplot y label stays `calculated (ensemble mean)` for M > 1 (new keyword `ensemble_mean` of
+  `plot_crossplot_datatype`). A single run never shows RMS2. The old `femtic_data_misfit.py` is not changed.
+- The work is done in `femtic_misfit.py` of the same date. Tests: `test_femtic_misfit_rms2.py` and `test_femtic_misfit.py`.
 
 ### 2026-11-11b -- titles and colour bar position (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
 - New `FIGURE_TITLE` (`"auto"` = the titles of before; `None` / `False` / `""` = no figure title; text with

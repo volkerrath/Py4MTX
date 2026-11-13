@@ -622,7 +622,28 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-11-11
+Updated: 2026-11-12
+
+### Changelog (2026-11-12) --- fault plane from two surface points
+- `resolve_pos_two_point_profile(..., dip=90.0)`: new keyword `dip`. The
+  default (90) gives the vertical fence section exactly as before. With
+  `0 < dip < 180`, `dip != 90`, the two end points define a **dipping plane**
+  (a fault from two surface points and a dip): `strike` = azimuth p1 -> p2,
+  `point` = midpoint of p1-p2 at depth `z_top`, the plane dips towards
+  `strike + 90` (to the right of p1 -> p2; `dip = 180 - d` dips `d` degrees
+  to the left), and the returned spec carries the down-dip range `ylim =
+  [0, (z_bot - z_top) / sin(dip)]` (m, relative to `point`) instead of
+  `zlim`. `dip` outside `(0, 180)` raises `ValueError`.
+- `resolve_slice_positions()`: a `kind="profile"` spec may carry `dip` (it
+  was ignored before; default 90 = as before); other keys such as `overlay`
+  (see the `femtic_viz.py` readme, "Fault planes") pass through. The verbose
+  output names the dip direction of a dipping profile.
+- Slice specs may also carry `panel=False` (passes through unchanged): with
+  `overlay` the fault trace is then drawn in all the other slices without a
+  fault panel of its own (`femtic_viz.py`, "Fault planes"; works in
+  `plot_model_slices` and `plot_ensemble_slices`).
+- Nothing else changed. Needs the `femtic_viz.py` of the same date for the
+  overlay. Tests: `test_femtic_fault_plane.py`. AI-generated (Claude Sonnet 5.5, Anthropic); review before production use.
 
 ### Changelog (2026-11-11) --- polylines for the slice plots
 - New `polylines_km_to_m()` (Section 6c, next to `plane_spec_km_to_m()`):
@@ -1020,6 +1041,20 @@ Author: Volker Rath (DIAS)
   (or a list/tuple of candidates; first existing wins). New helper
   `resolve_cnv_path(directory, filename)`. Defaults unchanged. AI-generated
   (Claude Sonnet 5.5, Anthropic); review before production use.
+
+### Changelog (2026-11-11c) --- model source of the stand-alone borehole scripts
+- New `ENS_MODEL_SOURCES = ("auto", "converged", "perturbed", "both")` and
+  `select_ensemble_source(res, source="auto", *, out=True)`: applies the setting
+  `ENS_MODEL_SOURCE` of `femtic_ens_plot_bh.py` / `femtic_ens_plot_bh_SV.py` to
+  the dict of `read_ensemble_results()`. `"auto"` (or `None`) returns it
+  unchanged; `"converged"` drops the perturbed models of a `"both"` file;
+  `"perturbed"` makes them the ensemble (`avg`, `var`, `err`, `med`, `mad`,
+  `prc` recomputed; `qdiff`, bootstrap, `sens` and SimRC dropped;
+  `res["source_swapped"] = True`); `"both"` needs a `"both"` file. A choice the
+  file cannot give raises a `ValueError` that says how the file was made. The
+  input dict is not changed.
+- Tests: `test_femtic_ens_source.py`, 17 cases. AI-generated (Claude Sonnet
+  5.5, Anthropic); review before production use.
 
 ### Changelog (2026-11-11b) --- one way to find and read the convergence file
 - New `CNV_DEFAULT_NAMES = ("femtic.cnv", "FEMTIC-DABIC.cnv")` and

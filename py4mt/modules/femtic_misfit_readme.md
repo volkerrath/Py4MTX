@@ -72,6 +72,7 @@ The defaults of `Settings` (neutral; the scripts set their own).
 | `METHODS` | `('crossplot', 'histogram', 'qq')` | `"crossplot"`, `"histogram"`, `"qq"`, `"curves"`, `"nrms"` |
 | `ENSEMBLE_OBS` | `'mean'` | Observed data across members |
 | `REF_MEMBER` | `None` | RMS1 reference (None = ensemble mean) |
+| `SHOW_RMS2` | `False` | Show Baba's RMS2 (observed plus synthesized error, i.e. a modelling error) in plots and tables; `False` = not shown, RMS1 only (no modelling error is used); `True` = RMS1 and RMS2 for an ensemble (M > 1) |
 | `OUT_DIR` | `None` | `None` = the directory `<base>/<OUT_PREFIX>/` (base = run directory; ensemble: common parent), made if missing; or a path, used as given |
 | `OUT_PREFIX` | `None` | File prefix (prepended if several singles); also the NAME OF THE OUTPUT DIRECTORY while `OUT_DIR` is `None` |
 | `OUT_PREFIX_DIR` | `True` | `False`: with `OUT_DIR` `None` write into `<base>` itself (no `OUT_PREFIX` sub-directory) |
@@ -150,8 +151,10 @@ synthesized standard error, with M syntheses of the same model (Eqs. 10-14):
 The histograms follow the paper's Fig. 10a: bars = normalized residuals,
 red line = N(0, RMS^2), blue dashed lines = +/- RMS. In ensemble mode the
 bars use the RMS2 normalization and the RMS1 histogram is added as an
-orange step outline; in single mode (M = 1, eps_syn = 0) RMS2 equals RMS1
-and only the conventional histogram is drawn.
+orange step outline -- but only with `SHOW_RMS2 = True` (default `False`: no
+modelling error is used, so RMS2 is not shown anywhere and the bars are the
+conventional RMS1 normalization); in single mode (M = 1, eps_syn = 0) RMS2
+equals RMS1 and only the conventional histogram is drawn.
 
 ### Assumptions and generalizations (please check)
 
@@ -198,7 +201,8 @@ residuals r, using the routines in `inverse.py` (`nrms`, `r_mae`, `r_med`,
 they stay near their expected values while `nrms` is large, a few outliers
 rather than a general misfit are the likely cause. Each is given for both
 normalizations: `err` (observed error only, conventional, Baba's RMS1) and
-`err+syn` (observed plus synthesized error, RMS2; ensemble only).
+`err+syn` (observed plus synthesized error, RMS2; only with `SHOW_RMS2 = True`
+and M > 1).
 
 The higher moments are taken about the sample mean (so a bias does not enter)
 with the plain 1/n estimators of `scipy.stats.skew` / `scipy.stats.kurtosis`
@@ -224,7 +228,7 @@ The crossplot and histogram statistics use the same residuals (the RMS1
 reference is the ensemble mean, or the `REF_MEMBER` response if set). The
 Q-Q table keeps its own robust slope/intercept statistics and adds
 `skew` and `kurt` of the plotted residuals (RMS2-normalized for an
-ensemble, else RMS1).
+ensemble with `SHOW_RMS2 = True`, else RMS1).
 
 ## Site ids: one id per position
 
@@ -286,6 +290,16 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### 2026-11-11c -- nRMS2 switched off (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- No modelling error is used, so RMS2 (observed plus synthesized error, Baba 2023) is no longer shown. New setting
+  `SHOW_RMS2`, default `False`. With `False`: the crossplot panels show `nRMS` only (was `nRMS1` and `nRMS2` for an
+  ensemble); the histograms and Q-Q plots use the conventional RMS1 normalization (bars / dots = RMS1, no orange RMS1
+  outline, no `slope2`); the statistics tables, which list what is plotted, drop the `err+syn` rows and the `2`
+  columns, and their header notes no longer mention RMS2. `SHOW_RMS2 = True` gives the former output for an ensemble.
+- The crossplot y label stays `calculated (ensemble mean)` for M > 1 (new keyword `ensemble_mean` of
+  `plot_crossplot_datatype`). A single run never shows RMS2. The old `femtic_data_misfit.py` is not changed.
+- Tests: `test_femtic_misfit_rms2.py` (9 tests, synthetic data) and three runs through `run_ensemble` / `run_models` in `test_femtic_misfit.py`.
 
 ### 2026-11-11b -- titles and colour bar position (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
 - New `FIGURE_TITLE` (`"auto"` = the titles of before; `None` / `False` / `""` = no figure title; text with

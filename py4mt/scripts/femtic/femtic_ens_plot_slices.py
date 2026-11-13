@@ -95,6 +95,30 @@ AI-generated code -- review before production use.
               femtic_viz.py of the same date. With MOD_POLYLINES = {} the
               figures are unchanged. Tested on a synthetic mesh only.
               AI-generated; review before production use.
+
+2026-11-12  Claude Sonnet 5.5 (Anthropic)
+              Fault from two surface points. A kind="profile" entry of
+              MOD_SLICES takes an optional `dip` (default 90 = vertical
+              fence as before): with dip != 90 it is the dipping plane
+              through p1 -> p2 (dips to the right of p1 -> p2), shown as a
+              panel with along-strike x down-dip axes. An optional
+              `overlay` (True or Line2D keywords, + label) on any entry also
+              draws that plane on every other panel (trace on maps, dipping
+              line on sections). Commented example under MOD_SLICES. Profile
+              keys (p1, p2, z_top, z_bot, xlim, ylim) are degrees / metres
+              even in this km script. Needs femtic.py and femtic_viz.py of
+              the same date. Entries without `dip` / `overlay`: figures
+              unchanged. Tested on a synthetic mesh only.
+              AI-generated; review before production use.
+
+2026-11-12  Claude Sonnet 5.5 (Anthropic)
+              Fault trace without a fault panel: an entry with `overlay`
+              and `panel=False` is no panel, it only draws its line on all
+              the other panels (the fault trace in every slice). Without
+              `panel=False` the fault is a panel as well. The commented
+              example under MOD_SLICES shows both. Needs femtic_viz.py of the
+              same date. Tested on a synthetic mesh only.
+              AI-generated; review before production use.
 """
 
 from __future__ import annotations
@@ -384,6 +408,26 @@ MOD_SLICES = [
     #: relative to ``point``.
     # dict(kind="plane", point=([6.12, 45.90, 0.0], "latlon"), strike=325.0, dip=70.0),
     # dict(kind="plane", point=([E_utm, N_utm, 2.0], "utm"), strike=325.0, dip=45.0),
+    #: Fault from two surface points + dip (kind="profile"): the plane
+    #: through p1 -> p2 that dips to the RIGHT of the direction p1 -> p2
+    #: (dip=110 dips the same amount to the left; or swap p1 and p2). p1, p2:
+    #: ([lon, lat], "latlon"), ([E, N], "utm") or [x, y] model-local METRES
+    #: (the profile keys are degrees / metres even in this km script).
+    #: z_top = depth of the plane at the trace (default 0; -elevation for a
+    #: trace above sea level), z_bot = bottom of the panel, both in m.
+    #: overlay=True (or Line2D keywords, optionally label=...) also draws the
+    #: fault on every other panel of every figure of this script: trace on the
+    #: maps, dipping line on the sections. panel=False: the entry is NOT a
+    #: panel, it only supplies that trace (the fault line in all the other
+    #: slices, no fault panel); leave it out to get the fault panel (the
+    #: model on the fault plane) as well. xlim=[a, b] (m along strike,
+    #: relative to the midpoint of p1-p2) limits its length.
+    # dict(kind="profile",
+    #      p1=([6.030869, 45.962166], "latlon"),
+    #      p2=([6.115936, 45.910655], "latlon"),
+    #      dip=70.0, z_top=0.0, z_bot=20000.0,
+    #      overlay=dict(color="k", linewidth=1.5), title="fault",
+    #      panel=False),
     # dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
     # dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
 ]

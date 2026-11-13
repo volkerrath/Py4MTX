@@ -365,6 +365,21 @@ Provenance:
                 before. _plot_member_slices() got the arguments kind and
                 index for the title placeholders.
                 AI-generated; review before production use.
+    2026-11-12  Claude Sonnet 5.5 (Anthropic)
+                Fault trace in the slice figures. ENS_SLICES (like
+                MOD_SLICES) may contain a fault from two surface points:
+                dict(kind="profile", p1=..., p2=..., dip=70.0, overlay=True,
+                panel=False) -- the line in which the fault plane meets every
+                other slice is drawn in all panels (trace on maps, dipping
+                line on sections); without panel=False the fault is a panel
+                too. The ensemble figure (plot_ensemble_slices) needs
+                resolved positions for that: ENS_SLICES are now resolved with
+                fem.resolve_slice_positions(), like MOD_SLICES, but ONLY if an
+                entry is a "profile" or has `overlay` / `panel=False`;
+                otherwise the call is unchanged. Needs femtic.py and
+                femtic_viz.py of the same date. Not run here (syntax and a
+                synthetic-mesh test of the plot function only).
+                AI-generated; review before production use.
 """
 
 import os
@@ -1329,10 +1344,26 @@ if PLOT_DATA or PLOT_MODEL:   # only runs when the viz block was entered
         ]
         _ens_labels = [f"{ENSEMBLE_NAME}{i}" for i in ENS_MEMBERS]
 
+        # ENS_SLICES go to plot_ensemble_slices as km -> m converted specs, as
+        # before. A fault from two surface points (kind="profile", dip) or an
+        # `overlay` / `panel=False` entry needs resolved positions, so the
+        # list is resolved like MOD_SLICES in that case only (2026-11-12).
+        _ens_slices = _slices_km_to_m(ENS_SLICES)
+        if _ens_slices and any(
+                sp.get("kind") == "profile" or sp.get("overlay")
+                or sp.get("panel") is False for sp in _ens_slices):
+            _ens_slices = fem.resolve_slice_positions(
+                _ens_slices,
+                _mod_utm_zone, _mod_utm_northern,
+                _mod_utm_origin_e, _mod_utm_origin_n,
+                _mod_utm_origin_lat, _mod_utm_origin_lon,
+                verbose=False,
+            )
+
         fviz.plot_ensemble_slices(
             member_files    = _ens_block_files,
             mesh_file       = MOD_MESH,
-            slices          = _slices_km_to_m(ENS_SLICES),
+            slices          = _ens_slices,
             labels          = _ens_labels,
             stat_rows       = ENS_STAT_ROWS,
             cmap            = ENS_CMAP,

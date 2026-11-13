@@ -155,6 +155,7 @@ print(titstrng + "\n\n")
 # Directories and/or files to scan. Command-line arguments, if given,
 # replace this list.
 PATHS = ["."]
+# PATHS = ["/home/vrath/work/krafla_inversion_new/"]
 
 # Mesh file read for the model size. Looked up in the directory of each
 # resistivity_block file (an absolute path is used as it is). None = do not
@@ -191,7 +192,7 @@ OCEAN = None
 # and the LaTeX table (<OUT_FILE><LATEX_FILE>; a directory part of LATEX_FILE
 # is kept, the prefix goes before the file name). "" or None = no prefix.
 # It is a file-name prefix only: it must not contain "/" or "\".
-OUT_FILE = "Ubinas_"
+OUT_FILE = "Krafla_"
 
 # Optional LaTeX table of the summaries. None = off; otherwise the name of
 # the .tex file to write (a relative path refers to the current directory);

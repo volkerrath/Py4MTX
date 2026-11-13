@@ -60,9 +60,10 @@ Four methods, selected with `METHODS` (default: the first three; add
    robust quartile line (slope > 1: misfit larger than the stated errors,
    < 1: errors overestimated; intercept = bias); gray band = pointwise
    95% confidence envelope (`QQ_CONFIDENCE`) around the quartile line. In
-   ensemble mode the dots are RMS2-normalized with the RMS1-normalized dots
-   in orange (slope1 / slope2 in the table); in single mode only the
-   conventional residuals are shown. `QQ_EQUAL_AXES = True` gives square
+   ensemble mode with `SHOW_RMS2 = True` the dots are RMS2-normalized with the
+   RMS1-normalized dots in orange (slope1 / slope2 in the table); otherwise
+   (the default) and in single mode only the conventional RMS1 residuals are
+   shown. `QQ_EQUAL_AXES = True` gives square
    panels with the ideal line at 45 degrees.
 
 4. **curves** (optional) -- per-site response curves, ported from
@@ -138,7 +139,7 @@ Unchanged from `femtic_data_misfit.py`, via `inverse.py` (`nrms`, `r_mae`,
 
 Each is given for both normalizations: `err` (observed error only,
 conventional, Baba's RMS1) and `err+syn` (observed plus synthesized error,
-RMS2; ensemble only). Output files: `<prefix>_fit_measures.txt`,
+RMS2; only with `SHOW_RMS2 = True` and M > 1). Output files: `<prefix>_fit_measures.txt`,
 `<prefix>_crossplot_stats.txt`, `<prefix>_hist_stats.txt` -- same naming and
 layout as `femtic_data_misfit.py`.
 
@@ -230,7 +231,7 @@ python modem_data_misfit.py ensemble "rto_*_obs.dat" "rto_*_NLCG_050.dat"
 
 Output: one set with prefix `ensemble_M<M>` in the common parent directory of
 the calculated files (or `OUT_DIR`). Rows are matched across members
-(`KEY_ROUND`); RMS1 and RMS2 (Baba 2023) are reported, RMS2 needs M > 1.
+(`KEY_ROUND`); RMS1 and, with `SHOW_RMS2 = True`, RMS2 (Baba 2023) are reported, RMS2 needs M > 1.
 Quote glob patterns so the shell does not expand them.
 
 `modem.py` and `inverse.py` (fit measures; it imports `aniso`) must be
@@ -265,6 +266,7 @@ for several singles), exactly as in `femtic_data_misfit.py`.
 | `CURVES_Z_UNITS`, `CURVES_Z_CONJ`, `CURVES_RHOPHS_LOG10`, `CURVES_APPRES_PHASE_DEG` | `"ohm"`, False, False, True | ModEM data conventions (see above) |
 | `ENSEMBLE_OBS` | `"mean"` | Observed data across members: `"mean"` or `"first"` |
 | `REF_MEMBER` | `None` | RMS1 reference (None = ensemble mean) |
+| `SHOW_RMS2` | `False` | Show Baba's RMS2 (observed plus synthesized error, i.e. a modelling error) in plots and tables; `False` = not shown, RMS1 only (no modelling error is used); `True` = RMS1 and RMS2 for an ensemble (M > 1) |
 | `OUT_DIR` | `None` | `None` = run directory (ensemble: common parent); or a path |
 | `OUT_PREFIX` | `None` | File prefix; prepended if several singles |
 | `PLOT_FORMATS`, `PLOT_DPI` | `(".pdf",)`, 300 | Figure output; must be a tuple (comma!) |
@@ -458,3 +460,13 @@ stay distinct through the prefix). New helper `resolve_plot_dir()`.
   no format specifier).
 - The defaults give the figures of before. The thickness of the colour bar is not offered because the figures use
   `constrained_layout`. Tests: `test_modem_data_misfit_titles.py` (29 tests, synthetic data).
+
+### Changelog (2026-11-11c) --- nRMS2 switched off (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- No modelling error is used, so RMS2 (observed plus synthesized error, Baba 2023) is no longer shown. New setting
+  `SHOW_RMS2`, default `False`. With `False`: the crossplot panels show `nRMS` only (was `nRMS1` and `nRMS2` for an
+  ensemble); the histograms and Q-Q plots use the conventional RMS1 normalization (bars / dots = RMS1, no orange RMS1
+  outline, no `slope2`); the statistics tables, which list what is plotted, drop the `err+syn` rows and the `2`
+  columns, and their header notes no longer mention RMS2. `SHOW_RMS2 = True` gives the former output for an ensemble.
+- The crossplot y label stays `calculated (ensemble mean)` for M > 1 (new keyword `ensemble_mean` of
+  `plot_crossplot_datatype`). A single run never shows RMS2.
+- Tests: five more in `test_modem_data_misfit_titles.py` (34 tests, synthetic data).

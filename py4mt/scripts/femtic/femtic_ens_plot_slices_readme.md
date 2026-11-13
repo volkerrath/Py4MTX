@@ -312,6 +312,7 @@ MOD_POLYLINES = {
 | `kinds` | all panels | `"map"`, `"ns"`, `"ew"`, `"plane"`, `"vertical"` (= ns + ew + plane) or a list of these. |
 | `max_dist` | `MOD_PROJECTION_DIST` | km; vertical sections only: the parts of the polyline within `max_dist` of the section plane are projected into it (slab, like the site markers). `0` = only parts lying in the section plane. If `MOD_PROJECTION_DIST` is `None` the whole polyline is projected. |
 | `z_range` | none | `[zmin, zmax]` km; maps only: draw only on maps whose `z0` lies in the range. Default: plan view on every map. |
+| `panels` | all | A panel index or list of 0-based indices into `MOD_SLICES`; draw the line on those panels only (2026-11-12). |
 
 Maps show the whole polyline in plan view. The polylines never change the axis
 limits; parts outside the panel are clipped by the axes.
@@ -333,9 +334,43 @@ MOD_POLYLINES["map 2 km x ns 0"] = dict(
 
 `max_dist=0.0` draws the line only on the panels that contain it, `z_range`
 only on the map at that depth. There is no automatic switch that draws the
-intersections of all `MOD_SLICES`.
+intersections of all `MOD_SLICES`; a slice that carries `overlay` is drawn on
+every other panel (next paragraph).
 
 Needs the `femtic.py` (`polylines_km_to_m`) and `femtic_viz.py` of 2026-11-11.
+
+**Fault from two surface points.** A `kind="profile"` entry takes an optional
+`dip` (default 90 = vertical fence section as before); with `dip != 90` it is
+the dipping plane through `p1` -> `p2`, which dips to the **right** of the
+direction p1 -> p2 (`dip = 110` dips the same amount to the left). It is a
+panel of its own (the model on the fault, along strike x down dip) and, with
+`overlay`, also a line on every other panel of every figure of this script:
+the trace on the maps, the dipping line on the ns / ew / plane sections.
+With `panel=False` the entry is **not** a panel: you get the fault trace in all
+the other slices and no fault panel (a slice along the fault is the same entry
+without `panel=False`, or any `kind="plane"`).
+
+```python
+MOD_SLICES = [
+    dict(kind="map", z0=0.0), dict(kind="map", z0=3.0),
+    dict(kind="ns", x0=0.0), dict(kind="ew", y0=0.0),
+    dict(kind="profile",
+         p1=([6.030869, 45.962166], "latlon"),     # [lon, lat]
+         p2=([6.115936, 45.910655], "latlon"),
+         dip=70.0, z_top=0.0, z_bot=20000.0,       # metres
+         overlay=dict(color="k", linewidth=1.5), title="fault",
+         panel=False),                 # trace only; remove for a fault panel too
+]
+```
+
+The profile keys (`p1`, `p2`, `z_top`, `z_bot`, `xlim`, `ylim`) are degrees /
+UTM metres / model-local **metres** even in this km script. `z_top` is also
+the depth at which the plane contains the trace (use `-elevation` for a trace
+above sea level; an error `dz` shifts the plane horizontally by `dz / tan(dip)`).
+`xlim=[-L/2, L/2]` (m along strike, relative to the midpoint of p1-p2) limits
+the fault to the segment of length `L`. Details: `femtic_viz_readme.md`, "Fault
+planes: a panel and an overlay". Needs `femtic.py` and `femtic_viz.py` of
+2026-11-12.
 
 
 ### Site overlay
@@ -420,3 +455,4 @@ the file.
 | 2026-11-10 | Claude Sonnet 5.5 (Anthropic) | `MOD_MESH_SWAP_XY` now defaults to `True` (was `None`) and its description is corrected (the old text claimed that no swap gives x = easting). Slice maps were drawn transposed (x = easting and y = northing exchanged; a NNE structure appeared as ENE). Cause: since 2026-10-11 `femtic.read_femtic_mesh` does not swap the node columns by default, but `mesh.dat` holds x = northing, y = easting. `None` keeps femtic's default, `False` forces no swap. Only the orientation changes. Checked on a synthetic mesh with a N30E block, not on real data. AI-generated; review before production use. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `MOD_POLYLINES = {name: entry}` (km; `{}` = none): lines drawn on the slice panels of every figure. Maps: plan view, optional `z_range`; ns / ew / plane sections: the parts within `max_dist` (default `MOD_PROJECTION_DIST`) of the section plane, projected into it. Points model-local km or CRS-tagged (`"utm"` metres, `"latlon"` degrees, longitude first); `style`, `label`, `kinds`. Passed to `fviz.plot_model_slices(polylines=...)` through `fem.polylines_km_to_m`. The intersection line of two slices is available as `fviz.slice_intersection_polyline` / `slice_intersection_polylines` (example in the Polylines section); it is not drawn automatically. With `MOD_POLYLINES = {}` the figures are unchanged. Needs `femtic.py` and `femtic_viz.py` of the same date. Tested on a synthetic mesh only. AI-generated; review before production use. |
 | 2026-11-11b | Claude Sonnet 5.5 (Anthropic) | `_title_for()` now calls `fviz.resolve_title` (the shared title logic of all plot scripts); behaviour as before, plus: a dict key is also found by its text form (`0` finds `"0"`). The title and colour bar settings of this script (`MOD_TITLE`, `MOD_PANEL_TITLES`, `MOD_CBAR_*`) are unchanged. Needs the `femtic_viz.py` of the same date. |
+| 2026-11-12 | Claude Sonnet 5.5 (Anthropic) | Fault from two surface points. A `kind="profile"` entry of `MOD_SLICES` takes `dip` (default 90 = as before; otherwise the dipping plane through p1 -> p2, dipping to the right of p1 -> p2) and any entry may carry `overlay` (`True` or `Line2D` keywords, + `label`): that plane is also drawn on every other panel (trace on maps, dipping line on sections). New polyline-entry key `panels`. Commented example in the script. Profile keys are degrees / metres, not km. Needs `femtic.py` and `femtic_viz.py` of the same date. Without `dip` / `overlay` the figures are unchanged. Tested on a synthetic mesh only. AI-generated; review before production use. New slice-spec key `panel=False`: the entry is no panel, it only draws its `overlay` line on all the other panels (fault trace without a fault panel). |

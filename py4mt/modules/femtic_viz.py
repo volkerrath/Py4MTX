@@ -781,6 +781,58 @@ Provenance:
                         function raised AttributeError there); now
                         plt.get_cmap(name).copy().
                         AI-generated code -- review before production use.
+    2026-11-11c Claude Sonnet 5.5 (Anthropic)
+                        plot_boreholes: panel placement with a heat-map colour
+                        bar at a chosen side (heat_cbar_location top / bottom /
+                        left / right, or heat_cbar_thickness). The bar was added
+                        after tight_layout and took its space from the panels,
+                        which squeezed the rows: the x label of one row ran into
+                        the titles of the next, and a wide empty strip was left
+                        between the panels and the bar. Now, as in
+                        plot_model_slices, a strip for the bar is taken out of
+                        the tight_layout rectangle first (_joint_cbar_geometry)
+                        and the bar is put into it afterwards
+                        (_place_joint_colorbars, which now also takes an
+                        "extend" entry). The default placement (bar at the
+                        right, no thickness given) is unchanged; an explicit
+                        "right" now also uses the strip. The bar thickness
+                        defaults to that of the slice figures.
+                        AI-generated code -- review before production use.
+    2026-11-12  Claude Sonnet 5.5 (Anthropic)
+                        Fault planes on slice figures. (1) New
+                        slice_overlay_polylines(slices, xlim, ylim, zlim,
+                        mesh_file, n): for every slice spec that carries an
+                        `overlay` key (True or Line2D keywords, optionally
+                        with `label`) it returns `polylines` entries that
+                        draw the line in which that slice meets each other
+                        panel (a fault plane shows its trace on maps and its
+                        dipping line on ns / ew / plane sections), each only
+                        on its own panel. (2) plot_model_slices: slices with
+                        `overlay` are handled automatically (the entries are
+                        added to `polylines`, clipped to the figure-level
+                        xlim / ylim / zlim, mesh extent where None; nothing
+                        happens without an `overlay` key). (3) Polyline
+                        entries: new key `panels` (panel index or sequence of
+                        0-based indices into `slices`) restricts an entry to
+                        those panels; default None = all, as before; private
+                        _prepare_polylines carries it, _overlay_polylines
+                        checks it. (4) A slice spec with `panel=False` is not
+                        drawn as a panel: it only serves as the source of its
+                        `overlay` lines, so a fault trace can be shown in all
+                        the slices of a figure without a fault panel of its
+                        own (the former behaviour, `panel` default True, is
+                        unchanged). New private helper _is_hidden_slice;
+                        slice_overlay_polylines numbers its target panels
+                        among the displayed slices only. (5)
+                        plot_ensemble_slices: slices with `overlay` /
+                        `panel=False` are handled in the same way, so the
+                        trace appears in every column of the ensemble figure
+                        (all member and statistics rows, joint and
+                        per-member figures); new private helpers
+                        _overlay_piece_xy (the projection of one overlay line
+                        into one panel). No `overlay` / `panel` key: figures
+                        pixel-identical to before (checked).
+                        AI-generated code -- review before production use.
     """
 
 from __future__ import annotations
@@ -4281,6 +4333,145 @@ def slice_intersection_polylines(
     return out
 
 
+def _is_hidden_slice(spec) -> bool:
+    """``True`` for a slice spec with ``panel=False`` (overlay source only).
+
+    Such a spec is not drawn as a panel of its own; its ``overlay`` lines
+    (:func:`slice_overlay_polylines`) are still drawn on the displayed panels.
+
+    Added 2026-11-12, Claude Sonnet 5.5 (Anthropic).
+    """
+    return isinstance(spec, dict) and spec.get("panel", True) is False
+
+
+def slice_overlay_polylines(
+    slices: Sequence[dict],
+    *,
+    xlim=None,
+    ylim=None,
+    zlim=None,
+    mesh_file: Union[str, Path, None] = None,
+    n: int = 2,
+) -> dict:
+    """``polylines`` entries that draw flagged slices on all the other panels.
+
+    A slice spec flags itself with the key ``overlay`` -- ``True`` or a dict
+    of ``Line2D`` keywords (default ``color="k"``, ``linestyle="-"``,
+    ``linewidth=1.5``; aliases ``c`` / ``ls`` / ``lw`` accepted; an optional
+    ``label`` is the legend text, default the slice title, ``None`` = no
+    legend entry). For every other panel ``j`` the line in which the flagged
+    slice meets it (:func:`slice_intersection_polyline`) becomes one entry,
+    drawn on panel ``j`` only: on a map the trace of the plane at that depth,
+    on a ns / ew / plane section the line in which the plane cuts the
+    section. The typical use is a **fault plane**: a dipping ``"plane"`` (or
+    ``kind="profile"`` with ``dip`` in :func:`femtic.resolve_slice_positions`,
+    a fault from two surface points) with ``overlay=True`` shows its trace on
+    every map and its dipping line on every section.
+
+    A spec with ``panel=False`` is **not a panel**: it only supplies its
+    ``overlay`` lines, which then appear on every displayed slice. Without it
+    (the default ``panel=True``) the flagged slice is also a panel of its own
+    -- the model on the fault plane -- and carries no line itself. The
+    panel numbers ``j`` (and the ``panels=[j]`` of the entries) count the
+    displayed slices only.
+
+    Parameters
+    ----------
+    slices
+        Resolved slice specs in model-local metres (the ``slices`` of
+        :func:`plot_model_slices`).
+    xlim, ylim, zlim, mesh_file, n
+        As for :func:`slice_intersection_polyline`: ROI box in metres
+        (``zlim`` = depth); a limit that is ``None`` is unlimited, or the
+        mesh extent if ``mesh_file`` is given. The finite extents the specs
+        carry themselves (``xlim`` / ``ylim`` of a plane, relative to its
+        ``point``) clip the lines too, e.g. ``ylim=[0, ...]`` keeps a fault
+        below its trace.
+
+    Returns
+    -------
+    dict
+        ``{"overlay<i>_slice<j>": entry}`` (``i`` = index of the flagged
+        spec in ``slices``, ``j`` = number of the displayed panel); each entry
+        has the CRS-tagged ``points`` ``(array, "model")``, ``label``,
+        ``style``, ``max_dist=0`` and ``panels=[j]``. Panels the flagged
+        slice does not meet (parallel, outside the clip region) get no entry.
+        Merge it into the ``polylines`` of :func:`plot_model_slices` (which
+        does so by itself for slices carrying ``overlay``, as does
+        :func:`plot_ensemble_slices`).
+
+    Raises
+    ------
+    ValueError
+        ``overlay`` is neither a bool nor a dict, or the errors of
+        :func:`slice_intersection_polyline` (unresolved specs, unbounded
+        line).
+
+    Added 2026-11-12, Claude Sonnet 5.5 (Anthropic).
+    """
+    specs = list(slices)
+    # displayed panels: spec indices without panel=False, in order
+    shown = [k for k, sp in enumerate(specs) if not _is_hidden_slice(sp)]
+    out = {}
+    for i, sp in enumerate(specs):
+        ov = sp.get("overlay") if isinstance(sp, dict) else None
+        if ov is None or ov is False:
+            continue
+        if ov is True:
+            ov = {}
+        if not isinstance(ov, dict):
+            raise ValueError(
+                f"slice[{i}]: overlay must be True or a dict of Line2D "
+                f"keywords, got {ov!r}.")
+        style = dict(ov)
+        label = style.pop("label", _slice_label(sp))
+        style = _line_style(style, color="k", linestyle="-", linewidth=1.5)
+        for jpos, j in enumerate(shown):
+            if j == i:
+                continue
+            pts = slice_intersection_polyline(
+                sp, specs[j], xlim=xlim, ylim=ylim, zlim=zlim,
+                mesh_file=mesh_file, n=n)
+            if pts is None:
+                continue
+            out[f"overlay{i}_slice{jpos}"] = dict(
+                points=(pts, "model"), label=label, style=dict(style),
+                max_dist=0.0, panels=[jpos])
+    return out
+
+
+def _overlay_piece_xy(pl, kind, *, z0=None, section=None):
+    """Display coordinates of one prepared overlay line on one panel.
+
+    ``pl`` = entry of :func:`_prepare_polylines`; ``kind`` = panel kind
+    (``"map"`` or a vertical kind). Map: ``(x, y)`` of the whole line, or
+    ``None`` if its ``z_range`` does not contain the map depth ``z0``.
+    Vertical panel: ``section = (point, normal, u_ax, v_ax, to_disp)``, the
+    parts of the line within ``max_dist`` of the plane are projected in with
+    ``to_disp(u, v)``. Returns an ``(m, 2)`` array with NaN rows between
+    pieces, or ``None`` if nothing of the line shows. The same rules as the
+    panel drawing of :func:`plot_model_slices`, without its scale and offset.
+
+    Added 2026-11-12, Claude Sonnet 5.5 (Anthropic).
+    """
+    P = pl["pts"]
+    if kind == "map":
+        zr = pl["z_range"]
+        if zr is not None and not (zr[0] - 1e-3 <= z0 <= zr[1] + 1e-3):
+            return None
+        pieces = [np.column_stack([P[:, 0], P[:, 1]])]
+    else:
+        point, normal, u_ax, v_ax, to_disp = section
+        pieces = []
+        for Q in _clip_polyline_to_slab(P, point, normal, pl["max_dist"]):
+            X, Y = to_disp(Q @ u_ax, Q @ v_ax)
+            pieces.append(np.column_stack([X, Y]))
+    if not pieces:
+        return None
+    gap = np.full((1, 2), np.nan)
+    return np.vstack([q for pc in pieces for q in (pc, gap)][:-1])
+
+
 def _clip_polyline_to_slab(points, point, normal, dmax):
     """Parts of a 3-D polyline within ``dmax`` of a plane.
 
@@ -4351,7 +4542,8 @@ def _prepare_polylines(
 
     Returns a list of dicts (``name``, ``pts`` (m, 3) model-local metres,
     ``label``, ``style``, ``color``, ``kinds`` (frozenset of panel kinds or
-    ``None``), ``max_dist`` [m] or ``None``, ``z_range``). See the
+    ``None``), ``max_dist`` [m] or ``None``, ``z_range``, ``panels``
+    (frozenset of 0-based panel indices or ``None``)). See the
     ``polylines`` parameter of :func:`plot_model_slices` for the format.
     """
     if not polylines:
@@ -4419,6 +4611,19 @@ def _prepare_polylines(
         zr = ent.get("z_range")
         if zr is not None:
             zr = (float(min(zr)), float(max(zr)))
+        pn = ent.get("panels")
+        if pn is not None:
+            try:
+                pn = frozenset(
+                    int(v) for v in
+                    ((pn,) if isinstance(pn, (int, np.integer)) else pn))
+            except (TypeError, ValueError) as exc:
+                raise ValueError(
+                    f"polylines[{name!r}]: panels must be a panel index or "
+                    f"a sequence of panel indices: {exc}") from exc
+            if any(v < 0 for v in pn):
+                raise ValueError(
+                    f"polylines[{name!r}]: panel indices must be >= 0.")
         style = ent.get("style")
         if style is not None and not isinstance(style, dict):
             raise ValueError(f"polylines[{name!r}]: style must be a dict.")
@@ -4427,7 +4632,7 @@ def _prepare_polylines(
         out.append(dict(
             name=name, pts=arr, label=label, style=style,
             color=_POLYLINE_COLORS[idx % len(_POLYLINE_COLORS)],
-            kinds=kinds, max_dist=md, z_range=zr))
+            kinds=kinds, max_dist=md, z_range=zr, panels=pn))
     return out
 
 
@@ -4689,6 +4894,15 @@ def plot_model_slices(
         ``xlim`` = along-strike range, ``ylim`` = down-dip range (dip != 90
         only), both in m relative to ``point``; without them the plane is
         cut with the box xlim x ylim x zlim.
+
+        Any spec may carry ``overlay`` (``True`` or ``Line2D`` keywords,
+        optionally with ``label``): the line in which that slice meets each
+        of the other panels is drawn on those panels -- the trace of a fault
+        plane on maps, its dipping line on sections (see
+        :func:`slice_overlay_polylines`). Default: none. With
+        ``panel=False`` the spec is no panel of its own, it only supplies
+        its ``overlay`` lines (a fault trace in all the slices, without a
+        fault panel); default ``panel=True``.
     cmap
         Matplotlib colormap name.
     clim
@@ -4783,6 +4997,10 @@ def plot_model_slices(
         - ``z_range`` (optional, ``[zmin, zmax]`` m depth): map panels
           only. By default a polyline is drawn in plan view on every map;
           with ``z_range`` only on maps whose depth ``z0`` lies in the range.
+        - ``panels`` (optional): a panel index or a sequence of 0-based
+          indices into ``slices`` (the displayed ones, i.e. without
+          ``panel=False`` specs); the polyline is drawn on those panels
+          only (default: on all, as before).
 
         The polylines never change the axis limits. Units are metres; the
         km scripts convert with ``fem.polylines_km_to_m``.
@@ -5375,6 +5593,35 @@ def plot_model_slices(
     nodes = mesh.nodes
     conn  = mesh.conn
 
+    # -- overlay polylines (2026-11-12): slices carrying an ``overlay`` key
+    # (e.g. a fault plane) are drawn as lines on all the other panels. Only
+    # figures with such a slice are touched; the clip box is the figure-level
+    # xlim / ylim / zlim, mesh extent where None.
+    if any(isinstance(_s, dict) and (_s.get("overlay") or _is_hidden_slice(_s))
+           for _s in slices):
+        if any(isinstance(_s, dict) and _s.get("overlay") for _s in slices):
+            _ov_box = [
+                (float(min(_l)), float(max(_l))) if _l is not None
+                else (float(nodes[:, _k].min()), float(nodes[:, _k].max()))
+                for _k, _l in enumerate((xlim, ylim, zlim))]
+            _ov_in = _prepare_polylines(
+                slice_overlay_polylines(slices, xlim=_ov_box[0],
+                                        ylim=_ov_box[1], zlim=_ov_box[2]),
+                projection_dist=projection_dist,
+                latlon_to_model_fn=latlon_to_model_fn, utm_zone=utm_zone,
+                utm_northern=utm_northern, utm_origin_e=utm_origin_e,
+                utm_origin_n=utm_origin_n)
+            _polys_in = list(_polys_in) + _ov_in
+            if out and _ov_in:
+                print(f"  plot: {len(_ov_in)} overlay line(s) of slice(s) with "
+                      "'overlay'")
+        # panel=False: overlay source only, no panel of its own
+        slices = [_s for _s in slices if not _is_hidden_slice(_s)]
+        if not slices:
+            raise ValueError(
+                "plot_model_slices: every slice has panel=False -- at least "
+                "one slice must be displayed.")
+
     _non_air_mask     = block.region_of_elem != 0
     _non_air_node_idx = np.unique(conn[_non_air_mask])
     _non_air_nodes    = nodes[_non_air_node_idx]
@@ -5511,6 +5758,8 @@ def plot_model_slices(
         ax.add_collection(lc)
         return True
 
+    _cur_panel = [-1]        # index of the panel being drawn (polyline `panels`)
+
     def _overlay_polylines(ax, kind, *, z0=None, section=None):
         """Draw the ``polylines`` on one panel; True if a labelled one shows.
 
@@ -5526,6 +5775,8 @@ def plot_model_slices(
         labelled = False
         for pl in _polys_in:
             if pl["kinds"] is not None and kind not in pl["kinds"]:
+                continue
+            if pl["panels"] is not None and _cur_panel[0] not in pl["panels"]:
                 continue
             P = pl["pts"]
             if kind == "map":
@@ -5750,7 +6001,8 @@ def plot_model_slices(
     _joint_mappable = None       # set by the first panel that drew data
 
     # -- render each panel -----------------------------------------------------
-    for ax, spec in zip(axes, slices):
+    for _pi, (ax, spec) in enumerate(zip(axes, slices)):
+        _cur_panel[0] = _pi
         kind  = spec.get("kind", "map")
         title = spec.get("title", None)
         _xlim = spec.get("xlim", xlim)
@@ -6908,7 +7160,8 @@ def _place_joint_colorbars(fig, groups, loc, rect, *, shrink, thick, gap,
 
     ``groups`` is a list of dicts ``norm``, ``cmap``, ``label``, ``axes``
     (the panels this scale belongs to) and ``span`` ((first, last) row
-    index; used to decide which bars may share a track).  For ``loc`` right /
+    index; used to decide which bars may share a track); an optional
+    ``extend`` ("neither" / "min" / "max" / "both") gives the bar arrows.  For ``loc`` right /
     left every bar runs along the rows of its own panels (``shrink`` of
     their height, centred); bars of overlapping rows go on further tracks.
     For top / bottom the bars share the one strip, side by side along the
@@ -6972,7 +7225,9 @@ def _place_joint_colorbars(fig, groups, loc, rect, *, shrink, thick, gap,
         cax = fig.add_axes(pos, label="<joint colorbar>")
         sm = matplotlib.cm.ScalarMappable(norm=g["norm"], cmap=g["cmap"])
         cb = fig.colorbar(sm, cax=cax, orientation=orient,
-                          ticklocation=tickloc)
+                          ticklocation=tickloc,
+                          **({"extend": g["extend"]} if g.get("extend")
+                             else {}))
         cb.set_label(g["label"], fontsize=label_fontsize)
         cb.ax.tick_params(labelsize=tick_fontsize)
         bars.append(cb)
@@ -7033,6 +7288,13 @@ def plot_ensemble_slices(
         corresponding position key (``z0`` / ``x0`` / ``y0`` / ``point``).
         Optional per-panel ``xlim`` / ``ylim`` / ``zlim`` / ``title`` keys are
         honoured.
+        Any spec may carry ``overlay`` (``True`` or ``Line2D`` keywords): the
+        line in which that slice meets each of the other columns is drawn in
+        every row of those columns (member rows and statistics rows) -- the
+        trace of a fault plane on maps, its dipping line on sections; see
+        :func:`slice_overlay_polylines` (no legend in this figure). With
+        ``panel=False`` the spec gets no column of its own and only supplies
+        its ``overlay`` lines. Default: none, figures as before.
     labels
         Row label strings, one per member.  ``None`` -> "Member 0", "Member 1", ...
     stat_rows
@@ -7123,6 +7385,7 @@ def plot_ensemble_slices(
         import matplotlib.cm as mcm
         import matplotlib.ticker as mticker
         from matplotlib.collections import PolyCollection
+        from matplotlib.lines import Line2D
     except ImportError:  # pragma: no cover
         raise ImportError(
             "matplotlib is required for plot_ensemble_slices."
@@ -7260,6 +7523,35 @@ def plot_ensemble_slices(
     nodes = mesh.nodes
     conn  = mesh.conn
 
+    # -- overlay lines of slices with `overlay` (2026-11-12) -------------------
+    # Fault planes etc.: the line in which a flagged slice meets each column
+    # is drawn in every row of that column. A slice with panel=False gets no
+    # column of its own. Clip box = figure-level xlim / ylim / zlim, mesh
+    # extent where None. Nothing happens without `overlay` / `panel` keys.
+    _ov_lines: list = []
+    if any(isinstance(_s, dict) and (_s.get("overlay") or _is_hidden_slice(_s))
+           for _s in slices):
+        if any(isinstance(_s, dict) and _s.get("overlay") for _s in slices):
+            _ov_box = [
+                (float(min(_l)), float(max(_l))) if _l is not None
+                else (float(nodes[:, _k].min()), float(nodes[:, _k].max()))
+                for _k, _l in enumerate((xlim, ylim, zlim))]
+            _ov_lines = _prepare_polylines(
+                slice_overlay_polylines(slices, xlim=_ov_box[0],
+                                        ylim=_ov_box[1], zlim=_ov_box[2]),
+                projection_dist=None, latlon_to_model_fn=None,
+                utm_zone=None, utm_northern=True,
+                utm_origin_e=0.0, utm_origin_n=0.0)
+            if out and _ov_lines:
+                print(f"  ensemble: {len(_ov_lines)} overlay line(s) of "
+                      "slice(s) with 'overlay'")
+        slices = [_s for _s in slices if not _is_hidden_slice(_s)]
+        if not slices:
+            raise ValueError(
+                "plot_ensemble_slices: every slice has panel=False -- at "
+                "least one slice must be displayed.")
+        n_slices = len(slices)
+
     # -- precompute slice geometry once ----------------------------------------
     if out:
         print(f"  ensemble: precomputing geometry for {n_slices} slice(s) ...")
@@ -7288,7 +7580,8 @@ def plot_ensemble_slices(
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=False,
                                    invert_x=bool(spec.get("invert_x", False)),
                                    xlabel="East [m]", ylabel="North [m]",
-                                   xlim=_xlim, ylim=_ylim, zlim=None, title=title_tmpl))
+                                   xlim=_xlim, ylim=_ylim, zlim=None, title=title_tmpl,
+                                   ov_kind="map", ov_z0=z0, ov_section=None))
 
         elif kind == "ns":
             x0 = float(spec.get("x0", 0.0))
@@ -7298,7 +7591,10 @@ def plot_ensemble_slices(
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=inv,
                                    invert_x=bool(spec.get("invert_x", False)),
                                    xlabel="North [m]", ylabel="depth [m]",
-                                   xlim=_ylim, ylim=None, zlim=_zlim, title=title_tmpl))
+                                   xlim=_ylim, ylim=None, zlim=_zlim, title=title_tmpl,
+                                   ov_kind="ns", ov_z0=None,
+                                   ov_section=(point, normal, u_ax, v_ax,
+                                               lambda pu, pv: (pu, pv))))
 
         elif kind == "ew":
             y0 = float(spec.get("y0", 0.0))
@@ -7308,7 +7604,10 @@ def plot_ensemble_slices(
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=inv,
                                    invert_x=bool(spec.get("invert_x", False)),
                                    xlabel="East [m]", ylabel="depth [m]",
-                                   xlim=_xlim, ylim=None, zlim=_zlim, title=title_tmpl))
+                                   xlim=_xlim, ylim=None, zlim=_zlim, title=title_tmpl,
+                                   ov_kind="ew", ov_z0=None,
+                                   ov_section=(point, normal, u_ax, v_ax,
+                                               lambda pu, pv: (pu, pv))))
 
         elif kind == "plane":
             _pt     = np.asarray(spec.get("point",  [0., 0., 0.]), dtype=float)
@@ -7348,7 +7647,11 @@ def plot_ensemble_slices(
             slice_geom.append(dict(polys=polys, eidx=eidx, invert_v=True,
                                    invert_x=bool(spec.get("invert_x", False)),
                                    xlabel="along-strike [m]", ylabel="down-dip [m]",
-                                   xlim=_pxl, ylim=_pyl, zlim=None, title=title_tmpl))
+                                   xlim=_pxl, ylim=_pyl, zlim=None, title=title_tmpl,
+                                   ov_kind="plane", ov_z0=None,
+                                   ov_section=(_pt, normal, u_ax, v_ax,
+                                               lambda pu, pv, _a=_u0, _b=_v0:
+                                                   (pu - _a, pv - _b))))
         else:
             if out:
                 print(f"  ensemble: unknown slice kind {kind!r} -- skipped.")
@@ -7474,6 +7777,18 @@ def plot_ensemble_slices(
                 ax.set_ylim([-_zl[1], -_zl[0]])
             if sg.get("invert_x", False):
                 ax.invert_xaxis()
+            # overlay lines (fault traces ...) of this column; add_artist
+            # leaves the data limits and the axis limits as they are.
+            for pl in _ov_lines:
+                if pl["panels"] is not None and col not in pl["panels"]:
+                    continue
+                xy = _overlay_piece_xy(pl, sg["ov_kind"], z0=sg["ov_z0"],
+                                       section=sg["ov_section"])
+                if xy is None:
+                    continue
+                kw = _line_style(pl["style"], color=pl["color"],
+                                 linewidth=1.5, linestyle="-", zorder=7)
+                ax.add_artist(Line2D(xy[:, 0], xy[:, 1], **kw))
 
     # -- figure titles / joint colour bars ---------------------------------------
     def _suptitle(key, auto, **fields):
@@ -8647,17 +8962,47 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
             sup += ("  (" + " | ".join(opts.source_labels[s] for s, _ in groups)
                     + ")")
         fig.suptitle(sup, fontsize=opts.title_fontsize)
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
-    if heat_mesh is not None and opts.heat_cbar:
-        # one shared colour bar, added after tight_layout so that it only
-        # takes its space from the panels
+    # One shared colour bar. At the default place (right, no thickness given)
+    # it is added after tight_layout and takes its space from the panels, as
+    # in earlier versions. At a chosen side (or with a thickness) a strip for
+    # the bar is taken out of the layout rectangle FIRST, so that
+    # tight_layout() arranges the panels with their titles and axis labels in
+    # what remains and the rows are not squeezed afterwards; the bar is then
+    # put into the strip (as in plot_model_slices).
+    _rect = [0.0, 0.0, 1.0, 0.94]
+    _bar = heat_mesh is not None and opts.heat_cbar
+    _hloc = None
+    _joint = False
+    if _bar:
         _hloc = check_cbar_location(opts.heat_cbar_location,
                                     name="heat_cbar_location")
         if not (0.0 < float(opts.heat_cbar_shrink) <= 1.0):
             raise ValueError(
                 f"plot_boreholes: heat_cbar_shrink must be in (0, 1], got "
                 f"{opts.heat_cbar_shrink!r}.")
-        if _hloc is None and opts.heat_cbar_thickness is None:
+        _joint = not (_hloc is None and opts.heat_cbar_thickness is None)
+        if _joint:
+            _rect, _cb_thick, _cb_gap, _cb_room = _joint_cbar_geometry(
+                fig, _hloc or "right", tick_fontsize=tick_fs,
+                label_fontsize=label_fs, thickness=opts.heat_cbar_thickness,
+                rect=_rect)
+    fig.tight_layout(rect=tuple(_rect))
+    if _bar:
+        _cb_label = (
+            "fraction of ensemble members per bin"
+            if cs["norm"] == "fraction"
+            else "fraction of the per-depth maximum"
+        )
+        if _joint:
+            (cb,) = _place_joint_colorbars(
+                fig,
+                [dict(norm=norm, cmap=heat_mesh.cmap, label=_cb_label,
+                      axes=[a for a, _ in panels], span=(0, 0),
+                      extend=extend)],
+                _hloc or "right", _rect, shrink=float(opts.heat_cbar_shrink),
+                thick=_cb_thick, gap=_cb_gap, room=_cb_room,
+                tick_fontsize=tick_fs, label_fontsize=label_fs)
+        else:
             # the placement of earlier versions (shrink 0.6 unless set)
             cb = fig.colorbar(
                 heat_mesh,
@@ -8668,22 +9013,8 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
                 shrink=float(opts.heat_cbar_shrink),
                 extend=extend,
             )
-        else:
-            cb = add_colorbar(
-                fig, heat_mesh, [a for a, _ in panels],
-                location=_hloc or "right",
-                shrink=float(opts.heat_cbar_shrink),
-                thickness=opts.heat_cbar_thickness,
-                pad=(0.02 if _hloc in (None, "right") else None),
-                extend=extend,
-            )
         _hvert = _hloc in (None, "right", "left")
-        cb.set_label(
-            "fraction of ensemble members per bin"
-            if cs["norm"] == "fraction"
-            else "fraction of the per-depth maximum",
-            fontsize=label_fs,
-        )
+        cb.set_label(_cb_label, fontsize=label_fs)
         cb.ax.tick_params(labelsize=tick_fs)
         if cs["scale"] == "log" and heat_log_ticks(norm) is not None:
             from matplotlib import ticker

@@ -274,7 +274,7 @@ in `ensembles.py` (they are no longer re-exported here: call `ens.get_roughness`
 | Convergence file (a name or a list of candidate names, default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`) | `read_cnv`, `read_cnv_last`, `get_nrms`, `find_cnv_file`, `resolve_cnv_path`, `cnv_names` |
 | Sites and positions | `read_site_dat`, `read_site_position`, `utm_to_model`, `latlon_to_model`, `estimate_utm_origin`, `resolve_slice_positions` |
 | Borehole sampling | `extract_borehole_log` |
-| Ensemble results file (`femtic_ens_post.py` `.npz`) | `read_ensemble_results`, `ensemble_stat_map`, `resolve_results_template`, `write_nrms_table`, `read_nrms_table` |
+| Ensemble results file (`femtic_ens_post.py` `.npz`) | `read_ensemble_results`, `select_ensemble_source` (setting `ENS_MODEL_SOURCE`: `auto` / `converged` / `perturbed` / `both`), `ensemble_stat_map`, `resolve_results_template`, `write_nrms_table`, `read_nrms_table` |
 | Ensemble plotting support | km/m helpers (`slices_km_to_m`, `plane_spec_km_to_m`, ...), alpha mask (`parse_alpha_source`, `alpha_from_condition`, `write_alpha_block`), `resolve_origin_and_sites`, `ReferenceModel`, `roi_free_mask` |
 | Ensemble borehole sampling | `BoreholeMesh`, `expand_site_templates`, `sample_boreholes`, `heat_scale_*` |
 | Directory scan report | `build_scan_report`, `append_scan_report` |

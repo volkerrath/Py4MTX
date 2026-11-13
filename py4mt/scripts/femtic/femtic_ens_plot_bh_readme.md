@@ -67,6 +67,8 @@ there with the full text.
 | `NPZ_PREFIX` | str or None | Key prefix inside the `.npz`. `None` = detect (the file's only ensemble). Set it if the file holds several ensembles. |
 | `TEMPLATE_BLOCK` | str or None | Resistivity block file that supplies header / region structure / flag columns. `None` = the best member's block file recorded in the `.npz`. Only its structure is used: all values come from the stored vectors. Set it when the member directories are gone or the results were moved: any resistivity block file of this ensemble (same mesh, same free regions) will do, e.g. a copy of the starting model. |
 | `ENS_PERTURBED_FILE` | str | Name of the perturbed reference file inside each member directory; only written into the header of the perturbed-profile file (the results file stores the name too, and that one wins). |
+| `ENS_MODEL_SOURCE` | str | `"auto"` (default), `"converged"`, `"perturbed"` or `"both"`: which models of the results file are drawn. `"auto"` = whatever the file holds, as before. `"converged"` = the converged models only (the perturbed ones of a `"both"` file are left out). `"perturbed"` = the perturbed models only; from a `"both"` file they are drawn alone, with mean, median and percentiles computed from them, the figure title is tagged "(perturbed reference)" and all outputs get `ENS_PERTURBED_SUFFIX` appended to `MOD_BH_FILE`; the sensitivity, bootstrap and SimRC statistics of the file belong to the converged models and are not available then. `"both"` = both together; the file must have been written with `ENS_MODEL_SOURCE = "both"`. A choice the file cannot give stops the script with a message. |
+| `ENS_PERTURBED_SUFFIX` | str | `"_perturbed"`. Suffix of the files of the perturbed models: `<MOD_BH_FILE><suffix>.npz`, the perturbed figure with `MOD_BH_HEAT_FIGURE = "separate"`, and every output of `ENS_MODEL_SOURCE = "perturbed"` taken from a `"both"` file. Keep it equal to the value in `femtic_ens_post.py`. |
 
 ### Mesh, ocean and plot format
 
@@ -334,7 +336,9 @@ python femtic_ens_plot_bh.py       # repeat as often as needed
 
 Converged and perturbed models together: run `femtic_ens_post.py` with
 `ENS_MODEL_SOURCE = "both"`, then this script (`MOD_BH_HEAT_FIGURE`
-`"combined"` or `"separate"`).
+`"combined"` or `"separate"`). From the same `"both"` file, `ENS_MODEL_SOURCE =
+"converged"` or `"perturbed"` in this script draws one of the two alone (the
+perturbed one under the name `MOD_BH_FILE + ENS_PERTURBED_SUFFIX`).
 
 ---
 
@@ -358,3 +362,5 @@ Converged and perturbed models together: run `femtic_ens_post.py` with
 | 2026-11-09 | Claude Sonnet 5.5 (Anthropic) | New `MOD_TITLE` (figure title: auto / none / text); `BoreholeFigureOptions.suptitle = None` draws no title. Default unchanged. AI-generated; review before production use. |
 | 2026-11-10 | Claude Sonnet 5.5 (Anthropic) | `MOD_MESH_SWAP_XY` now defaults to `True` (was `None`); description corrected. Without the swap the mesh is transposed relative to the borehole positions. AI-generated; review before production use. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `MOD_PANEL_TITLES`, `MOD_BH_HEAT_CBAR_LOCATION`, `MOD_BH_HEAT_CBAR_SHRINK`, `MOD_BH_HEAT_CBAR_THICKNESS` (passed as `BoreholeFigureOptions.panel_titles` / `heat_cbar_location` / `heat_cbar_shrink` / `heat_cbar_thickness`); `MOD_TITLE` accepts `{"default": spec}`. The same settings were added to `femtic_ens_plot_bh_SV.py`. Defaults: figures unchanged (checked pixel by pixel in `plot_boreholes`). Needs the `femtic_viz.py` of the same date. |
+| 2026-11-11b | Claude Sonnet 5.5 (Anthropic) | New settings `ENS_MODEL_SOURCE` (`"auto"` = as before, `"converged"`, `"perturbed"`, `"both"`) and `ENS_PERTURBED_SUFFIX`; both were only mentioned in comments and are now defined (the suffix was fixed as `"_perturbed"`). The choice is made by `fem.select_ensemble_source()`; for `"perturbed"` from a `"both"` file the statistics are recomputed from the perturbed models. The same change is in `femtic_ens_plot_bh_SV.py`. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
+| 2026-11-11c | Claude Sonnet 5.5 (Anthropic) | Panel placement with `MOD_BH_HEAT_CBAR_LOCATION` (and `MOD_BH_HEAT_CBAR_THICKNESS`): with several rows of panels (e.g. `MOD_BH_PER_FIG = 2`, `MOD_BH_NCOLS = 1`, converged | perturbed) the x label of a row overlapped the titles of the next row and a wide empty strip was left next to the bar. Fixed in `femtic_viz.plot_boreholes` (the strip for the bar is reserved before the layout); no setting changed in this script. Needs the `femtic_viz.py` of the same date. Default (`MOD_BH_HEAT_CBAR_LOCATION = None`): figures unchanged. AI-generated; review before production use. |

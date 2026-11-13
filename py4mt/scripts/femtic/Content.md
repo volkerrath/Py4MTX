@@ -9,7 +9,7 @@ workflow scripts.  All scripts live in `scripts/femtic/`.
 
 The **ens** scripts are the standard scripts for quality control and ensemble
 summary plots (`femtic_ens_post.py`, `femtic_ens_plot_slices.py`,
-`femtic_ens_plot_bh.py`, `femtic_data_misfit.py`); the **mod** scripts plot
+`femtic_ens_plot_bh.py`, `femtic_data_misfit.py`, `femtic_distort_stat.py`); the **mod** scripts plot
 single models, possibly with more refined figures (`femtic_mod_plot_slice.py`,
 `femtic_mod_plot_bh.py`, `femtic_mod_plot_3d.py`; `femtic_mod_math.py` /
 `femtic_mod_edit.py` for model arithmetic and editing). `femtic_mod_plot_slice.py`
@@ -85,6 +85,7 @@ femtic_data_misfit.py →  nRMS histogram from that .npz (method "nrms")
 | `femtic_ens_plot_bh.py` | Borehole profiles from the results `.npz` (`MOD_BH`): ensemble statistics and/or all members at chosen or random positions or at all sites, density heat maps, converged and perturbed models side by side, reference model. |
 | `femtic_ens_plot.py` | **Superseded** (2026-11-08): split into `femtic_ens_plot_slices.py` / `femtic_ens_plot_bh.py` (from the results `.npz`), the nRMS histogram of `femtic_data_misfit.py` (method `"nrms"`) and the per-member figures of `femtic_mod_plot_slice.py` / `femtic_mod_plot_bh.py` (batch option). Unchanged; can be deleted. |
 | `femtic_ens_repair.py` | Convergence diagnostic (nRMS bar chart / histogram, per status) for every directory of an ensemble; for non-converged members writes a restart directory `<dir>_restart` whose starting model is the mean of two random converged members. |
+| `femtic_distort_stat.py` | Histograms and statistics of the galvanic-distortion matrices of an ensemble: reads `distortion_iter<N>.dat` of the best iteration of every accepted member (same selection as `femtic_ens_post.py`: best nRMS with iteration > 0, `NRMS_MAX`, `ITER_FALLBACK`), pools all members and sites and plots histograms of `C` elements (or `C'`), condition number, determinant and gain, optional per-site figures; writes a statistics CSV (pooled and per site) and a results `.npz`. Only distortion files of type matrix difference. |
 | `femtic_ens_decomp.py` | Filter ensemble by nRMS threshold then perform PCA or ICA decomposition (scikit-learn); prints explained-variance ratios. |
 | `femtic_ens_eof.py` | Compute EOFs via SVD on a demeaned ensemble matrix; reconstruct from truncated or individual EOF modes. |
 | `femtic_ens_from_covar.py` | Draw new model samples from a posterior covariance via Cholesky decomposition: `m_new = m_ref + L·z`, z ~ N(0,I). |
@@ -113,6 +114,7 @@ femtic_data_misfit.py →  nRMS histogram from that .npz (method "nrms")
 |--------|---------|
 | `femtic_archive_run.py` | Clean and optionally archive FEMTIC iteration directories: keep lowest / highest N iterations, protect specified files (by token or suffix), delete the rest (dry-run by default), compress to `.zip` or `.tgz`. |
 | `femtic_clean.py` | Delete all files in a list of directories (names or globs) except a list of protected file patterns (`dirs='./fem*' files=['a.dat', 'b.h5', 'x*iter*.dat']`). Dry run by default, `--delete` to act; optional recursion; refuses an empty protect list, a protected pattern that matches nothing, and `/` or the home directory. Standard library only. |
+| `femtic_distcorr.py` | Apply the galvanic-distortion result of a run to the observations: reads `observe.dat` and `distortion_iter<N>.dat` (N = best iteration from `femtic.cnv`, or last / a number), corrects the MT impedances of every site with `C^-1` (or applies `C`), propagates the errors to first order, and writes a new observations file plus a per-site report (condition number, determinant, status). VTF and PT blocks unchanged; the original file is never overwritten. Only distortion files of type matrix difference. |
 | `femtic_summarize_model.py` | Print the problem size for one or more `resistivity_block_iterXX.dat` files (air, ocean, other-fixed and free regions, free distortion parameters, Jacobian columns) and the model size (x, y, z range of `mesh.dat`); tetrahedral and hexahedral (also deformed) meshes, cell type read from `mesh.dat`. Optional `CELL_STATS`: model volume and min / median / max cell volume (numpy). Optional LaTeX table. Parses the files itself, does not import `femtic.py`. Renamed from `femtic_summarize_model_cells.py`. |
 | `femtic_summarize_observe_dat.py` | Print data content (sites, frequencies, data-vector size, observation types: MT/VTF/PT) for one or more `observe.dat` files. Falls back to a minimal parser if `femtic.py` is unavailable. |
 
@@ -141,12 +143,12 @@ femtic_data_misfit.py →  nRMS histogram from that .npz (method "nrms")
 | Diagnostics and L-curve | 4 |
 | RTO uncertainty | 3 |
 | GST uncertainty | 1 |
-| Ensemble analysis | 6 |
+| Ensemble analysis | 7 |
 | Jackknife | 1 |
 | Nullspace shuttle | 1 |
-| Utilities | 4 |
-| **Total** | **27** |
+| Utilities | 5 |
+| **Total** | **29** |
 
 ---
 
-*Generated 2026-06-26 from README files in `scripts/femtic/`; updated 2026-10-11 (new scripts, FEMTIC I/O table, removed `femtic_rto_post.py`); 2026-10-28 (added `femtic_clean.py`).*
+*Generated 2026-06-26 from README files in `scripts/femtic/`; updated 2026-10-11 (new scripts, FEMTIC I/O table, removed `femtic_rto_post.py`); 2026-10-28 (added `femtic_clean.py`); 2026-11-13 (added `femtic_distcorr.py`, `femtic_distort_stat.py`).*

@@ -106,10 +106,11 @@ print(titstrng + "\n\n")
 # searched for a file literally named observe.dat). Command-line arguments,
 # if given, replace this list.
 PATHS = ["."]
+PATHS = ["/home/vrath/work/krafla_inversion_new/"]
 
 # Optional LaTeX table of the summaries. None = off; otherwise the name of
 # the .tex file to write (a relative path refers to the current directory).
-LATEX_FILE = "Ubinas_"+Path(fname).stem+".tex" #script_dir+".tex"# None
+LATEX_FILE = "Krafla  _"+Path(fname).stem+".tex" #script_dir+".tex"# None
 
 # Caption and label of the table, used as they are (write LaTeX, e.g.
 # r"Data-vector size of the ensemble."). None = default caption / no label.

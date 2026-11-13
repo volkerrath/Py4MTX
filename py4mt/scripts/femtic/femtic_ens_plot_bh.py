@@ -72,6 +72,20 @@ AI-generated code -- review before production use.
               same date (new BoreholeFigureOptions fields). With the defaults
               the figures are unchanged. AI-generated; review before
               production use.
+
+2026-11-11b Claude Sonnet 5.5 (Anthropic)
+              New settings ENS_MODEL_SOURCE ("auto" | "converged" | "perturbed" |
+              "both") and ENS_PERTURBED_SUFFIX (both were only mentioned in
+              comments and are now defined; the suffix was fixed as
+              "_perturbed"). "auto" (default) is the behaviour so far: the
+              results file decides. "converged" leaves the perturbed models of
+              a "both" file out; "perturbed" draws them alone (statistics
+              recomputed from them, outputs named MOD_BH_FILE +
+              ENS_PERTURBED_SUFFIX, figure title tagged); "both" requires a
+              "both" file. The choice is made by fem.select_ensemble_source()
+              (femtic.py of the same date); a file that cannot give it stops
+              the script with a message. AI-generated; review before
+              production use.
 """
 
 from __future__ import annotations
@@ -264,6 +278,33 @@ MOD_PANEL_TITLES = True
 #: written into the header of the perturbed-profile file; the results file
 #: stores the name too, and that one wins).
 ENS_PERTURBED_FILE = "referencemodel.dat"
+
+#: Which models of the results file are drawn:
+#:   "auto" (default) -- whatever the file holds, as before: the converged
+#:       models; the perturbed models of a file written by femtic_ens_post.py
+#:       with ENS_MODEL_SOURCE = "perturbed"; and, for a file written with
+#:       "both", the converged and the perturbed models of the same members
+#:       next to each other.
+#:   "converged" -- the converged models only (the perturbed models of a "both"
+#:       file are left out).
+#:   "perturbed" -- the perturbed models only (the RTO prior draws). From a
+#:       "both" file they are drawn alone, with mean, median and percentiles
+#:       computed from them; the outputs then get ENS_PERTURBED_SUFFIX
+#:       appended to MOD_BH_FILE, so that they do not overwrite those of the
+#:       converged models. Sensitivity, bootstrap and SimRC statistics of the
+#:       file belong to the converged models and are not available then.
+#:   "both" -- converged and perturbed together; the file must have been
+#:       written with ENS_MODEL_SOURCE = "both".
+#: A choice that the file cannot give stops the script with a message.
+ENS_MODEL_SOURCE = "auto"  # "auto" | "converged" | "perturbed" | "both"
+
+#: Suffix of the files of the perturbed models: <MOD_BH_FILE><suffix>.npz (the
+#: profiles of the perturbed models next to a converged one), the figure of the
+#: perturbed models with MOD_BH_HEAT_FIGURE = "separate", and every output when
+#: ENS_MODEL_SOURCE = "perturbed" is taken from a "both" file. Keep it equal to
+#: ENS_PERTURBED_SUFFIX of femtic_ens_post.py (which adds it to ENSEMBLE_PREFIX
+#: of a "perturbed" run).
+ENS_PERTURBED_SUFFIX = "_perturbed"
 
 # --- Borehole profiles (optional) --------------------------------------------
 #: 1-D resistivity-depth profiles through the ensemble at vertical "boreholes".
@@ -564,6 +605,7 @@ if not MOD_BH:
 # --- (1) Read the results written by femtic_ens_post.py ---------------------
 try:
     res = fem.read_ensemble_results(ENSEMBLE_RESULTS, NPZ_PREFIX, out=OUT)
+    res = fem.select_ensemble_source(res, ENS_MODEL_SOURCE, out=OUT)
     tpl, _from_vector = fem.resolve_results_template(
         res, TEMPLATE_BLOCK, ocean=MOD_OCEAN
     )
@@ -580,6 +622,16 @@ _ENS_SRC = res["model_source"]  # "converged" | "perturbed"
 _best_i = res["best_index"]
 _best_file = res["best_file"]
 _pert_name = res["perturbed_file"] or ENS_PERTURBED_FILE
+# The perturbed models of a "both" file drawn alone (ENS_MODEL_SOURCE =
+# "perturbed"): own file names, so that the converged figures are not
+# overwritten.
+_swapped = bool(res.get("source_swapped"))
+_BH_FILE = MOD_BH_FILE + (ENS_PERTURBED_SUFFIX if _swapped else "")
+_members = [m[0] for m in model_list]
+_best_member_file = _best_file
+if _swapped:
+    _members = [os.path.join(os.path.dirname(f), _pert_name) for f in _members]
+    _best_member_file = os.path.join(os.path.dirname(_best_file), _pert_name)
 stat_map, _value_keys = fem.ensemble_stat_map(res)
 
 # --- (2) UTM origin (needed for positions given in utm / latlon) -------------
@@ -684,7 +736,7 @@ plan = fviz.plan_borehole_figures(
 )
 
 # --- (6) Profiles as .npz ------------------------------------------------------
-os.makedirs(os.path.dirname(MOD_BH_FILE) or ".", exist_ok=True)
+os.makedirs(os.path.dirname(_BH_FILE) or ".", exist_ok=True)
 if MOD_BH_NPZ:
     _bh_meta = dict(
         ensemble_prefix=P,
@@ -697,8 +749,9 @@ if MOD_BH_NPZ:
             "members are inside the edges); "
             "heat_edges_<name>: bin edges in log10(Ohm.m)"
         ),
-        members=[m[0] for m in model_list],
-        best_member=_best_file,
+        ens_model_source_setting=ENS_MODEL_SOURCE,
+        members=_members,
+        best_member=_best_member_file,
         reference_file=(MOD_REF_FILE if _ref_el is not None else None),
         percentiles=[float(v) for v in res["prc_levels"]],
         boreholes=smp["hdr"],
@@ -706,8 +759,8 @@ if MOD_BH_NPZ:
     )
     _bh_npz = dict(smp["npz"])
     _bh_npz["header"] = np.array(json.dumps(_bh_meta, indent=2))
-    np.savez_compressed(MOD_BH_FILE + ".npz", **_bh_npz)
-    print(f"  profiles saved -> {MOD_BH_FILE}.npz")
+    np.savez_compressed(_BH_FILE + ".npz", **_bh_npz)
+    print(f"  profiles saved -> {_BH_FILE}.npz")
     if smp["npz_pert"]:
         # the perturbed models of the same members, same layout
         _bh_npz_p = dict(smp["npz_pert"])
@@ -728,7 +781,7 @@ if MOD_BH_NPZ:
                 indent=2,
             )
         )
-        _fp = MOD_BH_FILE + "_perturbed.npz"
+        _fp = _BH_FILE + ENS_PERTURBED_SUFFIX + ".npz"
         np.savez_compressed(_fp, **_bh_npz_p)
         print(f"  profiles saved -> {_fp}")
 
@@ -736,7 +789,7 @@ if MOD_BH_NPZ:
 def _figure_title():
     """Figure title from MOD_TITLE: a string, or None for no title."""
     _dir = os.path.basename(os.path.normpath(ENSEMBLE_DIR))
-    _auto = _dir + "  " + P
+    _auto = _dir + "  " + P + ("  (perturbed reference)" if _swapped else "")
     _t = fviz.resolve_title(MOD_TITLE, None, _auto, name="MOD_TITLE",
                             prefix=P, dir=_dir)
     return _t if _t != "" else None
@@ -768,7 +821,8 @@ _opts = fviz.BoreholeFigureOptions(
     tag_sources=pert_matrix is not None,
     out=OUT,
 )
-fviz.draw_borehole_figures(plan, cs, MOD_BH_FILE, _opts, perturbed_suffix="_perturbed")
+fviz.draw_borehole_figures(plan, cs, _BH_FILE, _opts,
+                           perturbed_suffix=ENS_PERTURBED_SUFFIX)
 
 print("\nfemtic_ens_plot_bh.py complete.")
 
