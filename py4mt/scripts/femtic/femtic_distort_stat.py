@@ -12,7 +12,7 @@ members and sites are collected, plotted as histograms and summarised.
 @author vrath
 @project py4mt
 @created 2026-11-13
-@modified 2026-11-13
+@modified 2026-11-14
 
 AI-GENERATED CODE NOTICE
 ------------------------
@@ -56,12 +56,22 @@ Output (in OUT_DIR)
     <OUTPUT_BASENAME>_site<ID>.<fmt>   one figure per site of PER_SITE: the
                                        members of that site (best-nRMS member
                                        marked)
+                                       <fmt> = every format of OUTPUT_FORMATS
+                                       (png, pdf, jpg, svg, eps, tif, ...)
     STATS_CSV                          n, mean, std and PERCENTILES of every
                                        quantity, pooled ("ALL") and per site
     RESULTS_NPZ                        members, iterations, nRMS, site IDs and
                                        the matrices C (members x sites x 2 x 2,
                                        NaN where a member has no such site)
     femtic_distort_stat_summary.md     the user-set parameters (in ENSEMBLE_DIR)
+
+The distortion matrices of the best-fit member (the accepted member with the
+smallest nRMS; ties: the first by name) are printed for every site: elements of
+C (or C'), condition number and determinant (PRINT_BEST).
+
+PLOT_MEMBERS limits the figures to one member or a short list (e.g. "best", a
+directory name, a pattern, or a number); the statistics always cover all
+accepted members.
 
 The pooled histograms mix the spread of the distortion between sites with the
 spread between members; the per-site figures and statistics show the
@@ -95,16 +105,33 @@ Provenance
                 per-site histograms of the elements, condition number,
                 determinant and gain of C, statistics CSV and results NPZ.
                 AI-generated; review before production use.
+    2026-11-13b Claude Sonnet 5.5 (Anthropic)
+                OUTPUT_FORMATS: one string or a list, any format matplotlib
+                writes (png, pdf, jpg, svg, eps, tif, ...); names are
+                normalised and checked before the ensemble is read; new
+                JPEG_QUALITY; text stays text in pdf / eps / ps.
+                AI-generated; review before production use.
+    2026-11-13c Claude Sonnet 5.5 (Anthropic)
+                New PRINT_BEST: table of the distortion matrices of the
+                best-fit member (smallest nRMS) for every site.
+                AI-generated; review before production use.
+    2026-11-14  Claude Sonnet 5.5 (Anthropic)
+                New PLOT_MEMBERS: figures for one member or a short list of
+                members ("best", names, patterns, numbers); the file names
+                carry the members' names; PER_SITE needs two or more members.
+                AI-generated; review before production use.
 """
 
 from __future__ import annotations
 
 import csv
+import fnmatch
 import glob
 import inspect
 import os
 import re
 import sys
+import textwrap
 import warnings
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
@@ -174,7 +201,7 @@ PERCENTILES = [2.3, 15.9, 50.0, 84.1, 97.7]
 # --- histograms ---------------------------------------------------------------
 #: Number of bins, or any numpy rule ("auto", "fd", "sturges", ...), or a
 #: sequence of bin edges.
-BINS = 30
+BINS = 20
 
 #: True = density (area 1), False = counts.
 DENSITY = False
@@ -196,11 +223,34 @@ PER_SITE = None
 #: In the per-site figures: mark the value of the member with the smallest nRMS.
 MARK_BEST = True
 
+#: Members shown in the figures: None (or "all") = all accepted members; or one
+#: selector or a short list of selectors:
+#:   "best"           the best-fit member (smallest nRMS)
+#:   "ann_..._017"    a member by its directory name
+#:   "ann_*_01?"      a pattern (* ? [..]) matched against the directory names
+#:   17 or "17"       the member whose name ends in the number 17 (_017, 17, ...)
+#: e.g. PLOT_MEMBERS = "best"  or  ["best", 17, "ann_rto_orig-err_023"].
+#: Only the figures use the selection: the statistics (CSV, NPZ, printed table)
+#: and the best-fit table cover all accepted members. The figure files get the
+#: names of the members added (femtic_distort_stat_<member>.png). The histograms
+#: of one member show its sites; PER_SITE figures need two or more members.
+PLOT_MEMBERS = None
+
+#: Print the distortion matrices of the best-fit member (the accepted member with
+#: the smallest nRMS) for every site: elements of C (or C'), cond(C), det(C).
+PRINT_BEST = True
+
 # --- figure / output ------------------------------------------------------------
-FIGSIZE_PANEL = (3.6, 2.9)      # size of one panel; the figure is made from it
-DPI = 200
-TICK_FONTSIZE = 8
-LABEL_FONTSIZE_AXES = 9
+#: Size in inches of one panel (axes and labels); the figure is made from it, and
+#: the title and caption are added to the height. Make it larger for large fonts
+#: (3.6 x 2.9 holds font sizes up to 12; matplotlib then warns "Tight layout not
+#: applied" for panels that are too small).
+FIGSIZE_PANEL = (3.6, 2.9)
+#: Resolution in dpi of the raster formats (png, jpg, tif, webp); pdf, svg, eps
+#: and ps are vector formats and ignore it.
+DPI = 400
+TICK_FONTSIZE = 12
+LABEL_FONTSIZE_AXES = 12
 HIST_COLOR = "#2a78d6"          # bars (single series)
 INK = "#0b0b0b"                 # text
 INK_SECONDARY = "#52514e"       # reference / percentile lines, secondary text
@@ -210,14 +260,21 @@ GRID_COLOR = "#dcdbd6"
 #: Figure title: "auto"; None, False or "" = none; text (placeholders
 #: {n_members}, {n_sites}, {site}, {id}); or a dict {"pooled": spec,
 #: "site": spec, "default": spec}.
-TITLE = "auto"
+TITLE = ""
 
 SHOW = False
 
 #: Output directory (made if missing) and names.
 OUT_DIR = os.path.join(ENSEMBLE_DIR, "results") + os.sep
 OUTPUT_BASENAME = "femtic_distort_stat"
+#: Output formats of the figures, one file per format: a list, e.g.
+#: ["png", "pdf", "jpg"], or one string ("pdf", or "pdf, jpg"). Any format that
+#: matplotlib writes: raster png, jpg (jpeg), tif (tiff), webp; vector pdf, svg,
+#: eps, ps. Case and a leading dot do not matter (".PDF" = "pdf").
 OUTPUT_FORMATS = ["png"]
+#: Quality of jpg / jpeg files, 1 - 100 (95 = high quality; higher values make
+#: large files with little gain).
+JPEG_QUALITY = 95
 STATS_CSV = "femtic_distort_stat.csv"
 RESULTS_NPZ = "femtic_distort_stat.npz"
 
@@ -482,6 +539,110 @@ def format_pooled_table(rows: List[dict], percentiles: Sequence[float]) -> str:
     return "\n".join(out)
 
 
+def format_best_table(member: dict, C_best: np.ndarray, site_ids: Sequence[int],
+                      names: Dict[int, str], kind: str = "full") -> str:
+    """ASCII table of the distortion matrices of one member (the best-fit member).
+
+    ``member`` is a member dict of :func:`scan_members`; ``C_best`` has shape
+    ``(n_sites, 2, 2)`` (the full matrices C, NaN for a site the member does not
+    have). Columns: site ID, name (only if names are known), the four elements
+    of C (``kind = "full"``) or C' (``"prime"``), cond(C) and det(C); a
+    negative determinant is marked ``det<0``.
+    """
+    cp = "C" if kind == "full" else "C'"
+    head_txt = (f"Distortion of the best-fit member {member['label']} (iteration {member['iter']}, "
+                f"nRMS {member['nrms']:.4f}"
+                + (", ITER_FALLBACK" if member.get("status") == "accepted_fallback" else "")
+                + f"): elements of {cp}" + (" = I + C'" if kind == "full" else ""))
+    show_names = any(names.get(sid) for sid in site_ids)
+    el = [quantity_values(C_best, q, kind) for q in ("xx", "xy", "yx", "yy")]
+    cond = quantity_values(C_best, "condition")
+    det = quantity_values(C_best, "determinant")
+    nw = max([4] + [len(str(names.get(sid, ""))) for sid in site_ids]) if show_names else 0
+    cols = (f"{'site':>8s} " + (f"{'name':<{nw}s} " if show_names else "")
+            + " ".join(f"{cp + q:>9s}" for q in ("xx", "xy", "yx", "yy"))
+            + f" {'cond(C)':>9s} {'det(C)':>9s}")
+    out = [head_txt, "=" * len(cols), cols, "-" * len(cols)]
+    for k, sid in enumerate(site_ids):
+        left = f"{sid:>8d} " + (f"{str(names.get(sid, '')):<{nw}s} " if show_names else "")
+        if not np.isfinite(C_best[k]).all():
+            out.append(left + "(site not in the distortion file of this member)")
+            continue
+        out.append(left + " ".join(f"{e[k]:9.4f}" for e in el)
+                   + f" {cond[k]:9.3f} {det[k]:9.4f}" + ("  det<0" if det[k] < 0 else ""))
+    out.append("=" * len(cols))
+    return "\n".join(out)
+
+
+def select_members(members: Sequence[dict], spec) -> List[int]:
+    """Indices into ``members`` chosen by the PLOT_MEMBERS setting.
+
+    ``spec``: None or ``"all"`` (all members), or one selector or a list of
+    selectors: ``"best"`` (smallest nRMS; ties: the first), a directory name, a
+    pattern with ``* ? [..]`` (matched against the directory names), or a number
+    (``17`` or ``"17"``: the member whose name ends in that number). The result
+    keeps the order of the selectors and has no repeats. A selector that matches
+    nothing, or a number that matches several members, raises ``ValueError``.
+    """
+    n = len(members)
+    labels = [m["label"] for m in members]
+    if spec is None or (isinstance(spec, str) and spec.strip().lower() in ("", "all")):
+        return list(range(n))
+    items = list(spec) if isinstance(spec, (list, tuple, set, np.ndarray)) else [spec]
+    if not items:
+        raise ValueError("PLOT_MEMBERS: empty list (use None for all members)")
+
+    def number_hits(num: int) -> List[int]:
+        hits = []
+        for i, lab in enumerate(labels):
+            mm = re.search(r"(\d+)$", lab)
+            if mm and int(mm.group(1)) == num:
+                hits.append(i)
+        return hits
+
+    def available() -> str:
+        txt = ", ".join(labels[:8])
+        return txt + (f", ... ({n} members)" if n > 8 else "")
+
+    out: List[int] = []
+    for it in items:
+        if isinstance(it, (bool, np.bool_)) or not isinstance(it, (str, int, np.integer)):
+            raise ValueError(f"PLOT_MEMBERS: unusable selector {it!r}; use 'best', a name, "
+                             "a pattern or a number")
+        if isinstance(it, (int, np.integer)):
+            hits = number_hits(int(it))
+            if len(hits) > 1:
+                raise ValueError(f"PLOT_MEMBERS: number {it} matches {len(hits)} members "
+                                 f"({', '.join(labels[i] for i in hits[:5])}); use the full name")
+        else:
+            sel = it.strip()
+            if sel.lower() == "best":
+                hits = [int(np.argmin([m["nrms"] for m in members]))]
+            elif sel.lower() == "all":
+                hits = list(range(n))
+            elif sel in labels:
+                hits = [labels.index(sel)]
+            elif any(c in sel for c in "*?["):
+                hits = [i for i, lab in enumerate(labels) if fnmatch.fnmatchcase(lab, sel)]
+            elif sel.isdigit():
+                hits = number_hits(int(sel))
+                if len(hits) > 1:
+                    raise ValueError(f"PLOT_MEMBERS: number {sel} matches {len(hits)} members "
+                                     f"({', '.join(labels[i] for i in hits[:5])}); use the full name")
+            else:
+                hits = []
+        if not hits:
+            raise ValueError(f"PLOT_MEMBERS: {it!r} matches no member; available: {available()}")
+        out.extend(i for i in hits if i not in out)
+    return out
+
+
+def members_tag(labels: Sequence[str], maxlen: int = 60) -> str:
+    """File-name part for a set of members: the names joined by "+", or "<k>members" if long."""
+    tag = "+".join(re.sub(r"[^A-Za-z0-9_.-]", "_", lab) for lab in labels)
+    return tag if len(tag) <= maxlen else f"{len(labels)}members"
+
+
 def _panel(ax, vals: np.ndarray, key: str, kind: str, *, bins, density: bool,
            value_range, show_percentiles: bool, show_reference: bool, best_value,
            color: str, ink: str, ink2: str, surface: str, grid: str,
@@ -499,6 +660,9 @@ def _panel(ax, vals: np.ndarray, key: str, kind: str, *, bins, density: bool,
     ax.set_axisbelow(True)
     ax.set_xlabel(quantity_label(key, kind), fontsize=label_fs, color=ink)
     ax.set_ylabel("density" if density else "count", fontsize=label_fs, color=ink)
+    if not density:
+        from matplotlib.ticker import MaxNLocator
+        ax.yaxis.set_major_locator(MaxNLocator(integer=True))     # counts: whole numbers
     if v.size == 0:
         ax.text(0.5, 0.5, "no data", transform=ax.transAxes, ha="center", va="center",
                 color=ink2, fontsize=label_fs)
@@ -526,6 +690,30 @@ def _panel(ax, vals: np.ndarray, key: str, kind: str, *, bins, density: bool,
                  color=ink2, pad=4)
 
 
+def _wrap_parts(parts: Sequence[str], nchar: int) -> str:
+    """Join ``parts`` with "; ", starting a new line instead of passing ``nchar`` characters."""
+    lines: List[str] = []
+    cur = ""
+    for part in parts:
+        add = part if not cur else cur + "; " + part
+        if cur and len(add) > nchar:
+            lines.append(cur + ";")
+            cur = part
+        else:
+            cur = add
+    if cur:
+        lines.append(cur)
+    out: List[str] = []
+    for ln in lines:                                  # a single long part is wrapped at blanks
+        out.extend(textwrap.wrap(ln, width=nchar, break_long_words=False) or [""])
+    return "\n".join(out)
+
+
+def _chars_per_line(width_in: float, fontsize: float) -> int:
+    """Number of characters of the given font size that fit safely into ``width_in`` inches."""
+    return max(10, int(0.92 * width_in * 72.0 / (0.58 * fontsize)))
+
+
 def plot_histograms(data: Dict[str, np.ndarray], *, kind: str = "full", bins=30,
                     density: bool = False, ranges=None, show_percentiles: bool = True,
                     show_reference: bool = True, best_values: Optional[Dict[str, float]] = None,
@@ -533,14 +721,35 @@ def plot_histograms(data: Dict[str, np.ndarray], *, kind: str = "full", bins=30,
                     color: str = "#2a78d6", ink: str = "#0b0b0b", ink2: str = "#52514e",
                     surface: str = "#fcfcfb", grid: str = "#dcdbd6", tick_fs: int = 8,
                     label_fs: int = 9):
-    """Figure with one histogram panel per quantity of ``data`` (key -> values)."""
+    """Figure with one histogram panel per quantity of ``data`` (key -> values).
+
+    The title and the caption that names the line styles are wrapped to the
+    width of the figure, which is made from the size of one panel; the room for
+    them is added to the height.
+    """
     import matplotlib.pyplot as plt
     keys = list(data)
     n = len(keys)
     ncol = 2 if n <= 4 else 3
     nrow = int(np.ceil(n / ncol))
-    fig, axs = plt.subplots(nrow, ncol, squeeze=False, facecolor=surface,
-                            figsize=(panel_size[0] * ncol, panel_size[1] * nrow + (0.35 if title else 0) + 0.3))
+    width = panel_size[0] * ncol
+
+    # one caption names the line styles (instead of a label in every panel)
+    parts = []
+    if show_percentiles:
+        parts.append("solid line = median, dashed = 15.9 / 84.1 percentile")
+    if show_reference:
+        parts.append("dotted = no distortion" + (" (C = I)" if kind == "full" else " (C' = 0)"))
+    if best_values:
+        parts.append("triangle = best-nRMS member")
+    caption = _wrap_parts(parts, _chars_per_line(width, tick_fs))
+    title_txt = "\n".join(textwrap.wrap(str(title), width=_chars_per_line(width, label_fs + 1),
+                                        break_long_words=False)) if title else ""
+    cap_h = (caption.count("\n") + 1) * 1.3 * tick_fs / 72.0 + 0.15 if caption else 0.0
+    ttl_h = (title_txt.count("\n") + 1) * 1.3 * (label_fs + 1) / 72.0 + 0.1 if title_txt else 0.0
+    height = panel_size[1] * nrow + cap_h + ttl_h
+
+    fig, axs = plt.subplots(nrow, ncol, squeeze=False, facecolor=surface, figsize=(width, height))
     for i, key in enumerate(keys):
         ax = axs[i // ncol, i % ncol]
         rg = None if ranges is None else ranges.get(key)
@@ -551,20 +760,12 @@ def plot_histograms(data: Dict[str, np.ndarray], *, kind: str = "full", bins=30,
                tick_fs=tick_fs, label_fs=label_fs)
     for j in range(n, nrow * ncol):
         axs[j // ncol, j % ncol].set_visible(False)
-    # one caption names the line styles (instead of a label in every panel)
-    parts = []
-    if show_percentiles:
-        parts.append("solid line = median, dashed = 15.9 / 84.1 percentile")
-    if show_reference:
-        parts.append("dotted = no distortion" + (" (C = I)" if kind == "full" else " (C' = 0)"))
-    if best_values:
-        parts.append("triangle = best-nRMS member")
-    caption = "; ".join(parts)
-    if title:
-        fig.suptitle(title, fontsize=label_fs + 1, color=ink)
+    if title_txt:
+        fig.suptitle(title_txt, fontsize=label_fs + 1, color=ink)
     if caption:
-        fig.text(0.5, 0.008, caption, ha="center", va="bottom", fontsize=tick_fs, color=ink2)
-    fig.tight_layout(rect=(0, 0.04 if caption else 0, 1, 0.95 if title else 1))
+        fig.text(0.5, 0.08 / height, caption, ha="center", va="bottom", fontsize=tick_fs,
+                 color=ink2, linespacing=1.2)
+    fig.tight_layout(rect=(0, cap_h / height, 1, 1.0 - ttl_h / height))
     return fig
 
 
@@ -585,12 +786,55 @@ def select_sites(site_ids: Sequence[int], names: Dict[int, str], spec) -> List[i
     return out
 
 
-def _save_figure(fig, stem: Path, formats: Sequence[str], dpi: int) -> List[str]:
+def normalize_formats(spec, supported: Optional[Sequence[str]] = None) -> List[str]:
+    """File extensions from the OUTPUT_FORMATS setting.
+
+    ``spec`` is a list / tuple of names or one string; a string may hold several
+    names separated by commas, semicolons or blanks (``"pdf, jpg"``). Names are
+    lower-cased, a leading dot is removed, repeated names are dropped (the order
+    is kept). ``supported`` (e.g. the formats matplotlib writes) restricts the
+    allowed names; a name outside it raises ``ValueError`` that lists the
+    allowed ones. An empty result raises ``ValueError`` too.
+    """
+    if spec is None:
+        items: List[str] = []
+    elif isinstance(spec, (str, os.PathLike)):
+        items = [os.fspath(spec)]
+    else:
+        items = [os.fspath(x) if isinstance(x, os.PathLike) else str(x) for x in spec]
+    out: List[str] = []
+    for item in items:
+        for name in re.split(r"[,;\s]+", item):
+            f = name.strip().lstrip(".").lower()
+            if not f:
+                continue
+            if supported is not None and f not in supported:
+                raise ValueError(f"OUTPUT_FORMATS: unknown format {name!r}; "
+                                 f"use any of {sorted(supported)}")
+            if f not in out:
+                out.append(f)
+    if not out:
+        raise ValueError("OUTPUT_FORMATS: no format given (e.g. ['png', 'pdf'])")
+    return out
+
+
+def _save_figure(fig, stem: Path, formats: Sequence[str], dpi: int,
+                 jpeg_quality: int = 95) -> List[str]:
+    """Save ``fig`` as ``<stem>.<fmt>`` for every format; returns the file names.
+
+    ``dpi`` applies to the raster formats; ``jpeg_quality`` to jpg / jpeg. In
+    pdf / eps / ps the text is kept as text (fonts embedded as Type 42).
+    """
+    import matplotlib as mpl
     saved = []
     for fmt in formats:
         p = Path(f"{stem}.{fmt}")
         p.parent.mkdir(parents=True, exist_ok=True)
-        fig.savefig(p, dpi=dpi, facecolor=fig.get_facecolor())
+        kw = {}
+        if fmt in ("jpg", "jpeg"):
+            kw["pil_kwargs"] = {"quality": int(jpeg_quality)}
+        with mpl.rc_context({"pdf.fonttype": 42, "ps.fonttype": 42}):
+            fig.savefig(p, dpi=dpi, facecolor=fig.get_facecolor(), **kw)
         saved.append(str(p))
     return saved
 
@@ -609,6 +853,10 @@ def main() -> int:
         if q not in _ELEMENTS and q not in _DERIVED:
             raise ValueError(f"QUANTITIES: unknown quantity {q!r}; "
                              f"use {list(_ELEMENTS) + list(_DERIVED)}")
+    from matplotlib.backend_bases import FigureCanvasBase
+    formats = normalize_formats(OUTPUT_FORMATS, FigureCanvasBase.get_supported_filetypes())
+    if not 1 <= int(JPEG_QUALITY) <= 100:
+        raise ValueError(f"JPEG_QUALITY must be between 1 and 100, got {JPEG_QUALITY!r}")
     out_dir = Path(OUT_DIR)
 
     # ---- members -------------------------------------------------------------
@@ -643,6 +891,8 @@ def main() -> int:
     if not members:
         raise RuntimeError("no distortion file could be read.")
 
+    sel = select_members(members, PLOT_MEMBERS)                    # members shown in the figures
+
     n_fb = sum(1 for m in members if m["status"] == "accepted_fallback")
     print(f"[femtic_distort_stat] {len(members)} member(s), {len(site_ids)} site(s); "
           f"iteration used: {min(m['iter'] for m in members)} - {max(m['iter'] for m in members)}"
@@ -669,6 +919,9 @@ def main() -> int:
     # ---- statistics ----------------------------------------------------------
     rows = stats_table(C, site_ids, names, QUANTITIES, DISTORTION_KIND, PERCENTILES)
     print(format_pooled_table(rows, PERCENTILES))
+    ibest = int(np.argmin([m["nrms"] for m in members]))          # best-fit member
+    if PRINT_BEST:
+        print(format_best_table(members[ibest], C[ibest], site_ids, names, DISTORTION_KIND))
     f_csv = out_dir / STATS_CSV
     write_stats_csv(f_csv, rows, PERCENTILES)
     print(f"[femtic_distort_stat] statistics: {f_csv}")
@@ -682,45 +935,65 @@ def main() -> int:
     print(f"[femtic_distort_stat] results: {f_npz}")
 
     # ---- figures -------------------------------------------------------------
-    pooled = {q: quantity_values(C, q, DISTORTION_KIND) for q in QUANTITIES}
+    subset = len(sel) < len(members)
+    mp = [members[i] for i in sel]                                 # members in the figures
+    Cp = C[sel]
+    labels_p = [m["label"] for m in mp]
+    if not subset:
+        who = f"{len(mp)} members"
+    elif len(mp) == 1:
+        who = f"member {labels_p[0]}"
+    else:
+        who = f"{len(mp)} selected members"
+    base = OUTPUT_BASENAME + (f"_{members_tag(labels_p)}" if subset else "")
+    if subset:
+        print(f"[femtic_distort_stat] figures for {len(mp)} of {len(members)} member(s): "
+              + ", ".join(labels_p[:10]) + (" ..." if len(labels_p) > 10 else ""))
+    pooled = {q: quantity_values(Cp, q, DISTORTION_KIND) for q in QUANTITIES}
     common = dict(kind=DISTORTION_KIND, bins=BINS, density=DENSITY, ranges=RANGE,
                   show_percentiles=SHOW_PERCENTILES, show_reference=SHOW_REFERENCE,
                   panel_size=FIGSIZE_PANEL, color=HIST_COLOR, ink=INK, ink2=INK_SECONDARY,
                   surface=SURFACE, grid=GRID_COLOR, tick_fs=TICK_FONTSIZE,
                   label_fs=LABEL_FONTSIZE_AXES)
     kind_txt = "C = I + C'" if DISTORTION_KIND == "full" else "C'"
-    auto = (f"Distortion matrices of the ensemble ({kind_txt}): {len(members)} members, "
+    auto = (f"Distortion matrices of the ensemble ({kind_txt}): {who}, "
             f"{len(site_ids)} sites, best iteration of each")
-    ttl = utl.resolve_title(TITLE, key="pooled", auto=auto, name="TITLE",
-                            n_members=len(members), n_sites=len(site_ids))
+    fields = dict(n_members=len(mp), n_sites=len(site_ids),
+                  members=", ".join(labels_p) if subset else "all")
+    ttl = utl.resolve_title(TITLE, key="pooled", auto=auto, name="TITLE", **fields)
     saved: List[str] = []
     fig = plot_histograms(pooled, title=ttl, **common)
-    saved += _save_figure(fig, out_dir / OUTPUT_BASENAME, OUTPUT_FORMATS, DPI)
+    saved += _save_figure(fig, out_dir / base, formats, DPI, JPEG_QUALITY)
     if SHOW:
         plt.show()
     plt.close(fig)
 
-    ibest = int(np.argmin([m["nrms"] for m in members]))
-    for k in select_sites(site_ids, names, PER_SITE):
+    sites_sel = select_sites(site_ids, names, PER_SITE)
+    if sites_sel and len(mp) < 2:
+        print("[femtic_distort_stat] PER_SITE skipped: one member gives one value per site "
+              "(select two or more members)")
+        sites_sel = []
+    mark = bool(MARK_BEST) and len(mp) > 1                         # marker needs a distribution
+    ibest_p = int(np.argmin([m["nrms"] for m in mp]))
+    for k in sites_sel:
         sid = site_ids[k]
-        data = {q: quantity_values(C[:, k], q, DISTORTION_KIND) for q in QUANTITIES}
-        best = ({q: float(quantity_values(C[ibest, k], q, DISTORTION_KIND)) for q in QUANTITIES}
-                if MARK_BEST else None)
+        data = {q: quantity_values(Cp[:, k], q, DISTORTION_KIND) for q in QUANTITIES}
+        best = ({q: float(quantity_values(Cp[ibest_p, k], q, DISTORTION_KIND)) for q in QUANTITIES}
+                if mark else None)
         nm = names.get(sid, "")
         site_txt = f"site {nm} ({sid})" if nm else f"site {sid}"
-        auto_s = (f"Distortion matrix of {site_txt} ({kind_txt}): {len(members)} members"
-                  + (f"; marker = best member {members[ibest]['label']} "
-                     f"(nRMS {members[ibest]['nrms']:.3g})" if MARK_BEST else ""))
+        auto_s = (f"Distortion matrix of {site_txt} ({kind_txt}): {who}"
+                  + (f"; marker = best member {mp[ibest_p]['label']} "
+                     f"(nRMS {mp[ibest_p]['nrms']:.3g})" if mark else ""))
         ttl_s = utl.resolve_title(TITLE, key="site", auto=auto_s, name="TITLE",
-                                  site=nm or sid, id=sid, n_members=len(members),
-                                  n_sites=len(site_ids))
+                                  site=nm or sid, id=sid, **fields)
         fig = plot_histograms(data, title=ttl_s, best_values=best, **common)
         tag = re.sub(r"[^A-Za-z0-9_.-]", "_", str(sid))
-        saved += _save_figure(fig, out_dir / f"{OUTPUT_BASENAME}_site{tag}", OUTPUT_FORMATS, DPI)
+        saved += _save_figure(fig, out_dir / f"{base}_site{tag}", formats, DPI, JPEG_QUALITY)
         if SHOW:
             plt.show()
         plt.close(fig)
-    print(f"[femtic_distort_stat] {len(saved)} figure file(s):")
+    print(f"[femtic_distort_stat] {len(saved)} figure file(s) ({', '.join(formats)}):")
     for s in saved:
         print("   " + s)
 

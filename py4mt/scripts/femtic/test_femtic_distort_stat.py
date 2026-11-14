@@ -296,8 +296,8 @@ def _set_config(root: Path, **kw):
                ITER_FALLBACK=True, DISTORTION_FILE="distortion_iter{iter}.dat", RESULTS_H5_FILE=None,
                SITE_DAT=None, DISTORTION_KIND="full", QUANTITIES=["xx", "xy", "yx", "yy"],
                PERCENTILES=[2.3, 15.9, 50.0, 84.1, 97.7], BINS=15, DENSITY=False, RANGE=None,
-               PER_SITE=None, TITLE="auto", SHOW=False, OUT_DIR=str(root / "results") + "/",
-               OUTPUT_FORMATS=["png"], DPI=60)
+               PER_SITE=None, TITLE="auto", SHOW=False, PRINT_BEST=True, PLOT_MEMBERS=None, OUT_DIR=str(root / "results") + "/",
+               OUTPUT_FORMATS=["png"], JPEG_QUALITY=95, DPI=60)
     cfg.update(kw)
     old = {k: getattr(ds, k) for k in cfg}
     for k, v in cfg.items():
@@ -415,6 +415,342 @@ def test_main_site_names_from_sitelist():
         rd = list(csv.DictReader((res / "femtic_distort_stat.csv").read_text().splitlines()))
         names = {r["site_id"]: r["site_name"] for r in rd if r["site_id"] != "ALL"}
         assert names == {"101": "SiteA", "102": "SiteB", "103": ""}
+
+
+def test_normalize_formats():
+    sup = ["png", "pdf", "jpg", "jpeg", "svg", "tif"]
+    assert ds.normalize_formats(["png", "pdf"], sup) == ["png", "pdf"]
+    assert ds.normalize_formats("pdf", sup) == ["pdf"]
+    assert ds.normalize_formats("pdf, JPG;  .Svg", sup) == ["pdf", "jpg", "svg"]   # separators, case, dot
+    assert ds.normalize_formats([".PNG", "png", "pdf", "PDF"], sup) == ["png", "pdf"]  # duplicates dropped
+    assert ds.normalize_formats(("jpg", "jpeg"), sup) == ["jpg", "jpeg"]
+    assert ds.normalize_formats(["xyz"]) == ["xyz"]                  # no check without a list of allowed names
+    for bad, why in ((["png", "docx"], "unknown"), ([], "no format"), (None, "no format"),
+                     ("", "no format"), (" , ", "no format")):
+        try:
+            ds.normalize_formats(bad, sup)
+        except ValueError as e:
+            assert why in str(e), (bad, str(e))
+        else:
+            raise AssertionError(f"no ValueError for {bad!r}")
+    try:
+        ds.normalize_formats("docx", sup)
+    except ValueError as e:
+        assert "'jpg'" in str(e) and "'pdf'" in str(e)               # the message lists the allowed formats
+
+
+def test_save_figure_formats_and_jpeg_quality():
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    r = np.random.default_rng(0)
+    fig = ds.plot_histograms({"xx": r.normal(1, 0.1, 500), "xy": r.normal(0, 0.1, 500)}, title="T")
+    with tempfile.TemporaryDirectory() as t:
+        stem = Path(t) / "sub" / "fig"
+        saved = ds._save_figure(fig, stem, ["png", "pdf", "jpg", "svg", "tif", "eps"], 80)
+        assert [Path(x).suffix for x in saved] == [".png", ".pdf", ".jpg", ".svg", ".tif", ".eps"]
+        head = {Path(x).suffix: Path(x).read_bytes()[:12] for x in saved}
+        assert head[".png"][:8] == b"\x89PNG\r\n\x1a\n"
+        assert head[".pdf"][:5] == b"%PDF-"
+        assert head[".jpg"][:2] == b"\xff\xd8"
+        assert head[".tif"][:4] in (b"II*\x00", b"MM\x00*")
+        assert head[".eps"][:2] == b"%!"
+        assert b"<svg" in Path(saved[3]).read_bytes()[:600]
+        # text stays text in the pdf (Type 42 fonts embedded), checked on the title
+        pdf = Path(saved[1]).read_bytes()
+        assert b"/FontFile2" in pdf
+        # jpeg quality changes the file size
+        lo = ds._save_figure(fig, Path(t) / "lo", ["jpg"], 80, 20)[0]
+        hi = ds._save_figure(fig, Path(t) / "hi", ["jpg"], 80, 95)[0]
+        assert Path(lo).stat().st_size < Path(hi).stat().st_size
+        # dpi acts on raster files only: a larger dpi gives a larger png, the same pdf size class
+        big = ds._save_figure(fig, Path(t) / "big", ["png"], 160)[0]
+        assert Path(big).stat().st_size > Path(saved[0]).stat().st_size
+        # ".jpeg" extension is kept as given
+        assert ds._save_figure(fig, Path(t) / "j", ["jpeg"], 80)[0].endswith(".jpeg")
+    plt.close(fig)
+
+
+def test_main_output_formats():
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        make_ensemble(root, n=4)
+        old = _set_config(root, OUTPUT_FORMATS="pdf, .JPG", PER_SITE=[101], JPEG_QUALITY=80)
+        try:
+            ds.main()
+        finally:
+            _restore(old)
+        res = root / "results"
+        names = sorted(p.name for p in res.glob("*.*") if p.suffix in (".png", ".pdf", ".jpg"))
+        assert names == ["femtic_distort_stat.jpg", "femtic_distort_stat.pdf",
+                         "femtic_distort_stat_site101.jpg", "femtic_distort_stat_site101.pdf"]
+        assert (res / "femtic_distort_stat.pdf").read_bytes()[:5] == b"%PDF-"
+        assert (res / "femtic_distort_stat.jpg").read_bytes()[:2] == b"\xff\xd8"
+
+
+def test_main_bad_format_stops_before_reading_the_ensemble():
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        make_ensemble(root, n=2)
+        for bad in ({"OUTPUT_FORMATS": ["png", "docx"]}, {"OUTPUT_FORMATS": []},
+                    {"JPEG_QUALITY": 0}, {"JPEG_QUALITY": 101}):
+            old = _set_config(root, **bad)
+            try:
+                try:
+                    ds.main()
+                except ValueError as e:
+                    assert "OUTPUT_FORMATS" in str(e) or "JPEG_QUALITY" in str(e)
+                else:
+                    raise AssertionError(f"no ValueError for {bad}")
+            finally:
+                _restore(old)
+        assert not (root / "results").exists()                         # nothing was written
+
+
+def test_title_and_caption_fit_into_the_figure():
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    r = np.random.default_rng(0)
+    long_title = ("Distortion matrix of site ABC123 (C = I + C'): 80 members; marker = best member "
+                  "ann_rto_orig-err_000 (nRMS 1.1)")
+    for panel, fs in (((3.6, 2.9), 8), ((3.6, 2.9), 12), ((3.0, 2.6), 12)):
+        for nq in (1, 2, 5):
+            data = {k: r.normal(1, 0.1, 50) for k in ["xx", "xy", "yx", "yy", "condition"][:nq]}
+            with warnings.catch_warnings():
+                warnings.simplefilter("error", UserWarning)           # e.g. "Tight layout not applied"
+                fig = ds.plot_histograms(data, title=long_title, best_values={"xx": 1.0},
+                                         panel_size=panel, tick_fs=fs, label_fs=fs)
+            fig.canvas.draw()
+            rend = fig.canvas.get_renderer()
+            W, H = fig.bbox.width, fig.bbox.height
+            texts = [fig._suptitle] + [x for x in fig.texts if x is not fig._suptitle]
+            assert len(texts) == 2
+            for tx in texts:
+                bb = tx.get_window_extent(rend)
+                assert bb.x0 >= 0 and bb.x1 <= W and bb.y0 >= 0 and bb.y1 <= H, (panel, fs, nq, tx.get_text()[:20], bb)
+            # the title and caption do not overlap the panels
+            top_ax = max(a.get_tightbbox(rend).y1 for a in fig.axes if a.get_visible())
+            bot_ax = min(a.get_tightbbox(rend).y0 for a in fig.axes if a.get_visible())
+            assert fig._suptitle.get_window_extent(rend).y0 >= top_ax - 1
+            assert [x for x in fig.texts if x is not fig._suptitle][0].get_window_extent(rend).y1 <= bot_ax + 1
+            plt.close(fig)
+    assert ds._wrap_parts(["aaa", "bbb", "ccc"], 100) == "aaa; bbb; ccc"
+    assert ds._wrap_parts(["aaa", "bbb", "ccc"], 9) == "aaa; bbb;\nccc"
+    assert ds._wrap_parts([], 10) == ""
+
+
+def test_count_axis_has_whole_number_ticks():
+    import matplotlib
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+    fig = ds.plot_histograms({"xx": np.random.default_rng(1).normal(1, 0.1, 20)}, bins=5)
+    fig.canvas.draw()
+    ticks = fig.axes[0].get_yticks()
+    assert all(float(x) == int(x) for x in ticks), ticks
+    plt.close(fig)
+
+
+def test_format_best_table():
+    member = dict(label="ens_007", iter=6, nrms=1.0765, status="accepted")
+    C = np.array([[[1.10, 0.05], [-0.02, 1.20]],
+                  [[0.50, 1.00], [1.00, 0.50]],                 # det < 0
+                  [[np.nan] * 2] * 2])                          # site missing in this member
+    txt = ds.format_best_table(member, C, [101, 102, 103], {101: "SiteA", 102: "SiteB"}, "full")
+    lines = txt.splitlines()
+    assert txt.isascii()
+    assert "ens_007" in lines[0] and "iteration 6" in lines[0] and "nRMS 1.0765" in lines[0]
+    assert "ITER_FALLBACK" not in lines[0] and "elements of C = I + C'" in lines[0]
+    assert "name" in lines[2] and "Cxx" in lines[2] and "cond(C)" in lines[2]
+    r1 = lines[4].split()
+    assert r1[:2] == ["101", "SiteA"] and [float(x) for x in r1[2:6]] == [1.1, 0.05, -0.02, 1.2]
+    sv = np.linalg.svd(C[0], compute_uv=False)
+    assert abs(float(r1[6]) - sv[0] / sv[1]) < 5e-4 and abs(float(r1[7]) - np.linalg.det(C[0])) < 5e-5
+    assert "det<0" in lines[5] and "det<0" not in lines[4]
+    assert "not in the distortion file" in lines[6] and lines[6].split()[0] == "103"
+    assert len(set(len(x) for x in (lines[1], lines[2], lines[3], lines[-1]))) == 1   # rules as wide as the header
+    # C' elements, no names, fallback note
+    member["status"] = "accepted_fallback"
+    txt = ds.format_best_table(member, C[:1], [101], {}, "prime")
+    l = txt.splitlines()
+    assert "ITER_FALLBACK" in l[0] and "elements of C'" in l[0] and "= I + C'" not in l[0]
+    assert "name" not in l[2]
+    assert [float(x) for x in l[4].split()[1:5]] == [0.1, 0.05, -0.02, 0.2]            # diagonal minus 1
+
+
+def test_main_prints_the_best_fit_member():
+    import contextlib
+    import io
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        C0, SIG, mats = make_ensemble(root, n=5)                    # nRMS of ens_000 .. ens_004: 1.100 .. 1.104
+        # make ens_003 the best: its history has a lower nRMS at iteration 6
+        write_cnv(root / "ens_003", [8.0, 4.0, 2.5, 1.8, 1.4, 1.2, 1.01, 1.15])
+        for flag in (True, False):
+            old = _set_config(root, PRINT_BEST=flag, PER_SITE=None)
+            buf = io.StringIO()
+            try:
+                with contextlib.redirect_stdout(buf):
+                    ds.main()
+            finally:
+                _restore(old)
+            out = buf.getvalue()
+            if not flag:
+                assert "best-fit member" not in out
+                continue
+            assert "best-fit member ens_003 (iteration 6, nRMS 1.0100)" in out
+            row = [ln for ln in out.splitlines() if ln.split()[:1] == ["102"] and len(ln.split()) == 7][0]
+            assert [float(x) for x in row.split()[1:5]] == [round(float(v), 4) for v in mats[3][1].ravel()]
+    # the setting exists with its default
+    assert ds.PRINT_BEST is True
+
+
+def _members(labels, nrms=None):
+    return [dict(label=l, nrms=(1.0 + 0.1 * i if nrms is None else nrms[i])) for i, l in enumerate(labels)]
+
+
+def test_select_members_forms():
+    labs = ["run_000", "run_001", "run_002", "run_010", "run_011", "other_5"]
+    ms = _members(labs, nrms=[1.3, 1.2, 1.05, 1.4, 1.1, 1.5])          # best = run_002
+    sel = lambda spec: ds.select_members(ms, spec)
+    assert sel(None) == list(range(6)) and sel("all") == list(range(6)) and sel("") == list(range(6))
+    assert sel("best") == [2]
+    assert sel("run_010") == [3]                                       # exact name
+    assert sel(["run_011", "run_000"]) == [4, 0]                       # order of the selectors
+    assert sel("run_01?") == [3, 4]                                    # patterns
+    assert sel("run_*") == [0, 1, 2, 3, 4] and sel(["run_0[01]0"]) == [0, 3]
+    assert sel(11) == [4] and sel("11") == [4] and sel(5) == [5]       # numbers: trailing digits
+    assert sel(["best", 11, "run_011", "best"]) == [2, 4]              # no repeats
+    assert sel(np.int64(1)) == [1]
+    assert sel(["best", "run_0*"]) == [2, 0, 1, 3, 4]
+    for bad in ("nope", 99, "run_9*", ["best", "nope"], [], True, 1.5, ["run_000", None]):
+        try:
+            sel(bad)
+        except ValueError as e:
+            assert "PLOT_MEMBERS" in str(e), (bad, str(e))
+        else:
+            raise AssertionError(f"no ValueError for {bad!r}")
+    try:
+        sel("nope")
+    except ValueError as e:
+        assert "run_000" in str(e)                                     # lists the available names
+    # a number that matches two members is ambiguous
+    ms2 = _members(["a_007", "b_007", "c_008"])
+    for spec in (7, "7"):
+        try:
+            ds.select_members(ms2, spec)
+        except ValueError as e:
+            assert "matches 2 members" in str(e) and "a_007" in str(e)
+        else:
+            raise AssertionError("ambiguous number accepted")
+    assert ds.select_members(ms2, "a_007") == [0]                      # the full name is unambiguous
+    # a member whose name is all digits: the exact name wins over the number rule
+    assert ds.select_members(_members(["7", "x_7"]), "7") == [0]
+
+
+def test_members_tag():
+    assert ds.members_tag(["ens_001"]) == "ens_001"
+    assert ds.members_tag(["ens_001", "ens_003"]) == "ens_001+ens_003"
+    assert ds.members_tag(["a b", "c/d"]) == "a_b+c_d"                 # file-name safe
+    assert ds.members_tag(["x" * 30, "y" * 30, "z" * 30]) == "3members"
+
+
+def _spy_plots():
+    """Wrap ds.plot_histograms; returns (calls, restore)."""
+    calls = []
+    orig = ds.plot_histograms
+    def wrapper(data, **kw):
+        calls.append((data, kw))
+        return orig(data, **kw)
+    ds.plot_histograms = wrapper
+    return calls, lambda: setattr(ds, "plot_histograms", orig)
+
+
+def test_main_plots_one_member_or_a_short_list():
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        C0, SIG, mats = make_ensemble(root, n=6)       # ens_000 .. ens_005, nRMS 1.100 .. 1.105
+        res = root / "results"
+        # --- one member, by number: figure of that member only, statistics of all
+        calls, restore = _spy_plots()
+        old = _set_config(root, PLOT_MEMBERS=3, PER_SITE="all", TITLE="auto")
+        try:
+            ds.main()
+        finally:
+            _restore(old)
+            restore()
+        assert sorted(p.name for p in res.glob("*.png")) == ["femtic_distort_stat_ens_003.png"]
+        assert len(calls) == 1                                          # PER_SITE skipped: one value per site
+        data, kw = calls[0]
+        assert np.allclose(data["xx"], mats[3][:, 0, 0], atol=1e-7)     # the values of member ens_003 only
+        assert np.allclose(data["xy"], mats[3][:, 0, 1], atol=1e-7)
+        assert "member ens_003" in kw["title"] and "6 members" not in kw["title"]
+        rd = list(csv.DictReader((res / "femtic_distort_stat.csv").read_text().splitlines()))
+        assert int(next(r for r in rd if r["site_id"] == "ALL" and r["quantity"] == "xx")["n"]) == 6 * 3
+        assert np.load(res / "femtic_distort_stat.npz")["C"].shape[0] == 6    # NPZ keeps all members
+        # --- a short list: pooled and per-site figures of those members; marker = best of them
+        for f in res.glob("*.png"):
+            f.unlink()
+        calls, restore = _spy_plots()
+        old = _set_config(root, PLOT_MEMBERS=["ens_004", 1], PER_SITE=[102], TITLE="auto")
+        try:
+            ds.main()
+        finally:
+            _restore(old)
+            restore()
+        assert sorted(p.name for p in res.glob("*.png")) == [
+            "femtic_distort_stat_ens_004+ens_001.png", "femtic_distort_stat_ens_004+ens_001_site102.png"]
+        pooled, kw0 = calls[0]
+        assert np.allclose(pooled["xx"], np.array([mats[4][:, 0, 0], mats[1][:, 0, 0]]), atol=1e-7)   # (members, sites)
+        site, kw1 = calls[1]
+        assert np.allclose(site["xx"], [mats[4][1, 0, 0], mats[1][1, 0, 0]], atol=1e-7)
+        assert "2 selected members" in kw0["title"] and "best member ens_001" in kw1["title"]
+        assert abs(kw1["best_values"]["xx"] - mats[1][1, 0, 0]) < 1e-7  # ens_001 has the smaller nRMS
+
+
+def test_main_member_selection_edge_cases():
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        make_ensemble(root, n=4)
+        res = root / "results"
+        # selecting every member = no selection: same file names and title as the default
+        calls, restore = _spy_plots()
+        old = _set_config(root, PLOT_MEMBERS="ens_*", PER_SITE=[101])
+        try:
+            ds.main()
+        finally:
+            _restore(old)
+            restore()
+        assert sorted(p.name for p in res.glob("*.png")) == ["femtic_distort_stat.png",
+                                                              "femtic_distort_stat_site101.png"]
+        assert "4 members" in calls[0][1]["title"]
+        # "best" and the {members} / {n_members} placeholders of a text title
+        for f in res.glob("*.png"):
+            f.unlink()
+        calls, restore = _spy_plots()
+        old = _set_config(root, PLOT_MEMBERS="best", TITLE="{n_members}: {members}")
+        try:
+            ds.main()
+        finally:
+            _restore(old)
+            restore()
+        assert calls[0][1]["title"] == "1: ens_000"                    # smallest nRMS is ens_000 (1.100)
+        assert (res / "femtic_distort_stat_ens_000.png").exists()
+    # a selector that matches nothing stops before anything is written
+    with tempfile.TemporaryDirectory() as t:
+        root = Path(t)
+        make_ensemble(root, n=3)
+        old = _set_config(root, PLOT_MEMBERS=["ens_001", "ens_099"])
+        try:
+            try:
+                ds.main()
+            except ValueError as e:
+                assert "ens_099" in str(e) and "ens_000" in str(e)
+            else:
+                raise AssertionError("no ValueError")
+        finally:
+            _restore(old)
+        assert not (root / "results").exists()
 
 
 def test_sources_are_ascii():

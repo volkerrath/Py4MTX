@@ -80,13 +80,88 @@ Output (in `OUT_DIR`, default `ENSEMBLE_DIR/results/`):
 
 | File | Content |
 |---|---|
-| `femtic_distort_stat.png` | Histograms of all members and sites pooled, one panel per quantity. |
-| `femtic_distort_stat_site<ID>.png` | One figure per site of `PER_SITE`: the members of that site; the member with the smallest nRMS is marked by a triangle. |
+| `femtic_distort_stat.<fmt>` | Histograms of all members and sites pooled, one panel per quantity. |
+| `femtic_distort_stat_site<ID>.<fmt>` | One figure per site of `PER_SITE`: the members of that site; the member with the smallest nRMS is marked by a triangle. |
 | `femtic_distort_stat.csv` | `n`, `mean`, `std` (ddof = 1) and the `PERCENTILES` of every quantity, pooled (`site_id = ALL`) and per site. |
 | `femtic_distort_stat.npz` | `members`, `iterations`, `nrms`, `site_ids`, `C` (members x sites x 2 x 2, NaN where a member has no such site), `kind`, `quantities`. |
 | `femtic_distort_stat_summary.md` | The user-set parameters of the run (`utl.write_param_summary`), in `ENSEMBLE_DIR`. |
 
-The pooled table is also printed (ASCII).
+`<fmt>` is every format of `OUTPUT_FORMATS` (one file per format and figure).
+The pooled table is also printed (ASCII), followed by the distortion of the
+best-fit member (see below).
+
+## Plotting only some members
+
+`PLOT_MEMBERS` limits the figures to one member or a short list; `None` (or
+`"all"`) shows all accepted members. A selector is one of
+
+| Selector | Selects |
+|---|---|
+| `"best"` | the best-fit member (smallest nRMS; ties: the first by name) |
+| `"ann_rto_orig-err_017"` | the member with this directory name |
+| `"ann_*_01?"` | all members whose name matches the pattern (`*`, `?`, `[..]`) |
+| `17` or `"17"` | the member whose name ends in the number 17 (`_017`, `_17`, ...); stops with a message if several members match - then use the full name |
+
+and `PLOT_MEMBERS` is one selector or a list of them, e.g. `"best"` or
+`["best", 17, "ann_rto_orig-err_023"]`. Repeats are dropped; a selector that
+matches nothing stops the script at the start (before anything is written) and
+lists the available names.
+
+- Only the figures use the selection. The statistics (CSV, NPZ, printed table)
+  and the best-fit table always cover all accepted members.
+- The histograms of **one** member show the distribution over its sites (so few
+  values that you may want a smaller `BINS`). `PER_SITE` needs two or more
+  members (one member gives one value per site) and is skipped with a note
+  otherwise.
+- With a selection the figure files carry the members' names, so that they do
+  not overwrite the figures of the whole ensemble:
+  `femtic_distort_stat_<member>.png`, `femtic_distort_stat_<a>+<b>.png` (or
+  `femtic_distort_stat_<k>members.png` if the names are long), and
+  `..._site<ID>.png` for `PER_SITE`. A selection that contains every member
+  counts as no selection.
+- The marker in the per-site figures is the member with the smallest nRMS *of
+  the plotted members*. The title says "member X" or "k selected members";
+  in a text `TITLE`, `{n_members}` is the number of plotted members and
+  `{members}` their names (`all` without selection).
+
+## Distortion of the best-fit member
+
+With `PRINT_BEST = True` the script prints, for every site, the distortion
+matrix of the best-fit member: the accepted member with the smallest nRMS (at
+the iteration used; ties: the first by name; the same member as the triangle in
+the per-site figures):
+
+```
+Distortion of the best-fit member ann_000 (iteration 6, nRMS 1.1000): elements of C = I + C'
+====================================================================
+    site       Cxx       Cxy       Cyx       Cyy   cond(C)    det(C)
+--------------------------------------------------------------------
+     201    0.9879   -0.0209    0.0410    0.5682     1.739    0.5622
+     ...
+```
+
+The four columns are the elements of `C` (`DISTORTION_KIND = "full"`) or of
+`C'` (`"prime"`); `cond(C)` and `det(C)` are always those of the full `C`. A
+name column appears if `SITE_DAT` gives names; a negative determinant is marked
+`det<0`; a site that is not in the member's distortion file is listed as such.
+The example is from the synthetic test ensemble, not from real data.
+
+## Output formats
+
+`OUTPUT_FORMATS` is a list, e.g. `["png", "pdf", "jpg"]`, or one string
+(`"pdf"`, or `"pdf, jpg"`). Any format that matplotlib writes can be used:
+
+| Kind | Formats | Note |
+|---|---|---|
+| Raster | `png`, `jpg` (`jpeg`), `tif` (`tiff`), `webp` | Resolution `DPI`; `JPEG_QUALITY` (1 - 100, default 95) for `jpg` / `jpeg`. |
+| Vector | `pdf`, `svg`, `eps`, `ps` | `DPI` has no effect. Text stays text in `pdf` / `eps` / `ps` (fonts embedded as Type 42, so it can be edited in a vector program). |
+
+Names are not case sensitive and a leading dot is ignored (`".PDF"` = `"pdf"`);
+repeated names are dropped; `"jpg"` and `"jpeg"` give files with the extension
+as written. An unknown name or an empty list stops the script at the start,
+before the ensemble is read, with a message that lists the allowed formats.
+A JPEG has no transparency and is lossy; use `png` or a vector format for line
+art that is processed further.
 
 ## Reading the histograms
 
@@ -119,16 +194,22 @@ The pooled table is also printed (ASCII).
 | `DISTORTION_KIND` | `"full"` | `"full"` (`C`) or `"prime"` (`C'`). |
 | `QUANTITIES` | `["xx", "xy", "yx", "yy"]` | See "Quantities". |
 | `PERCENTILES` | `[2.3, 15.9, 50.0, 84.1, 97.7]` | For the CSV and the printed table. |
-| `BINS` | `30` | Number of bins, a numpy rule (`"auto"`, `"fd"`, ...) or bin edges. |
+| `BINS` | `20` | Number of bins, a numpy rule (`"auto"`, `"fd"`, ...) or bin edges. |
 | `DENSITY` | `False` | `True` = density instead of counts. |
 | `RANGE` | `None` | `None` or `{quantity: (lo, hi)}` (also sets the x limits). |
 | `SHOW_PERCENTILES`, `SHOW_REFERENCE` | `True`, `True` | Median / percentile lines; "no distortion" line. |
 | `PER_SITE` | `None` | `None`, `"all"`, or a list of site IDs and / or names. |
 | `MARK_BEST` | `True` | Triangle for the best-nRMS member in the per-site figures. |
-| `FIGSIZE_PANEL`, `DPI`, colours, font sizes | see script | One panel's size; the figure is built from it. |
-| `TITLE` | `"auto"` | `"auto"`; `None` / `False` / `""` = none; text with `{n_members}`, `{n_sites}`, `{site}`, `{id}`; or a dict `{"pooled": ..., "site": ..., "default": ...}`. |
+| `PLOT_MEMBERS` | `None` | Members shown in the figures, see "Plotting only some members". |
+| `PRINT_BEST` | `True` | Print the distortion matrices of the best-fit member, see above. |
+| `FIGSIZE_PANEL` | `(3.6, 2.9)` | One panel's size in inches; the figure is made from it, title and caption are added to the height and wrapped to the width. Holds font sizes up to 12; make it larger for larger fonts (matplotlib warns "Tight layout not applied" if it is too small). |
+| `DPI` | `400` | Resolution of the raster formats. |
+| `TICK_FONTSIZE`, `LABEL_FONTSIZE_AXES`, colours | `12`, `12`, see script | Font sizes and the colours of bars, text, lines, grid and background. |
+| `TITLE` | `""` (no title) | `"auto"`; `None` / `False` / `""` = none; text with `{n_members}`, `{n_sites}`, `{site}`, `{id}`; or a dict `{"pooled": ..., "site": ..., "default": ...}`. |
 | `SHOW` | `False` | Also show the figures on screen. |
-| `OUT_DIR`, `OUTPUT_BASENAME`, `OUTPUT_FORMATS`, `STATS_CSV`, `RESULTS_NPZ` | see script | Output location and names. |
+| `OUT_DIR`, `OUTPUT_BASENAME`, `STATS_CSV`, `RESULTS_NPZ` | see script | Output location and names. |
+| `OUTPUT_FORMATS` | `["png"]` | Figure formats, see "Output formats". |
+| `JPEG_QUALITY` | `95` | Quality of `jpg` / `jpeg` files, 1 - 100. |
 
 ## Limits and things to check
 
@@ -151,7 +232,7 @@ The pooled table is also printed (ASCII).
 
 ## Verification performed
 
-Synthetic ensembles only; 15 tests in `test_femtic_distort_stat.py`, all
+Synthetic ensembles only; 27 tests in `test_femtic_distort_stat.py`, all
 passing (pytest or `python test_femtic_distort_stat.py`):
 
 - Elements of `C` and `C'`; condition number, gain and determinant against
@@ -181,10 +262,38 @@ passing (pytest or `python test_femtic_distort_stat.py`):
   titles (auto, text with placeholders, dict, none), `"prime"` kind, stop
   without members, stop for another distortion type; site names from a
   sitelist CSV (`SITE_DAT`) in the CSV and for `PER_SITE`.
+- Output formats: names normalised (case, dot, separators, duplicates, bad and
+  empty input); the files of png, pdf, jpg, svg, tif and eps have the right
+  signature; pdf text is embedded as Type 42 (and the default would not be);
+  JPEG quality changes the file size; `DPI` changes only raster files;
+  `main()` with `"pdf, .JPG"` writes the pooled and the per-site figure in both
+  formats; an unknown format or a `JPEG_QUALITY` outside 1 - 100 stops before
+  anything is read or written.
+- Layout: title and caption lie inside the figure and do not overlap the
+  panels (font sizes 8 and 12, 1, 2 and 5 panels, a long title); count axes
+  have whole-number ticks.
+- Best-fit table: values, condition number and determinant against `numpy`,
+  `det<0` flag, names column, a site missing in the member, `"prime"` kind,
+  fallback note; `main()` prints the member with the smallest nRMS (with the
+  matrix of the right site) and nothing with `PRINT_BEST = False`.
+- Member selection: every selector form (`"best"`, name, pattern, number as int
+  and as string, order, repeats, numpy integer), the errors (unknown name,
+  pattern without match, ambiguous number, empty list, `True`, float, `None` in
+  a list), names consisting of digits; file-name tags. `main()`: one member
+  (figure data equal to that member's matrices, statistics and `.npz` still
+  from all members, `PER_SITE` skipped), a list of two (pooled and per-site
+  figure from exactly those members, marker = the better of the two, file
+  names), a selection of every member (default names and title), `"best"` with
+  the `{members}` / `{n_members}` placeholders, and a failing selector that
+  stops before anything is written.
 - Both source files contain plain ASCII only.
 - Figures of an 80-member, 6-site synthetic ensemble were looked at (pooled and
-  per-site); an overlap of the "no distortion" label with the statistics text
-  was found and removed (caption instead of per-panel labels).
+  per-site, as jpg and png): an overlap of the "no distortion" label with the
+  statistics text was found and removed (caption instead of per-panel labels);
+  with font size 12 the caption was clipped at both edges and the count axis
+  showed 2.5 / 7.5, both fixed (caption and title wrapped to the figure width,
+  whole-number count ticks). The pdf files were checked for signature and
+  fonts, not looked at.
 
 ## References
 
@@ -205,5 +314,8 @@ passing (pytest or `python test_femtic_distort_stat.py`):
 | Date | Author | Change |
 |---|---|---|
 | 2026-11-13 | Claude Sonnet 5.5 (Anthropic) | Created: `femtic_distort_stat.py` reads `distortion_iter<best>.dat` of the accepted ensemble members (selection as in `femtic_ens_post.py`), pooled and per-site histograms of the elements, condition number, determinant and gain of `C`, statistics CSV and results `.npz`. Tests with synthetic ensembles in `test_femtic_distort_stat.py`. AI-generated; review before production use. |
+| 2026-11-13b | Claude Sonnet 5.5 (Anthropic) | `OUTPUT_FORMATS` accepts a list or one string and any format matplotlib writes (png, pdf, jpg, svg, eps, tif, ...); names are normalised and checked at the start; new `JPEG_QUALITY`; text stays text in pdf / eps / ps. Title and caption are wrapped to the figure width (the caption was clipped with font size 12); count axes have whole-number ticks. Built on the user's version of the script (`BINS = 20`, `DPI = 400`, font sizes 12, `TITLE = ""` kept). AI-generated; review before production use. |
+| 2026-11-13c | Claude Sonnet 5.5 (Anthropic) | New `PRINT_BEST`: table of the distortion matrices (elements of `C` or `C'`, `cond(C)`, `det(C)`) of the best-fit member for every site. AI-generated; review before production use. |
+| 2026-11-14 | Claude Sonnet 5.5 (Anthropic) | New `PLOT_MEMBERS`: figures for one member or a short list of members (`"best"`, directory names, patterns, numbers); figure file names carry the members' names; `PER_SITE` needs two or more members; statistics and best-fit table still cover all members. AI-generated; review before production use. |
 
 Author: Volker Rath (DIAS)
