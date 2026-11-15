@@ -119,6 +119,100 @@ AI-generated code -- review before production use.
               example under MOD_SLICES shows both. Needs femtic_viz.py of the
               same date. Tested on a synthetic mesh only.
               AI-generated; review before production use.
+
+2026-11-15  Claude Sonnet 5.5 (Anthropic)
+              Raw or volume-normalised sensitivity. New MOD_SENS_KIND
+              ("auto" | "raw" | "volume_normalised" | "both"; default
+              "auto"): femtic_ens_post.py (SENS_KIND = "both") can store both
+              sensitivities, as sens_*_cum (raw) and sens_*_vn
+              (volume_normalised); this setting says which one the sens_*
+              entries of MOD_STATS_WHAT and the name in MOD_ALPHA_SOURCE stand
+              for. "auto" = the one kind of a single-kind file, the
+              volume-normalised one of a file with both; "both" draws every
+              sens_* panel once per kind. A kind that the file does not hold
+              gives a message and no panel (never the other kind's map). A
+              name that carries the kind ("sens_mean_an_cum") is used as it
+              is. MOD_STATS_STYLE of the plain name applies to the suffixed
+              keys; their colour bars name the kind; block files and figures
+              of a both-kinds file are named with the suffixed key. For a file
+              with one kind (and for files from before this date) panel names,
+              scales and file names are unchanged (checked against the
+              previous script on synthetic results). Needs the femtic.py of
+              the same date (resolve_sens_stat, read_ensemble_results ->
+              sens_kinds). The drawing itself was not run here; the settings
+              and panel selection were tested with the drawing stubbed out.
+              AI-generated; review before production use.
+
+2026-11-15 (b)  Claude Sonnet 5.5 (Anthropic)
+              femtic_ens_post.py now stores every sensitivity divided by a
+              max (sens_mean_raw was the one key in native units and, for the
+              raw kind, ranged far above 1) and stores the native scale and
+              ranges. The default style of "sens_mean_raw" is therefore the
+              normalised one (clim [-5, 0], label "log10 S/Smax"); results
+              files from before this date (no res["sens_ranges"]) keep the
+              native-units style (auto-scaled) unless MOD_STATS_STYLE has an
+              entry of your own. Nothing else changed. Needs the femtic.py of
+              the same date. Tested with the drawing stubbed out.
+              AI-generated; review before production use.
+
+2026-11-15 (c)  Claude Sonnet 5.5 (Anthropic)
+              femtic_ens_post.py no longer stores the "_na" / "_an" versions:
+              the sensitivity panels are now sens_mean, sens_median,
+              sens_min, sens_max, sens_std (log10 of the statistic divided by
+              its own max; the native ranges are res["sens_ranges"]) and
+              sens_cv (linear). Settings: MOD_STATS_WHAT has sens_mean,
+              sens_median, sens_cv (was sens_mean_raw, sens_mean_an,
+              sens_median_an, sens_cv_an); MOD_ALPHA_SOURCE =
+              "sens_median > -6." (was "sens_median_an > -6.": the threshold
+              is now relative to the maximum of the median itself). The special
+              style of sens_mean_raw of (b) is gone (it was the same map as
+              sens_mean_an). Files written before this date still work: the
+              plain names are read from their "_an" keys with a printed
+              note, and the old names ("sens_median_an", ...) can still be
+              asked for there; "_na" names give a message. Example entry of
+              MOD_SLICES (commented): the Vuache-fault plane through the two
+              surface points now has dip=110, i.e. 70 deg to the NE (the
+              example had dip=70, which dips to the right of p1 -> p2, i.e.
+              SW). Needs the femtic.py of the same date. Tested with the
+              drawing stubbed out. AI-generated; review before production
+              use.
+
+2026-11-15 (d)  Claude Sonnet 5.5 (Anthropic)
+              Fault limited to its defining points. The kind="profile" entry
+              of MOD_SLICES takes two optional keys: limit_km (km; default
+              0.0 for a fault = a profile with dip != 90 or with `overlay`)
+              and alpha_outside (0 ... 1; default 0.25). The part of the
+              fault plane between p1 and p2 -- widened by limit_km at both
+              ends, narrowed if negative -- is drawn as given (overlay lines
+              on the other panels; with panel=True the model on the fault
+              panel), the part outside it fainter (alpha = alpha_outside, 0 =
+              hidden, 1 = no difference; on the fault panel the model is
+              faded towards white). limit_km=None = no distinction, as
+              before. The Vuache entry of MOD_SLICES carries both keys; the
+              commented example and the comment above it describe them. Your
+              file of 2026-11-15 16:12 was the base: all your settings (paths,
+              MOD_SLICES with the Vuache fault, MOD_ALPHA_SOURCE threshold,
+              MOD_TITLE, MOD_CBAR_*) are kept, the sens_* names are those of
+              (c). No code change in this script; needs the femtic_viz.py of
+              the same date (slice_overlay_polylines, plot_model_slices).
+              Tested on a synthetic mesh (drawing run, Agg backend); not on
+              your data. AI-generated; review before production use.
+
+2026-11-15 (e)  Claude Sonnet 5.5 (Anthropic)
+              alpha_outside fades. Outside p1 ... p2 the opacity of the fault
+              no longer steps to alpha_outside: it falls linearly from 1 at
+              the ends of the stretch to alpha_outside over the new optional
+              key fade_km of the kind="profile" entry (km; default 2.0;
+              0 = abrupt, as in (d); alpha_outside=0 fades to fully
+              transparent), like MOD_ALPHA_MODE="fade". For the overlay lines
+              alpha_outside is now relative to the line's own alpha (0.9 *
+              0.25 far out), dots / dashes keep their pattern across the fade.
+              The Vuache entry of MOD_SLICES carries fade_km=2.0; the
+              commented example and the comment above it describe it. No code
+              change in the script body; needs the femtic_viz.py of the same
+              date (the one of (d) draws a step). Tested on a synthetic mesh
+              (drawing run, Agg backend); not on your data. AI-generated;
+              review before production use.
 """
 
 from __future__ import annotations
@@ -163,10 +257,10 @@ ENSEMBLE_PREFIX = "annecy_rto_orig-err"
 
 #: Where femtic_ens_post.py wrote its results, and where the figures and the
 #: panels' block files go (MOD_STATS_DIR below).
-RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results256") + os.sep
+RESULTS_DIR = os.path.join(ENSEMBLE_DIR, "results") + os.sep
 
 #: The results .npz (same name rule as femtic_ens_post.py).
-ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX.upper() + "_results256.npz"
+ENSEMBLE_RESULTS = RESULTS_DIR + ENSEMBLE_PREFIX + "_results.npz"
 
 #: Key prefix inside the .npz. None = detect (the file's only ensemble). Set it
 #: if the file holds several ensembles.
@@ -250,11 +344,14 @@ QDIFF_PAIRS = [(15.9, 84.1), (2.3, 97.7)]
 #: stored in the file (e.g. 2.3 -> "p2_3", 50.0 -> "p50", 97.7 -> "p97_7"),
 #: one per QDIFF_PAIRS entry (e.g. (15.9, 84.1) -> "qdiff_15_9_84_1"),
 #: "err_boot" (+ "var_boot") when femtic_ens_post.py ran with BOOTSTRAP_VAR,
-#: and -- when it ran with COMPUTE_SENS / COMPUTE_SIMRC -- the log10
-#: sensitivity panels "sens_mean_raw", "sens_mean_na", "sens_mean_an",
-#: "sens_median_na"/"_an", "sens_min_na"/"_an", "sens_max_na"/"_an",
-#: "sens_std_na"/"_an", the linear ratios "sens_cv_na"/"_an", and
-#: "simrc_coef"/"simrc_corr" (log10). A key requested here but not held by the
+#: and -- when it ran with COMPUTE_SENS / COMPUTE_SIMRC -- the sensitivity
+#: panels "sens_mean", "sens_median", "sens_min", "sens_max", "sens_std"
+#: (log10 of the statistic divided by its own max, so each peaks at 0), the
+#: linear ratio "sens_cv", and "simrc_coef"/"simrc_corr" (log10). Which
+#: sensitivity kind (raw / volume-normalised) they show: MOD_SENS_KIND below.
+#: Results files from before 2026-11-15 (c) hold "sens_<stat>_an" /
+#: "_na" instead: the plain names above are then read from the "_an" keys
+#: (with a printed note). A key requested here but not held by the
 #: results file is skipped with a printed message, never an error.
 #: "err" = sqrt(var) is plotted by default instead of "var", since var is in
 #: (log10 Ohm.m)^2 and not on the same scale as MAD/QDIFF (log10 Ohm.m).
@@ -267,14 +364,39 @@ MOD_STATS_WHAT = (
     + [f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS]
     + ["err_boot"]
     + [
-        "sens_mean_raw",
-        "sens_mean_an",
-        "sens_median_an",
-        "sens_cv_an",
+        "sens_mean",
+        "sens_median",
+        "sens_cv",
     ]
     + ["simrc_corr"]
     + ["simrc_coef"]
 )
+
+#: Which sensitivity the "sens_*" entries of MOD_STATS_WHAT and the name in
+#: MOD_ALPHA_SOURCE stand for -- the raw one (cumulative sum|J|, key suffix
+#: "_cum") or the volume-normalised one (raw / cell volume, suffix "_vn").
+#: femtic_ens_post.py stores either one under plain keys (its SENS_KIND =
+#: "raw" or "volume_normalised") or both under suffixed keys (SENS_KIND =
+#: "both"); this setting picks among what the results file holds:
+#:   "auto"              (default) the one kind of a file with one kind; the
+#:                       volume-normalised sensitivity of a file with both;
+#:   "raw"               the raw sensitivity;
+#:   "volume_normalised" the volume-normalised sensitivity
+#:                       ("volume_normalized" is accepted too);
+#:   "both"              (panels only) every sens_* panel once per kind held,
+#:                       as sens_..._cum and sens_..._vn; the blanking of
+#:                       MOD_ALPHA_SOURCE then uses the "auto" kind.
+#: A kind that the file does not hold gives a message and no panel, never the
+#: other kind's map under the wrong name. An entry that names the kind itself
+#: ("sens_mean_cum", "sens_median_vn > -3.") is used as it is whatever
+#: MOD_SENS_KIND says -- e.g. to blank by one kind and plot the other. Colour
+#: scales: MOD_STATS_STYLE of the plain name ("sens_mean") applies to both
+#: kinds unless the suffixed name has its own entry. Every sens_* panel is
+#: divided by its own max, so the raw and the volume-normalised map of one
+#: statistic both peak at 0 and a threshold of MOD_ALPHA_SOURCE is
+#: "within N decades of that statistic's own maximum" for either kind; the
+#: native ranges are in the results file (res["sens_ranges"]).
+MOD_SENS_KIND = "auto"
 
 #: Extension-less base path for the "best" panel; _plot_slice() appends
 #: ".<fmt>" per MOD_PLOT_FORMAT entry. None = MOD_STATS_DIR/<prefix>_best.
@@ -289,10 +411,10 @@ MOD_STATS_DIR = RESULTS_DIR   #+ "stats_plots/"
 MOD_QC = "best" in MOD_STATS_WHAT
 MOD_STATS = bool(set(MOD_STATS_WHAT) - {"best"})
 
-#: ROI diagnostic for the log10 sensitivity panels ("sens_mean_raw",
-#: "sens_{mean,median,min,max,std}_{na,an}" -- NOT "sens_cv_na"/"_an",
-#: which are linear ratios, and NOT "simrc_coef"/"simrc_corr", left
-#: untouched pending more experience with that method).
+#: ROI diagnostic for the log10 sensitivity panels
+#: ("sens_{mean,median,min,max,std}" -- NOT "sens_cv", which is a linear
+#: ratio, and NOT "simrc_coef"/"simrc_corr", left untouched pending more
+#: experience with that method).
 #:
 #: Regardless of SENS_ROI_NORMALIZE below, every such panel that is both
 #: listed in MOD_STATS_WHAT and actually plotted has its *original*
@@ -307,7 +429,7 @@ MOD_STATS = bool(set(MOD_STATS_WHAT) - {"best"})
 #: becomes log10 = 0 instead of the whole-mesh max (equivalent to dividing
 #: the underlying linear quantity by its max within the ROI rather than
 #: over the whole mesh). This is a display-only transform: it never
-#: touches the .npz output (sens_mean_an etc. are saved exactly as before)
+#: touches the .npz output
 #: or MOD_ALPHA_SOURCE (which still reads the untransformed _stat_map
 #: values). Cells outside the ROI can come out > 0 (log10) once
 #: renormalised this way -- expected, since they may exceed the ROI's max.
@@ -384,9 +506,9 @@ MOD_SLICES = [
     dict(kind="map", z0=3.0),  # km
     dict(kind="map", z0=4.0),  # km
     dict(kind="map", z0=5.0),  # km
-    dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0),
-    dict(kind="ns", x0=0.0),  # km
-    dict(kind="ew", y0=0.0),  # km
+    # dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0),
+    # dict(kind="ns", x0=0.0),  # km
+    # dict(kind="ew", y0=0.0),  # km
     #: Vertical section along a strike through ``point`` (model-local km,
     #: [0, 0] = model origin). strike = geographic azimuth, degrees
     #: clockwise from north: 45 = SW (left) -> NE (right), 135 = NW -> SE.
@@ -422,14 +544,40 @@ MOD_SLICES = [
     #: slices, no fault panel); leave it out to get the fault panel (the
     #: model on the fault plane) as well. xlim=[a, b] (m along strike,
     #: relative to the midpoint of p1-p2) limits its length.
+    #: Limit to the defining points (femtic_viz.py of 2026-11-15): the part of
+    #: the fault between p1 and p2 is drawn as given, the rest -- the
+    #: extrapolation along strike -- fades out. limit_km (km, default 0.0 for
+    #: a fault, i.e. exactly p1 ... p2): > 0 widens that stretch at both ends,
+    #: < 0 narrows it (e.g. 2.0 = 2 km beyond each point), None = no
+    #: distinction (the line is drawn alike everywhere, as before).
+    #: alpha_outside (0 ... 1, default 0.25): opacity far outside, relative
+    #: to the line's own alpha; 0 = fully transparent, 1 = no difference.
+    #: fade_km (km, default 2.0): the opacity falls linearly from 1 at the
+    #: ends of the stretch to alpha_outside over this width, as
+    #: MOD_ALPHA_MODE="fade" does for cells; 0 = abrupt step. All three also
+    #: act on the fault panel (panel=True, the part outside is faded towards
+    #: white).
     # dict(kind="profile",
     #      p1=([6.030869, 45.962166], "latlon"),
     #      p2=([6.115936, 45.910655], "latlon"),
-    #      dip=70.0, z_top=0.0, z_bot=20000.0,
+    #      dip=110.0,  # = 70 deg to the NE (p1 -> p2 runs NW -> SE; dip < 90
+    #                  # would dip to its right, i.e. SW). Third point of the
+    #                  # same plane: (6.079571, 45.941367) at 2 km depth.
+    #      z_top=0.0, z_bot=20000.0,
     #      overlay=dict(color="k", linewidth=1.5), title="fault",
+    #      limit_km=0.0, alpha_outside=0.25, fade_km=2.0,     # see above
     #      panel=False),
     # dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
     # dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
+    dict(kind="profile",
+     p1=([6.030869, 45.962166], "latlon"),
+     p2=([6.115936, 45.910655], "latlon"),
+     dip=110.0, z_top=0.0, z_bot=20000.0,
+     overlay=dict(color="magenta", linestyle=":", linewidth=15.0, alpha=0.9),
+     title="Vuache fault",
+     limit_km=0.0, alpha_outside=0.25,   # p1 ... p2 as given, then fading
+     fade_km=2.0,                        # ... to 25 % over 2 km (0 = abrupt)
+     panel=False)
 ]
 #: Epagny (45.9383, 6.0883) 
 # --- Polylines (optional) -----------------------------------------------------
@@ -554,8 +702,17 @@ MOD_STATS_STYLE["var_boot"] = dict(
 MOD_STATS_STYLE["err_boot"] = dict(
     clim=[0.0, 1.0], label="bootstrap std log10(rho)"
 )
-#: Native sensitivity units (femtic_ens_post.py SENS_KIND) -- run- and
-#: mesh-dependent, auto-scaled.
+#: Sensitivity panels (femtic_ens_post.py of 2026-11-15 (c)): log10 of the
+#: statistic divided by its own max, so 0 = the maximum; sens_cv is linear.
+for _st in ("mean", "median", "min", "max", "std"):
+    MOD_STATS_STYLE[f"sens_{_st}"] = dict(
+        cmap="viridis", clim=[-5.0, 0.0], label=f"log10 S/Smax ({_st})"
+    )
+MOD_STATS_STYLE["sens_cv"] = dict(cmap="viridis", clim=None, label="CV of S")
+#: Results files from before 2026-11-15 (c): the plain mean in the kind's
+#: native units (run- and mesh-dependent, auto-scaled) and the "_na" / "_an"
+#: statistics (the plain names above are read from the "_an" keys, which
+#: keep these entries).
 MOD_STATS_STYLE["sens_mean_raw"] = dict(
     cmap="viridis", clim=None, label="log10 S (native units)"
 )
@@ -581,16 +738,17 @@ MOD_STATS_STYLE["simrc_corr"] = dict(
 #: MOD_STATS (see MOD_STATS_WHAT; computed statistics are available here
 #: even if not listed for plotting), <op> is one of > >= < <=, and <value>
 #: is in that statistic's own units (log10 for sensitivities). Examples:
-#:   "sens_mean_an > -3."    keep cells within 3 decades of max sensitivity
+#:   "sens_median > -3."     keep cells within 3 decades of the max median
+#:                        sensitivity (the kind: MOD_SENS_KIND)
 #:   "err < 0.2"             keep cells with ensemble std below 0.2 decades
 #: None disables blanking/fading.
-# MOD_ALPHA_SOURCE = "sens_median_an > -5.5"
+# MOD_ALPHA_SOURCE = "sens_median > -5.5"
 # #: "blank" -- failing cells are removed (hard cut).
 # #: "fade"  -- failing cells fade linearly from opaque at the threshold to
 # #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
 # #:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
 # MOD_ALPHA_MODE = "blank"
-MOD_ALPHA_SOURCE = "sens_median_an > -3."
+MOD_ALPHA_SOURCE = "sens_median > -6."
 #: "blank" -- failing cells are removed (hard cut).
 #: "fade"  -- failing cells fade linearly from opaque at the threshold to
 #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
@@ -660,7 +818,7 @@ MOD_TITLE_FONTSIZE = MOD_LABEL_FONTSIZE + 10
 #:                        "default": "auto"}
 #:                     keys = entries of MOD_STATS_WHAT; values as above;
 #:                     "default" (else "auto") covers the keys not listed.
-MOD_TITLE = "auto"
+MOD_TITLE = ""
 #: Panel titles ("Map  z = 1.0 km", "N-S  easting = 0.0 km", ...): True = as
 #: before, False = none. A single panel is titled by adding title="text" to its
 #: MOD_SLICES entry (title="" leaves just that panel untitled).
@@ -672,11 +830,11 @@ MOD_PANEL_TITLES = True
 #:          ONE colour bar for all panels of a figure (they share one colour
 #:          scale), at that side of the whole panel grid. The panels give up a
 #:          strip of the figure for it; their spacing is kept.
-MOD_CBAR_LOCATION = "panel"
+MOD_CBAR_LOCATION = "bottom"
 #: Joint colour bar only: its length as a fraction of the side of the panel
 #: grid it runs along (0 < value <= 1), and its thickness in cm (None =
 #: 1.5 x MOD_LABEL_FONTSIZE points).
-MOD_CBAR_SHRINK = 0.7
+MOD_CBAR_SHRINK = 0.6
 MOD_CBAR_THICKNESS = None  # cm
 
 #: Decimal digits shown on axis tick labels (depth, map/curtain
@@ -932,6 +1090,95 @@ if MOD_QC_FILE is None:
 if _from_vector:
     print(f"\n  template block file: {tpl}  (not the best member's own file)")
 
+# --- (1b) Sensitivity kind: which stored sens_* keys the panels stand for -----
+# "both" is a plot-only choice (every sens_* panel once per kind held); the
+# other values go to fem.resolve_sens_stat as they are.
+_sens_kind_in = (
+    "auto" if MOD_SENS_KIND is None else str(MOD_SENS_KIND).strip().lower()
+)
+_sens_kind_both = _sens_kind_in == "both"
+try:
+    _sens_kind = "auto" if _sens_kind_both else fem.normalise_sens_kind(
+        MOD_SENS_KIND
+    )
+except ValueError as _exc:
+    sys.exit(f"femtic_ens_plot_slices.py: MOD_SENS_KIND: {_exc}")
+_sens_kinds_held = res["sens_kinds"]  # list | None (file before 2026-11-15)
+if res["sens"]:
+    if _sens_kinds_held:
+        _eff = ""
+        if len(_sens_kinds_held) > 1:
+            _eff = " -> " + (
+                "raw + volume_normalised"
+                if _sens_kind_both
+                else fem.SENS_KIND_DEFAULT_BOTH
+                if _sens_kind == "auto"
+                else _sens_kind
+            )
+        print(
+            f"\n  sensitivity in the results file: "
+            f"{', '.join(_sens_kinds_held)};  MOD_SENS_KIND = "
+            f"'{_sens_kind_in}'{_eff}"
+        )
+    else:
+        print(
+            "\n  sensitivity in the results file: kind not recorded "
+            "(written before 2026-11-15) - sens_* names are used as they are."
+        )
+
+
+def _resolve_sens(name, kind):
+    """fem.resolve_sens_stat for `name` against the stored statistic keys."""
+    return fem.resolve_sens_stat(
+        name,
+        stat_map,
+        stored_kinds=res["sens_kinds"],
+        stored_suffixes=res["sens_suffixes"],
+        kind=kind,
+    )
+
+
+def _style_entry(key):
+    """MOD_STATS_STYLE entry of `key`, else of its un-suffixed name."""
+    if key in MOD_STATS_STYLE:
+        return MOD_STATS_STYLE[key]
+    return MOD_STATS_STYLE.get(fem.strip_sens_suffix(key), {})
+
+
+# Panels to draw: MOD_STATS_WHAT entries (without "best") -> stored keys.
+_stats_panels = []
+for _name in MOD_STATS_WHAT:
+    if _name == "best":
+        continue  # handled by the QC block
+    if _sens_kind_both and _name.startswith("sens_"):
+        _kinds_try = ("raw", "volume_normalised")
+    else:
+        _kinds_try = (_sens_kind,)
+    _found = []
+    _notes = []
+    for _kd in _kinds_try:
+        _k, _nt = _resolve_sens(_name, _kd)
+        if _k is not None and _k not in _found:
+            _found.append(_k)
+        if _nt:
+            _notes.append(_nt)
+    if _found:
+        # notes worth printing: substitutions of old names / files without
+        # a recorded kind; not the "holds only the other kind" of a "both"
+        # request on a single-kind file
+        for _nt in dict.fromkeys(_notes):
+            if "holds only" not in _nt:
+                print(f"  MOD_STATS: {_nt}")
+        _stats_panels.extend(_k for _k in _found if _k not in _stats_panels)
+    else:
+        if _notes:
+            print(f"  MOD_STATS: '{_name}' skipped: {_notes[0]}.")
+        else:
+            print(
+                f"  MOD_STATS: '{_name}' not in the results file - skipped. "
+                f"Available: {sorted(stat_map)}"
+            )
+
 # --- (2) Resolve UTM origin and sites ----------------------------------------
 (
     utm_e,
@@ -985,15 +1232,23 @@ elif MOD_ROI_AUTO:
 
 def _panel_style(key):
     """(cmap, clim, label) for a MOD_STATS panel: MOD_STATS_STYLE over defaults."""
-    st = MOD_STATS_STYLE.get(key, {})
+    st = _style_entry(key)
     if key in _value_scale_keys:
         d_clim, d_label = MOD_CLIM, "log10(rho / Ohm*m)"
     else:
         d_clim, d_label = None, key
+    label = st.get("label", d_label)
+    # a file with both kinds: say which one the colour bar shows (an explicit
+    # entry for the suffixed key is left as the user wrote it)
+    if label and key not in MOD_STATS_STYLE:
+        for _kd, _sfx in fem.SENS_KIND_SUFFIX.items():
+            if key.startswith("sens_") and key.endswith(_sfx):
+                label = f"{label} [{_kd}]"
+                break
     return (
         st.get("cmap", MOD_CMAP),
         st.get("clim", d_clim),
-        st.get("label", d_label),
+        label,
     )
 
 
@@ -1004,6 +1259,12 @@ def _title_for(key, auto, label=""):
     no title, otherwise the text with its placeholders filled in (the
     function is fviz.resolve_title, shared by the plot scripts).
     """
+    if isinstance(MOD_TITLE, dict) and key not in MOD_TITLE:
+        # a per-figure title written for "sens_mean" also serves
+        # "sens_mean_vn" / "_cum" (the kind is in {label})
+        _plain = fem.strip_sens_suffix(key)
+        if _plain in MOD_TITLE:
+            key = _plain
     return fviz.resolve_title(
         MOD_TITLE, key, auto, name="MOD_TITLE",
         label=label,
@@ -1019,13 +1280,24 @@ def _title_for(key, auto, label=""):
 _alpha_block = None
 if MOD_ALPHA_SOURCE:
     _a_name, _a_op, _a_thr = fem.parse_alpha_source(MOD_ALPHA_SOURCE)
-    if _a_name not in stat_map:
+    # the kind of a sens_* name: MOD_SENS_KIND ("both" = the "auto" kind, one
+    # mask only); a name that carries its kind (..._cum / ..._vn) is kept
+    _a_key, _a_note = _resolve_sens(_a_name, _sens_kind)
+    if _a_key is None and _a_note:
+        print(
+            f"\n  MOD_ALPHA_SOURCE: '{_a_name}': {_a_note}. "
+            f"Blanking disabled."
+        )
+    elif _a_key is None:
         print(
             f"\n  MOD_ALPHA_SOURCE: '{_a_name}' not available - not stored in "
             f"the results file (femtic_ens_post.py did not compute it). "
             f"Available: {sorted(stat_map)}. Blanking disabled."
         )
     else:
+        if _a_note:
+            print(f"\n  MOD_ALPHA_SOURCE: {_a_note}")
+        _a_name = _a_key
         _alpha = fem.alpha_from_condition(
             stat_map[_a_name][0],
             _a_op,
@@ -1041,7 +1313,7 @@ if MOD_ALPHA_SOURCE:
             _alpha, tpl, _alpha_block, ocean=MOD_OCEAN, out=OUT
         )
         print(
-            f"\n  MOD_ALPHA_SOURCE '{MOD_ALPHA_SOURCE}' "
+            f"\n  MOD_ALPHA_SOURCE '{_a_name} {_a_op} {_a_thr:g}' "
             f"(mode='{MOD_ALPHA_MODE}'): "
             f"{int(np.sum(_alpha >= 1.0))} shown, "
             f"{int(np.sum((_alpha > 0.0) & (_alpha < 1.0)))} faded, "
@@ -1101,15 +1373,9 @@ if MOD_QC:
 if MOD_STATS:
     os.makedirs(MOD_STATS_DIR, exist_ok=True)
 
-    for _key in MOD_STATS_WHAT:
-        if _key == "best":
-            continue  # handled by the QC block above
-        if _key not in stat_map:
-            print(
-                f"  MOD_STATS: '{_key}' not in the results file - skipped. "
-                f"Available: {sorted(stat_map)}"
-            )
-            continue
+    # _stats_panels: the stored keys behind MOD_STATS_WHAT, resolved in (1b)
+    # (skipped entries were reported there)
+    for _key in _stats_panels:
         _vec, _label = stat_map[_key]
         _roi_normalised = False
 
@@ -1162,7 +1428,7 @@ if MOD_STATS:
             # normalised default clim (e.g. [-4, 0]) since cells outside the
             # ROI may now exceed the ROI's own max -- auto-scale unless the
             # user explicitly overrode clim for this key in MOD_STATS_STYLE.
-            if _key not in MOD_STATS_STYLE or "clim" not in MOD_STATS_STYLE[_key]:
+            if "clim" not in _style_entry(_key):
                 _clim = None
         _block_out = os.path.join(MOD_STATS_DIR, f"resistivity_block_{P}_{_key}.dat")
         _pdf_out = os.path.join(MOD_STATS_DIR, f"{P}_{_key}")

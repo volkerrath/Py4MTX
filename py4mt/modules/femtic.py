@@ -278,6 +278,54 @@ Modified: 2026-11-12 by Claude Sonnet 5.5 (Anthropic) -- dipping plane
     kind="profile" spec on (it was ignored before; default 90 = as
     before) and prints the dip direction in verbose mode. Nothing else
     changed. AI-generated code -- review before production use.
+Modified: 2026-11-15 by Claude Sonnet 5.5 (Anthropic) -- new
+    read_h5_block_volumes(h5_path): volume of every resistivity block,
+    computed from the mesh stored in results_iterX.h5 (/model/mesh/
+    node_coords, /model/mesh/elem_nodes, /model/element_block_map) with
+    tet_volumes(); returned in the entry order of the /model/sensitivity/*
+    datasets, so it can be mapped to the free parameters exactly like a
+    sensitivity vector (femtic_ens_post.py _sens_to_free()). When both
+    sensitivity datasets are present, raw / volume_normalised is compared
+    with the mesh volumes as a consistency check (max. relative deviation
+    and median ratio are returned and printed; a constant factor would
+    point to a unit difference). Used by femtic_ens_post.py to store the
+    cell volumes (<P>_cell_volume). No existing function changed.
+    Tested only against an in-memory h5py stand-in (h5py is not installed
+    where this was written). AI-generated code -- review before
+    production use.
+Modified: 2026-11-15 (b) by Claude Sonnet 5.5 (Anthropic) -- choice
+    between the raw and the volume-normalised sensitivity on the plotting
+    side. New: SENS_KIND_SUFFIX / SENS_KIND_SPELLING / SENS_KIND_DEFAULT_BOTH,
+    normalise_sens_kind(), strip_sens_suffix(), resolve_sens_stat() (turns
+    a sens_* name into the stored key for the wanted kind; a kind the file
+    does not hold gives no key and a message). read_ensemble_results()
+    additionally returns sens_kinds and sens_suffixes (the
+    <P>_sensitivity_kinds / <P>_sensitivity_key_suffixes keys written by
+    femtic_ens_post.py since 2026-11-15; None for older files);
+    ensemble_stat_map() names the kind in the description of a suffixed
+    sens_* key. Nothing else changed; for a results file with one kind or
+    without the new keys all return values are as before. Tested on
+    synthetic results only. AI-generated code -- review before production
+    use.
+Modified: 2026-11-15 (c) by Claude Sonnet 5.5 (Anthropic) -- the
+    sensitivity statistics of femtic_ens_post.py are now stored as
+    sens_mean / _median / _min / _max / _std (log10 of the statistic divided
+    by its own max) and sens_cv (linear), no longer in the "_na" / "_an"
+    versions. read_ensemble_results() returns sens_ranges (kind -> {stat:
+    (min, max)}: the native ranges that femtic_ens_post.py stores as
+    <P>_sensitivity_native_range / _range_stats; None for older files).
+    resolve_sens_stat() reads a name of the dropped "_an" set as the plain
+    statistic of a new file, and a new name of an OLD file from its "_an"
+    key, each with a note; "_na" names give None and a note; choosing the
+    kind no longer returns a note. New constant SENS_STAT_NAMES. Nothing
+    else changed. Tested on synthetic results only. AI-generated code --
+    review before production use.
+Modified: 2026-11-15 (d), (e) by Claude Sonnet 5.5 (Anthropic) -- documentation
+    only: the keys ``limit_km`` / ``alpha_outside`` / ``fade_km`` of a
+    ``kind="profile"`` entry (fault limited to the stretch between its
+    defining points, with a linear fade of the opacity outside it; handled by
+    femtic_viz.py of the same date) pass through resolve_slice_positions()
+    like every other key; docstrings say so. No code change.
 """
 from __future__ import annotations
 
@@ -4228,6 +4276,212 @@ def read_results_model(source, *, out: bool = True) -> dict:
     return result
 
 
+def read_h5_block_volumes(
+    h5_path,
+    *,
+    check_sensitivity: bool = True,
+    rtol: float = 1.0e-4,
+    out: bool = True,
+) -> dict:
+    """
+    Volume of every resistivity block of a ``results_iterX.h5`` file.
+
+    FEMTIC does not write the block volumes themselves, but the file holds
+    the mesh and the element-to-block map, so they are summed here:
+
+        vol[b] = sum of tet_volumes() over the elements e with
+                 /model/element_block_map[e] == b
+
+    The result has one entry per block, in the same index space as the
+    ``/model/sensitivity/raw`` and ``.../volume_normalised`` datasets
+    (``nBlocks`` entries), so it can be reduced to the free parameters
+    with exactly the same mapping as a sensitivity vector, e.g.
+    ``femtic_ens_post.py``'s ``_sens_to_free()``. Fixed blocks (air,
+    ocean) are included. The unit is that of the node coordinates cubed
+    (FEMTIC meshes are in metres, i.e. m^3).
+
+    Only tetrahedral meshes are handled: the first four columns of
+    ``/model/mesh/elem_nodes`` are taken as the vertices (a second-order
+    tetrahedron with its edge nodes after the vertices therefore works
+    too), and the node indices must be 0-based.
+
+    Consistency check
+    -----------------
+    If ``check_sensitivity`` is True and both ``/model/sensitivity/raw``
+    and ``/model/sensitivity/volume_normalised`` are present (same length
+    as ``nBlocks``), the ratio raw / volume_normalised is compared with the
+    volumes from the mesh for all blocks where both are positive. FEMTIC
+    defines the second dataset as the first divided by the block volume,
+    so the two must agree. The largest relative deviation is returned and
+    printed; a deviation above ``rtol`` gives a printed WARNING (not an
+    exception). If the ratio ``raw / volume_normalised / vol`` is the
+    same constant everywhere but not 1, the two use different volume units;
+    if it varies, the element-to-block map is probably not in the
+    index space of the sensitivity datasets (e.g. blockID is a
+    permutation) -- see ``femtic_ens_post.py``'s ``_sens_block_order()``.
+
+    Parameters
+    ----------
+    h5_path : str or Path
+        A ``results_iterX.h5`` file (an older ``model_iterX.h5`` with the
+        model content at the root works as well).
+    check_sensitivity : bool, optional
+        Compare with raw / volume_normalised when both are present.
+    rtol : float, optional
+        Relative deviation above which the check prints a warning.
+    out : bool, optional
+        Print a one-line summary and the outcome of the check.
+
+    Returns
+    -------
+    dict with keys:
+        volume : ndarray, shape (nBlocks,)
+            Block volumes (m^3); 0 for a block without elements.
+        n_elem, n_blocks : int
+        n_empty : int
+            Number of blocks without any element.
+        n_unassigned : int
+            Elements whose block index is outside 0..nBlocks-1 (not
+            counted in any block).
+        check : dict or None
+            None if the check was not possible. Else n_compared (blocks
+            compared), max_rel_dev (max |raw/vn/vol - 1|), ratio_median
+            (median of raw/vn/vol) and ok (max_rel_dev <= rtol).
+
+    Raises
+    ------
+    FileNotFoundError
+        If ``h5_path`` does not exist.
+    KeyError
+        If no ``/model`` group (or root-level fallback content) is found,
+        or the mesh / element-block map is missing in it.
+    ValueError
+        If the mesh arrays are inconsistent (shape, indices out of range).
+
+    Author: Claude Sonnet 5.5 (Anthropic), 2026-11-15.
+    AI-generated code -- review before production use.
+    """
+    try:
+        import h5py
+    except Exception as exc:  # pragma: no cover
+        raise ImportError("read_h5_block_volumes requires the 'h5py' package.") from exc
+
+    if not os.path.isfile(h5_path):
+        raise FileNotFoundError(f"read_h5_block_volumes: {h5_path} not found.")
+
+    sens_raw = sens_vn = None
+    h5, should_close = _h5_open_source(h5_path, h5py)
+    try:
+        g = _h5_find_group(h5, h5py, "model", ("metadata", "blocks"))
+        if g is None:
+            raise KeyError(
+                f"read_h5_block_volumes: no '/model' group (or root-level "
+                f"model content) found in {h5_path!r}."
+            )
+        meta = dict(g["metadata"].attrs)
+        elem_block = np.asarray(g["element_block_map"][()], dtype=np.int64).ravel()
+        nodes = np.asarray(g["mesh/node_coords"][()], dtype=float)
+        conn = np.asarray(g["mesh/elem_nodes"][()], dtype=np.int64)
+        n_blocks = int(meta.get("nBlocks", 0))
+        if n_blocks <= 0 and "blocks" in g:
+            n_blocks = int(np.asarray(g["blocks"][()]).shape[0])
+        if check_sensitivity and "sensitivity" in g:
+            sg = g["sensitivity"]
+            if "raw" in sg:
+                sens_raw = np.asarray(sg["raw"][()], dtype=float).ravel()
+            if "volume_normalised" in sg:
+                sens_vn = np.asarray(sg["volume_normalised"][()], dtype=float).ravel()
+    finally:
+        if should_close:
+            h5.close()
+
+    if nodes.ndim != 2 or nodes.shape[1] != 3:
+        raise ValueError(
+            f"read_h5_block_volumes: node_coords has shape {nodes.shape}, "
+            f"expected (nNodes, 3)."
+        )
+    if conn.ndim != 2 or conn.shape[1] < 4:
+        raise ValueError(
+            f"read_h5_block_volumes: elem_nodes has shape {conn.shape}; "
+            f"tetrahedra (>= 4 columns) are required."
+        )
+    if conn.shape[0] != elem_block.size:
+        raise ValueError(
+            f"read_h5_block_volumes: {conn.shape[0]} elements in elem_nodes "
+            f"but {elem_block.size} in element_block_map."
+        )
+    tet = conn[:, :4]
+    if tet.size and (tet.min() < 0 or tet.max() >= nodes.shape[0]):
+        raise ValueError(
+            f"read_h5_block_volumes: element node indices {tet.min()}.."
+            f"{tet.max()} outside 0..{nodes.shape[0] - 1} (0-based indices "
+            f"expected)."
+        )
+    if n_blocks <= 0:
+        n_blocks = int(elem_block.max()) + 1 if elem_block.size else 0
+
+    elem_vol = tet_volumes(nodes, tet)
+    assigned = (elem_block >= 0) & (elem_block < n_blocks)
+    n_unassigned = int(elem_block.size - np.count_nonzero(assigned))
+    volume = np.bincount(
+        elem_block[assigned], weights=elem_vol[assigned], minlength=n_blocks
+    ).astype(float)
+    n_empty = int(np.count_nonzero(volume <= 0.0))
+
+    check = None
+    check_note = ""
+    if sens_raw is not None and sens_vn is not None:
+        if sens_raw.size == n_blocks and sens_vn.size == n_blocks:
+            sel = (
+                np.isfinite(sens_raw) & np.isfinite(sens_vn)
+                & (sens_raw > 0.0) & (sens_vn > 0.0) & (volume > 0.0)
+            )
+            if np.any(sel):
+                ratio = sens_raw[sel] / sens_vn[sel] / volume[sel]
+                dev = float(np.max(np.abs(ratio - 1.0)))
+                check = dict(
+                    n_compared=int(np.count_nonzero(sel)),
+                    max_rel_dev=dev,
+                    ratio_median=float(np.median(ratio)),
+                    ok=bool(dev <= rtol),
+                )
+                if check["ok"]:
+                    check_note = (
+                        f"; raw/volume_normalised == mesh volume for "
+                        f"{check['n_compared']} blocks "
+                        f"(max rel. dev. {dev:.2e})"
+                    )
+                else:
+                    check_note = (
+                        f"; WARNING raw/volume_normalised differs from the "
+                        f"mesh volume (max rel. dev. {dev:.3e}, median "
+                        f"ratio {check['ratio_median']:.4e}, "
+                        f"{check['n_compared']} blocks compared)"
+                    )
+        else:
+            check_note = (
+                f"; sensitivity check skipped (datasets have "
+                f"{sens_raw.size}/{sens_vn.size} entries, nBlocks={n_blocks})"
+            )
+
+    if out:
+        print(
+            f"read_h5_block_volumes: {elem_block.size} elements, "
+            f"{n_blocks} blocks, total volume {volume.sum():.6e}, "
+            f"{n_empty} empty block(s), {n_unassigned} unassigned "
+            f"element(s){check_note}"
+        )
+
+    return dict(
+        volume=volume,
+        n_elem=int(elem_block.size),
+        n_blocks=int(n_blocks),
+        n_empty=n_empty,
+        n_unassigned=n_unassigned,
+        check=check,
+    )
+
+
 def read_results_data(source, *, out: bool = True, decode_labels: bool = True) -> dict:
     """
     Read the ``/data`` group of a ``results_iterX.h5`` file (or an older,
@@ -7730,6 +7984,10 @@ def resolve_pos_two_point_profile(p1_raw, p2_raw,
     VR 2026-06-19, Claude Sonnet 4.6 (Anthropic)
     Modified 2026-11-12, Claude Sonnet 5.5 (Anthropic) -- new keyword ``dip``
     (dipping plane through the two points); default output unchanged.
+    Note 2026-11-15: ``p1_model`` / ``p2_model`` of the result are what
+    ``femtic_viz`` uses to limit a fault to the stretch between its defining
+    points (slice-spec keys ``limit_km`` / ``alpha_outside`` / ``fade_km``);
+    no change here.
     """
     dip = float(dip)
     if not 0.0 < dip < 180.0:
@@ -7838,7 +8096,14 @@ def resolve_slice_positions(slices: list,
     given by two surface points and a dip (towards the right of p1 -> p2;
     see :func:`resolve_pos_two_point_profile`).  Other keys of the spec,
     e.g. ``overlay`` (see ``femtic_viz.slice_overlay_polylines``), pass
-    through.  See :func:`resolve_pos_two_point_profile` for the full
+    through -- also ``limit_km``, ``alpha_outside`` and ``fade_km``
+    (2026-11-15), which limit a fault to the stretch between p1 and p2: that
+    stretch is drawn as given, outside it the opacity falls linearly to
+    ``alpha_outside`` (``limit_km`` in km, default 0.0 for a fault, ``None`` =
+    no limit; ``alpha_outside`` default 0.25; ``fade_km`` in km, default 2.0,
+    0 = abrupt; see ``femtic_viz._fault_limit_range``). The resolved spec
+    carries the end points as ``p1_model`` / ``p2_model``, which that code
+    needs.  See :func:`resolve_pos_two_point_profile` for the full
     endpoint CRS syntax.
 
     Parameters
@@ -8649,7 +8914,7 @@ def parse_alpha_source(expr: str):
     if m is None:
         raise ValueError(
             f"MOD_ALPHA_SOURCE={expr!r}: expected '<name> <op> <value>' "
-            f"with op one of > >= < <=, e.g. 'sens_mean_an > -3.'"
+            f"with op one of > >= < <=, e.g. 'sens_median > -3.'"
         )
     return m.group(1), m.group(2), float(m.group(3))
 
@@ -8709,6 +8974,174 @@ def write_alpha_block(
     )
 
 
+#: Sensitivity kinds of femtic_ens_post.py (SENS_KIND) -> the suffix that the
+#: keys of a kind carry in the results file when SENS_KIND = "both" ("_cum":
+#: raw = cumulative sum|J|, "_vn": volume_normalised). With a single kind the
+#: keys have no suffix.
+SENS_KIND_SUFFIX = {"raw": "_cum", "volume_normalised": "_vn"}
+
+#: Accepted spellings of a kind -> the name used in the file.
+SENS_KIND_SPELLING = {"volume_normalized": "volume_normalised"}
+
+#: The kind that kind="auto" takes from a file with both kinds (the default
+#: SENS_KIND of femtic_ens_post.py).
+SENS_KIND_DEFAULT_BOTH = "volume_normalised"
+
+
+def normalise_sens_kind(kind):
+    """Canonical sensitivity kind: "auto", "raw" or "volume_normalised".
+
+    None means "auto"; "volume_normalized" is accepted as a spelling of
+    "volume_normalised". Raises ValueError for anything else.
+
+    Author: Claude Sonnet 5.5 (Anthropic), 2026-11-15.
+    """
+    k = "auto" if kind is None else str(kind).strip().lower()
+    k = SENS_KIND_SPELLING.get(k, k)
+    if k not in ("auto", "raw", "volume_normalised"):
+        raise ValueError(
+            f"sensitivity kind must be 'auto', 'raw' or 'volume_normalised' "
+            f"('volume_normalized' is accepted too), got {kind!r}"
+        )
+    return k
+
+
+def strip_sens_suffix(key):
+    """``"sens_mean_vn"`` -> ``"sens_mean"``; other keys unchanged.
+
+    Removes the kind suffix (see SENS_KIND_SUFFIX) of a sensitivity key, e.g.
+    to find the plot style that is set for the plain name.
+    """
+    if str(key).startswith("sens_"):
+        for sfx in SENS_KIND_SUFFIX.values():
+            if key.endswith(sfx):
+                return key[: -len(sfx)]
+    return key
+
+
+#: Names of the sensitivity statistics of femtic_ens_post.py (since
+#: 2026-11-15 (c)): each divided by its own max, log10; sens_cv is linear.
+SENS_STAT_NAMES = ("mean", "median", "min", "max", "std", "cv")
+
+_SENS_LEGACY_RE = re.compile(
+    r"^(sens_(?:mean|median|min|max|std|cv))_(an|na)((?:_cum|_vn)?)$"
+)
+
+
+def _resolve_sens_core(name, avail, kinds, suffixes, kind):
+    """resolve_sens_stat() without the legacy-name handling."""
+    if name in avail:
+        if not kinds:
+            if kind == "auto":
+                return name, ""
+            return name, (
+                f"'{name}': the file does not record which sensitivity kind "
+                f"it holds (written before 2026-11-15); used as it is."
+            )
+        if len(kinds) == 1 and kind not in ("auto", kinds[0]):
+            return None, (
+                f"the results file holds only the '{kinds[0]}' sensitivity "
+                f"but the kind asked for is '{kind}'"
+            )
+        return name, ""
+    if len(kinds) > 1:
+        sfx_of = (
+            dict(zip(kinds, suffixes))
+            if suffixes and len(suffixes) == len(kinds)
+            else SENS_KIND_SUFFIX
+        )
+        eff = SENS_KIND_DEFAULT_BOTH if kind == "auto" else kind
+        key = name + sfx_of.get(eff, "")
+        if key in avail:
+            return key, ""
+    return None, ""
+
+
+def resolve_sens_stat(name, available, *, stored_kinds=None,
+                      stored_suffixes=None, kind="auto"):
+    """Key of the statistic that a panel / blanking name stands for.
+
+    A results file of femtic_ens_post.py holds one sensitivity kind under
+    plain keys (``sens_mean``, ``sens_median``, ``sens_cv``, ...) or, written
+    with SENS_KIND = "both", both kinds under suffixed keys
+    (``sens_mean_cum`` = raw, ``sens_mean_vn`` = volume_normalised). This
+    turns the name a user writes (MOD_STATS_WHAT entry, name in
+    MOD_ALPHA_SOURCE) into the key that exists, according to the wanted
+    `kind`.
+
+    Rules:
+
+    - A name that is not a ``sens_*`` name is returned as it is if available.
+    - A name that is itself available is used as it is -- an explicit
+      suffixed name of a "both" file always wins over `kind`. A plain name of
+      a file with ONE kind is checked against `kind`: other than "auto" and
+      other than the stored kind -> not resolved (a raw map must not be
+      drawn when the volume-normalised one was asked for). A file that does
+      not say which kind it holds (older than 2026-11-15) is used as it is.
+    - A plain name that is not available but exists with a suffix (file with
+      both kinds) takes the suffix of `kind`; "auto" means
+      SENS_KIND_DEFAULT_BOTH.
+    - Names of the two normalisations that femtic_ens_post.py dropped on
+      2026-11-15 (c) -- ``sens_<stat>_an`` / ``sens_<stat>_na`` (optionally
+      + ``_cum`` / ``_vn``): "_an" is read as the plain statistic of a file
+      written since, with a note (the nearest equivalent; each statistic is
+      now divided by its own max); "_na" has no equivalent: None, with a
+      note. The other way round, a plain ``sens_<stat>`` that an OLD file
+      lacks is read from its ``_an`` key, with a note.
+
+    Parameters
+    ----------
+    name : str
+    available : iterable of str
+        Keys of the statistic map (``ensemble_stat_map``).
+    stored_kinds, stored_suffixes : list of str | None
+        ``res["sens_kinds"]`` / ``res["sens_suffixes"]`` of
+        read_ensemble_results() (None for older files).
+    kind : {"auto", "raw", "volume_normalised"}
+        ("volume_normalized" accepted.)
+
+    Returns
+    -------
+    (key, note) : key is None if nothing fits; note is "" or a short text
+        saying why nothing fits / what was substituted. Choosing the kind
+        gives no note.
+
+    Author: Claude Sonnet 5.5 (Anthropic), 2026-11-15; legacy names (c).
+    """
+    kind = normalise_sens_kind(kind)
+    avail = set(available)
+    if not str(name).startswith("sens_"):
+        return (name if name in avail else None), ""
+    kinds = list(stored_kinds or [])
+    key, note = _resolve_sens_core(name, avail, kinds, stored_suffixes, kind)
+    if key is not None or note:
+        return key, note
+    m = _SENS_LEGACY_RE.match(name)
+    if m is not None:  # an old name asked of a file written since (c)
+        base = m.group(1) + m.group(3)
+        if m.group(2) == "na":
+            return None, (
+                f"'{name}' is not stored any more (the per-member "
+                f"normalisation was dropped on 2026-11-15 (c)); use '{base}'"
+            )
+        key, note = _resolve_sens_core(base, avail, kinds, stored_suffixes, kind)
+        if key is not None:
+            return key, (
+                f"'{name}' no longer exists (2026-11-15 (c)); '{key}' used: "
+                f"the same statistic, divided by its own max"
+            )
+        return None, note
+    # a new name asked of an OLD file: its "_an" key is the nearest one
+    key, note = _resolve_sens_core(name + "_an", avail, kinds, stored_suffixes, kind)
+    if key is not None:
+        return key, (
+            f"'{name}' not in the results file (written before 2026-11-15 "
+            f"(c)); its nearest equivalent '{key}' is used (there all _an "
+            f"statistics were divided by the max of the mean)"
+        )
+    return None, note
+
+
 def read_ensemble_results(path, prefix=None, *, percentiles=None, out=True):
     """Read the results .npz written by femtic_ens_post.py.
 
@@ -8741,6 +9174,21 @@ def read_ensemble_results(path, prefix=None, *, percentiles=None, out=True):
         avg, var, err, med, mad (n_free,) ; prc (n_prc, n_free) ; prc_levels
         qdiff {key: (n_free,)} ; var_boot, err_boot, var_boot_se | None
         sens {suffix: (n_free,)} ; simrc_coef, simrc_corr | None
+        sens_kinds, sens_suffixes  lists | None: the sensitivity kinds the
+                                        ``sens`` keys hold ("raw" and/or
+                                        "volume_normalised") and the key
+                                        suffix of each ("" for a single
+                                        kind, "_cum" / "_vn" for "both");
+                                        None for files from before
+                                        2026-11-15 (see resolve_sens_stat)
+        sens_ranges  {kind: {stat: (min, max)}} | None: the native
+                                        [min, max] over the free blocks of
+                                        the ensemble mean / median / min /
+                                        max / std of each kind; the max is
+                                        what the stored sens key of that
+                                        statistic was divided by (native
+                                        value = 10**key * max). None for
+                                        files from before 2026-11-15 (c)
         model_list [[block file, iteration, nRMS], ...] (rows of ``ens``)
         best_index, best_member, best_file, best_iter, best_nrms
         nrms_table [(member, iter, nRMS, status), ...] | None (older files)
@@ -8863,6 +9311,32 @@ def read_ensemble_results(path, prefix=None, *, percentiles=None, out=True):
         for k in sorted(keys):
             if k.startswith(pre):
                 sens[k[len(pre) :]] = np.asarray(z[k], dtype=float)
+        # which sensitivity kind(s) the sens keys hold (files from 2026-11-15)
+        sens_kinds = sens_suffixes = None
+        if f"{pk}_sensitivity_kinds" in keys:
+            sens_kinds = [
+                str(v) for v in np.asarray(z[f"{pk}_sensitivity_kinds"]).ravel()
+            ]
+            if f"{pk}_sensitivity_key_suffixes" in keys:
+                sens_suffixes = [
+                    str(v)
+                    for v in np.asarray(z[f"{pk}_sensitivity_key_suffixes"]).ravel()
+                ]
+        # native ranges behind the max-normalised sens keys (files from
+        # 2026-11-15 (c)): kind -> {stat: (min, max)}; None for older files
+        sens_ranges = None
+        if sens_kinds and f"{pk}_sensitivity_native_range" in keys:
+            _nr = np.asarray(z[f"{pk}_sensitivity_native_range"], dtype=float)
+            _st = [
+                str(v) for v in np.asarray(z[f"{pk}_sensitivity_range_stats"]).ravel()
+            ]
+            sens_ranges = {
+                _kd: {
+                    _s: (float(_nr[_i, _j, 0]), float(_nr[_i, _j, 1]))
+                    for _j, _s in enumerate(_st)
+                }
+                for _i, _kd in enumerate(sens_kinds)
+            }
         simrc_coef = simrc_corr = None
         if f"{pk}_simrc_coef" in keys and f"{pk}_simrc_corr" in keys:
             simrc_coef, simrc_corr = _arr("simrc_coef"), _arr("simrc_corr")
@@ -8943,6 +9417,8 @@ def read_ensemble_results(path, prefix=None, *, percentiles=None, out=True):
         avg=avg, var=var, err=err, med=med, mad=mad, prc=prc,
         prc_levels=levels, qdiff=qdiff, var_boot=var_boot,
         err_boot=err_boot, var_boot_se=var_boot_se, sens=sens,
+        sens_kinds=sens_kinds, sens_suffixes=sens_suffixes,
+        sens_ranges=sens_ranges,
         simrc_coef=simrc_coef, simrc_corr=simrc_corr, model_list=model_list,
         best_index=bi, best_member=best_member, best_file=best_file,
         best_iter=int(model_list[bi][1]), best_nrms=float(model_list[bi][2]),
@@ -8979,10 +9455,18 @@ def ensemble_stat_map(res):
     if res["var_boot"] is not None:
         stat["var_boot"] = (res["var_boot"], "bootstrap variance")
         stat["err_boot"] = (res["err_boot"], "bootstrap error (std)")
+    _kind_of = {  # key suffix -> kind (files written with SENS_KIND = "both")
+        sfx: kd for kd, sfx in SENS_KIND_SUFFIX.items()
+    }
     for key, val in res["sens"].items():
+        _kd = ""
+        for _sfx, _name in _kind_of.items():
+            if key.endswith(_sfx):
+                _kd = f", {_name}"
+                break
         stat[f"sens_{key}"] = (
             val,
-            f"sensitivity {key} ({'linear' if key.startswith('cv') else 'log10'})",
+            f"sensitivity {key} ({'linear' if key.startswith('cv') else 'log10'}{_kd})",
         )
     if res["simrc_corr"] is not None:
         stat["simrc_coef"] = (

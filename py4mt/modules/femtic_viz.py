@@ -833,6 +833,60 @@ Provenance:
                         into one panel). No `overlay` / `panel` key: figures
                         pixel-identical to before (checked).
                         AI-generated code -- review before production use.
+    2026-11-15  Claude Sonnet 5.5 (Anthropic)
+                        Fault plane limited to its defining points. A fault
+                        from two surface points (resolved kind="profile" with
+                        dip != 90, or with `overlay`) carries its end points
+                        as p1_model / p2_model; new spec keys `limit_km`
+                        (km, default 0.0: the stretch p1-p2, > 0 widens it at
+                        both ends, < 0 narrows it, None = off) and
+                        `alpha_outside` (default 0.25, 0 = hidden, 1 = no
+                        difference) give the part of the plane between the
+                        points at full opacity and the rest fainter (first
+                        version: a step at the points, the lines split into
+                        entries overlay<i>_slice<j> / ..._out<k>; replaced by
+                        the fade of the entry below). plot_model_slices and
+                        plot_ensemble_slices fade the fault panel itself
+                        outside the stretch (white veil, zorder 6, no change
+                        of the axis limits). A plain vertical fence section
+                        (dip = 90, no overlay) and every other spec are
+                        unchanged unless they carry `limit_km`; faults with
+                        dip != 90 or `overlay` now show the part outside the
+                        points fainter by default (limit_km=None restores the
+                        old look). AI-generated code -- review before
+                        production use.
+    2026-11-15b Claude Sonnet 5.5 (Anthropic)
+                        `alpha_outside` acts like alpha_mode="fade": the
+                        opacity of the fault falls LINEARLY from 1 at the ends
+                        of the stretch to `alpha_outside` over the new spec
+                        key `fade_km` (default 2.0 km; 0 or None = the abrupt
+                        step of the first version; alpha_outside=0 fades to
+                        fully transparent). Lines: slice_overlay_polylines
+                        returns ONE entry overlay<i>_slice<j> per panel (no
+                        more ..._out<k>), cut at the ends and at the 16 steps
+                        of the fade, with the new entry key `alpha_fn`
+                        (positions -> opacity factor per segment; the style
+                        alpha is multiplied, so alpha_outside is now relative
+                        to the line's own alpha, not absolute). New private
+                        class _FadeLine2D (Line2D with an opacity per
+                        segment, built by _fade_line_class; drawn as stacked
+                        layers, one per opacity, so there is no seam where
+                        the opacity changes, with a dash pattern that stays
+                        continuous across the steps and butt caps),
+                        _add_overlay_line (plain Line2D if all factors are 1),
+                        _overlay_piece_xy_alpha, _join_pieces,
+                        _segment_factors, _strike_frame, _fault_cuts,
+                        _refine_polyline_at_strike, _fault_alpha_fn;
+                        _split_polyline_by_strike_range removed;
+                        _fault_limit_range returns (lo, hi, alpha_outside,
+                        fade). Fault panel: the white veil is a stack of
+                        overlapping rectangles (no seams), the same 16-step
+                        staircase. _prepare_polylines carries `alpha_fn`.
+                        Specs without limit are drawn as before (figures
+                        byte-identical to the original module). Dash styles
+                        of a line with several pieces restart at every break,
+                        as for a plain Line2D. AI-generated code -- review
+                        before production use.
     """
 
 from __future__ import annotations
@@ -4344,6 +4398,392 @@ def _is_hidden_slice(spec) -> bool:
     return isinstance(spec, dict) and spec.get("panel", True) is False
 
 
+#: Opacity far outside the defining points of a fault plane when the spec has
+#: no ``alpha_outside`` (see :func:`_fault_limit_range`).
+_FAULT_ALPHA_OUTSIDE = 0.25
+#: Width [km] over which the opacity falls from 1 (at the defining points) to
+#: ``alpha_outside`` when the spec has no ``fade_km``.
+_FAULT_FADE_KM = 2.0
+#: Number of steps of that linear fade (lines: pieces of different opacity,
+#: fault panel: layers of the veil, per side).
+_FAULT_FADE_STEPS = 16
+
+
+def _fault_limit_range(spec):
+    """Along-strike stretch of a fault plane that lies between its points.
+
+    A ``kind="profile"`` entry of ``femtic.resolve_slice_positions`` (a fault
+    from two surface points, optionally with a ``dip``) is resolved to a plane
+    spec that carries the two points as ``p1_model`` / ``p2_model`` and the
+    anchor ``point`` (the midpoint of p1-p2). The part of the plane between
+    the two points -- along strike, whatever the depth -- is the stretch that
+    the data define; the rest is an extrapolation. This returns that stretch
+    and how the opacity falls off outside it:
+
+    ``limit_km`` (spec key, km, default ``0.0`` for a fault spec): the
+        stretch is widened at both ends by ``limit_km`` (``> 0``) or narrowed
+        by ``-limit_km`` (``< 0``); ``0`` = exactly p1 ... p2. ``None`` =
+        no distinction (the plane is drawn alike everywhere, as before). A
+        fault spec is one with ``dip != 90`` or with ``overlay``; a plain
+        vertical fence section (``dip = 90``, no ``overlay``) is left as it
+        was unless it carries ``limit_km`` itself.
+    ``alpha_outside`` (spec key, ``0 ... 1``, default 0.25): opacity of the
+        plane far outside the stretch -- of the overlay lines on the other
+        panels (relative to their own ``alpha``), and of the model on the
+        fault panel itself (faded towards white). ``0`` = fully transparent
+        there, ``1`` = no difference.
+    ``fade_km`` (spec key, km, default 2.0): width of the linear fade from
+        full opacity at the ends of the stretch to ``alpha_outside``, like
+        ``alpha_mode="fade"``; ``0`` (or ``None``) = abrupt step at the ends.
+
+    Returns
+    -------
+    ``(lo, hi, alpha_outside, fade)`` or ``None``
+        ``lo`` / ``hi`` = along-strike distance [m] from ``point`` (``hi <=
+        lo`` is an empty stretch: everything is outside), ``fade`` = width of
+        the fade [m]; ``None`` = no limit (not a two-point spec, or
+        ``limit_km=None``).
+
+    Raises
+    ------
+    ValueError
+        ``limit_km`` is not a number / ``None``, ``alpha_outside`` is not in
+        [0, 1], or ``fade_km`` is not a number >= 0 / ``None``.
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic); ``fade`` the same day.
+    """
+    if (not isinstance(spec, dict) or "p1_model" not in spec
+            or "p2_model" not in spec or "point" not in spec):
+        return None
+    fault_like = (abs(float(spec.get("dip", 90.0)) - 90.0) > 1.0e-6
+                  or bool(spec.get("overlay")))
+    lim = spec.get("limit_km", 0.0 if fault_like else None)
+    if lim is None:
+        return None
+    if (isinstance(lim, bool) or not isinstance(lim, (int, float, np.integer,
+                                                      np.floating))
+            or not math.isfinite(float(lim))):
+        raise ValueError(
+            f"slice spec: limit_km = {lim!r} must be a number of km "
+            "(widens the defining stretch p1-p2 at both ends, negative = "
+            "narrows it) or None (no limit).")
+    a_out = spec.get("alpha_outside", _FAULT_ALPHA_OUTSIDE)
+    if (isinstance(a_out, bool)
+            or not isinstance(a_out, (int, float, np.integer, np.floating))
+            or not 0.0 <= float(a_out) <= 1.0):
+        raise ValueError(
+            f"slice spec: alpha_outside = {a_out!r} must be a number in "
+            "[0, 1] (opacity far outside the defining points).")
+    fd = spec.get("fade_km", _FAULT_FADE_KM)
+    if fd is None:
+        fd = 0.0
+    if (isinstance(fd, bool)
+            or not isinstance(fd, (int, float, np.integer, np.floating))
+            or not math.isfinite(float(fd)) or float(fd) < 0.0):
+        raise ValueError(
+            f"slice spec: fade_km = {fd!r} must be a number of km >= 0 "
+            "(width of the fade from full opacity at the defining points "
+            "to alpha_outside; 0 = abrupt) or None.")
+    p0, u = _strike_frame(spec)
+    t = [float((np.asarray(spec[k], dtype=float)[:2] - p0[:2]) @ u[:2])
+         for k in ("p1_model", "p2_model")]
+    m = float(lim) * 1000.0
+    lo, hi = min(t) - m, max(t) + m
+    if hi <= lo:                                  # narrowed away
+        lo = hi = 0.5 * (lo + hi)
+    return lo, hi, float(a_out), float(fd) * 1000.0
+
+
+def _strike_frame(spec):
+    """Anchor ``(3,)`` (z = 0) and horizontal strike unit vector ``(3,)``.
+
+    The along-strike distance of a point ``P`` is ``(P - p0) @ u``; ``point``
+    and ``strike`` of a resolved plane spec.
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic).
+    """
+    sr = math.radians(float(spec.get("strike", 0.0)))
+    u = np.array([math.sin(sr), math.cos(sr), 0.0])
+    p0 = np.zeros(3)
+    p0[:2] = np.asarray(spec["point"], dtype=float)[:2]
+    return p0, u
+
+
+def _fault_cuts(rng):
+    """Along-strike distances at which a fault line must be cut.
+
+    The ends of the defining stretch and, for a fade, the
+    ``_FAULT_FADE_STEPS`` steps of the fade on both sides (the opacity is
+    constant between two cuts). ``[]`` for an empty stretch.
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic).
+    """
+    lo, hi, _a, fade = rng
+    if hi <= lo:
+        return []
+    cuts = [lo, hi]
+    if fade > 0.0:
+        w = fade / _FAULT_FADE_STEPS
+        cuts += [lo - k * w for k in range(1, _FAULT_FADE_STEPS + 1)]
+        cuts += [hi + k * w for k in range(1, _FAULT_FADE_STEPS + 1)]
+    return cuts
+
+
+def _refine_polyline_at_strike(pts, spec, cuts):
+    """Insert vertices into a 3-D polyline where it crosses ``cuts``.
+
+    ``pts`` ``(n, 3)`` model-local metres, ``cuts`` along-strike distances
+    [m] from the spec's ``point`` (see :func:`_strike_frame`). The distance is
+    linear along a segment, so the new vertices are exact; the shape of the
+    polyline does not change. Returns an ``(m, 3)`` array, ``m >= n``.
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic).
+    """
+    P = np.asarray(pts, dtype=float)
+    cuts = np.asarray(list(cuts), dtype=float)
+    if cuts.size == 0:
+        return P
+    p0, u = _strike_frame(spec)
+    t = (P - p0) @ u
+    verts = [P[0]]
+    for i in range(P.shape[0] - 1):
+        a, b, ta, tb = P[i], P[i + 1], float(t[i]), float(t[i + 1])
+        if tb != ta:
+            fr = (cuts - ta) / (tb - ta)
+            for f in np.sort(fr[(fr > 0.0) & (fr < 1.0)]):
+                verts.append(a + f * (b - a))
+        verts.append(b)
+    return np.asarray(verts)
+
+
+def _fault_alpha_fn(spec, rng):
+    """Opacity factor of a fault line as a function of the position.
+
+    Returns ``fn(P)``: ``P`` ``(m, 3)`` model-local metres -> ``(m,)``
+    factors in ``[alpha_outside, 1]``: 1 between the defining points, then
+    falling linearly over ``fade`` to ``alpha_outside`` (a step at the ends if
+    ``fade = 0``; ``alpha_outside`` everywhere for an empty stretch). It is
+    applied to the segment midpoints of a line that was cut at
+    :func:`_fault_cuts`, so the opacity is constant on each segment. ``rng``
+    = :func:`_fault_limit_range` of ``spec``.
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic).
+    """
+    lo, hi, a_out, fade = rng
+    p0, u = _strike_frame(spec)
+
+    def fn(P):
+        P = np.asarray(P, dtype=float)
+        t = (P - p0) @ u
+        if hi <= lo:
+            return np.full(t.shape, a_out)
+        d = np.maximum(np.maximum(lo - t, t - hi), 0.0)
+        if fade > 0.0:
+            return 1.0 - (1.0 - a_out) * np.minimum(d / fade, 1.0)
+        return np.where(d > 1.0e-6, a_out, 1.0)
+
+    return fn
+
+
+def _fault_veil(ax, rng, scale):
+    """Fade a fault panel outside the defining points of the fault.
+
+    ``rng`` = ``(lo, hi, alpha_outside, fade)`` of :func:`_fault_limit_range`
+    (``None`` = nothing to do), ``scale`` = display units per metre of the
+    along-strike axis. White rectangles lie over the panel's whole height
+    outside ``lo ... hi``; they are added with ``add_artist`` (data and axis
+    limits stay as they are), above the model and below the lines (zorder 6 <
+    7). The opacity of the model falls linearly from 1 at the ends of the
+    stretch to ``alpha_outside`` over ``fade`` (the same staircase of
+    ``_FAULT_FADE_STEPS`` steps as the overlay lines): every step is one more
+    rectangle that reaches from the start of the step to the border, with an
+    opacity chosen such that the stacked layers give the wanted total; there
+    is no seam between steps. ``fade = 0``: one rectangle of opacity ``1 -
+    alpha_outside`` per side. Returns ``True`` if something was drawn.
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic).
+    """
+    if rng is None:
+        return False
+    lo, hi, a_out, fade = rng
+    if a_out >= 1.0:
+        return False
+    from matplotlib.patches import Rectangle
+    from matplotlib.transforms import blended_transform_factory
+    big = 1.0e9
+    tr = blended_transform_factory(ax.transData, ax.transAxes)
+
+    def add(x0, x1, alpha):
+        ax.add_artist(Rectangle((x0, 0.0), x1 - x0, 1.0, transform=tr,
+                                facecolor="white", edgecolor="none",
+                                alpha=alpha, zorder=6))
+
+    if hi <= lo:
+        add(-big, big, 1.0 - a_out)
+    elif fade <= 0.0:
+        add(-big, lo * scale, 1.0 - a_out)
+        add(hi * scale, big, 1.0 - a_out)
+    else:
+        nst = _FAULT_FADE_STEPS
+        w = fade / nst
+        # total veil opacity V_k of step k (middle of the step), the last
+        # one = beyond the fade; layer k adds what is missing to V_k
+        v = [0.0] + [(1.0 - a_out) * (k - 0.5) / nst
+                     for k in range(1, nst + 1)] + [1.0 - a_out]
+        for k in range(1, nst + 2):
+            a_k = 1.0 - (1.0 - v[k]) / (1.0 - v[k - 1])
+            if a_k <= 1.0e-9:
+                continue
+            d0 = (k - 1) * w
+            add(-big, (lo - d0) * scale, a_k)
+            add((hi + d0) * scale, big, a_k)
+    return True
+
+
+def _fade_line_class():
+    """The ``Line2D`` subclass with an opacity per segment (built on demand).
+
+    Matplotlib is imported here, not at module level (as everywhere in this
+    module). The class is also published as ``_FadeLine2D`` of this module.
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic).
+    """
+    cls = globals().get("_FadeLine2D")
+    if cls is not None:
+        return cls
+    import matplotlib as mpl
+    from matplotlib.lines import Line2D
+
+    class _FadeLine2D(Line2D):
+        """``Line2D`` whose opacity differs from segment to segment.
+
+        ``seg_alpha`` (keyword) = one factor in ``[0, 1]`` per segment
+        (``len(x) - 1`` values; a segment with a NaN end point is not drawn
+        anyway); the opacity of a segment is ``alpha`` of the line times its
+        factor, 0 = not drawn. Matplotlib has no such line; this one draws,
+        at draw time, **stacked layers**: one per factor value, from the
+        lowest up, each layer being the segments whose factor is at least
+        that value (runs of consecutive segments, drawn as lines of their
+        own with the transform, clip and style of this one), with the
+        opacity that adds up to the wanted one. Edges of different layers
+        never meet, so there is no seam where the opacity changes (side by
+        side translucent lines would leave a light pixel there). Every
+        layer takes the dash pattern at the phase it has there (arc length
+        in display space from the start of the piece), so a dotted or dashed
+        line fades without a hitch; a break (NaN row) restarts the pattern
+        as in a plain ``Line2D``. All layers have butt caps (nothing sticks
+        out, in particular not a faint stub where a layer starts); so a
+        solid line is half a line width shorter at each end than a plain
+        one. No markers. In a legend it appears as the plain line.
+        """
+
+        _MAX_LEVELS = 64
+
+        def __init__(self, xdata, ydata, *, seg_alpha, **kwargs):
+            super().__init__(xdata, ydata, **kwargs)
+            self._seg_alpha = np.asarray(seg_alpha, dtype=float)
+
+        def _dash_phase_base(self):
+            """(offset, on-off sequence) in line-width-free units."""
+            pat = getattr(self, "_unscaled_dash_pattern", None)
+            if pat is None:
+                try:
+                    from matplotlib.lines import _get_dash_pattern
+                    pat = _get_dash_pattern(self.get_linestyle())
+                except Exception:           # unknown version: no phase
+                    pat = (0.0, None)
+            return float(pat[0] or 0.0), pat[1]
+
+        def draw(self, renderer):
+            if not self.get_visible():
+                return
+            xy = self.get_xydata()
+            seg = self._seg_alpha
+            if xy.shape[0] < 2 or seg.shape[0] != xy.shape[0] - 1:
+                return super().draw(renderer)
+            nseg = xy.shape[0] - 1
+            ok = np.isfinite(xy).all(axis=1)
+            good = ok[:-1] & ok[1:] & np.isfinite(seg)
+            fac = np.where(good, np.clip(seg, 0.0, 1.0), np.nan)
+            fac = np.round(fac * 255.0) / 255.0          # the renderer's 8 bit
+            lev = np.unique(fac[np.isfinite(fac) & (fac > 0.0)])
+            if lev.size > self._MAX_LEVELS:              # arbitrary factors
+                fac = np.round(fac * 32.0) / 32.0
+                lev = np.unique(fac[np.isfinite(fac) & (fac > 0.0)])
+            if lev.size == 0:
+                self.stale = False
+                return
+            # arc length [points] at every vertex since the start of its
+            # piece (restarts after a break), for the dash phase
+            disp = self.get_transform().transform(np.where(ok[:, None], xy, 0.0))
+            ppp = float(renderer.points_to_pixels(1.0)) or 1.0
+            ln = np.hypot(*(disp[1:] - disp[:-1]).T) / ppp
+            s_at = np.zeros(xy.shape[0])
+            for i in range(nseg):
+                s_at[i + 1] = s_at[i] + ln[i] if (ok[i] and ok[i + 1]) else 0.0
+            off, seq = self._dash_phase_base()
+            period = float(np.sum(seq)) if seq is not None else 0.0
+            lw = float(self.get_linewidth())
+            scale = lw if (mpl.rcParams["lines.scale_dashes"] and lw > 0.0) \
+                else 1.0
+            base = self.get_alpha()
+            base = 1.0 if base is None else float(base)
+            prev = 0.0
+            for k, fv in enumerate(lev):
+                # total opacity base * fv from what lies underneath
+                # (base * prev) and this layer
+                a_k = 1.0 - (1.0 - base * fv) / (1.0 - base * prev)
+                prev = float(fv)
+                if a_k <= 0.0:
+                    continue
+                m = good & (fac >= fv - 1.0e-9)
+                i = 0
+                while i < nseg:
+                    if not m[i]:
+                        i += 1
+                        continue
+                    j = i
+                    while j + 1 < nseg and m[j + 1]:
+                        j += 1
+                    tmp = Line2D(xy[i:j + 2, 0], xy[i:j + 2, 1])
+                    tmp.update_from(self)
+                    tmp.set_marker("None")
+                    tmp.set_alpha(min(a_k, 1.0))
+                    if period > 0.0:
+                        tmp.set_linestyle(((off + s_at[i] / scale) % period,
+                                           tuple(float(v) for v in seq)))
+                    tmp.set_solid_capstyle("butt")
+                    tmp.set_dash_capstyle("butt")
+                    tmp.draw(renderer)
+                    i = j + 1
+            self.stale = False
+
+    _FadeLine2D.__module__ = __name__
+    globals()["_FadeLine2D"] = _FadeLine2D
+    return _FadeLine2D
+
+
+def _add_overlay_line(ax, xy, seg, kw):
+    """Add one overlay line to ``ax`` (``add_artist``); returns the artist.
+
+    ``seg`` = opacity factor per segment of ``xy`` or ``None``; a line whose
+    factors are all 1 is a plain ``Line2D``, any other one a
+    :func:`_fade_line_class` line.
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic).
+    """
+    from matplotlib.lines import Line2D
+    if seg is not None:
+        fin = seg[np.isfinite(seg)]
+        if fin.size and float(fin.min()) < 1.0:
+            line = _fade_line_class()(xy[:, 0], xy[:, 1], seg_alpha=seg, **kw)
+            ax.add_artist(line)
+            return line
+    line = Line2D(xy[:, 0], xy[:, 1], **kw)
+    ax.add_artist(line)
+    return line
+
+
 def slice_overlay_polylines(
     slices: Sequence[dict],
     *,
@@ -4363,7 +4803,24 @@ def slice_overlay_polylines(
     slice meets it (:func:`slice_intersection_polyline`) becomes one entry,
     drawn on panel ``j`` only: on a map the trace of the plane at that depth,
     on a ns / ew / plane section the line in which the plane cuts the
-    section. The typical use is a **fault plane**: a dipping ``"plane"`` (or
+    section.
+
+    **Defining points.** For a fault from two surface points (a resolved
+    ``kind="profile"`` with ``dip != 90``, or with ``overlay``) the spec keys
+    ``limit_km`` (default 0.0), ``alpha_outside`` (default 0.25) and
+    ``fade_km`` (default 2.0) make every line weaker outside the stretch
+    between p1 and p2 (widened by ``limit_km`` km at both ends, narrowed if
+    negative): full opacity (the style given) inside, then falling linearly
+    over ``fade_km`` km to ``alpha_outside`` times the style's ``alpha``
+    (``0`` = fully transparent, like ``alpha_mode="fade"``; ``fade_km=0`` =
+    abrupt step), so the extrapolated fault is visible but weaker.
+    ``limit_km=None`` switches this off (one plain line, as before). The line
+    is cut at the ends of the stretch and at the steps of the fade, and its
+    entry carries ``alpha_fn`` (see ``polylines`` of
+    :func:`plot_model_slices`), the opacity factor per segment. See
+    :func:`_fault_limit_range`.
+
+    The typical use is a **fault plane**: a dipping ``"plane"`` (or
     ``kind="profile"`` with ``dip`` in :func:`femtic.resolve_slice_positions`,
     a fault from two surface points) with ``overlay=True`` shows its trace on
     every map and its dipping line on every section.
@@ -4394,8 +4851,11 @@ def slice_overlay_polylines(
         ``{"overlay<i>_slice<j>": entry}`` (``i`` = index of the flagged
         spec in ``slices``, ``j`` = number of the displayed panel); each entry
         has the CRS-tagged ``points`` ``(array, "model")``, ``label``,
-        ``style``, ``max_dist=0`` and ``panels=[j]``. Panels the flagged
-        slice does not meet (parallel, outside the clip region) get no entry.
+        ``style``, ``max_dist=0`` and ``panels=[j]`` (and ``alpha_fn`` for a
+        fault limited to its defining points). Panels the flagged slice does
+        not meet (parallel, outside the clip region), or of which nothing is
+        visible (``alpha_outside=0`` and the line outside the stretch), get
+        no entry.
         Merge it into the ``polylines`` of :func:`plot_model_slices` (which
         does so by itself for slices carrying ``overlay``, as does
         :func:`plot_ensemble_slices`).
@@ -4426,6 +4886,7 @@ def slice_overlay_polylines(
         style = dict(ov)
         label = style.pop("label", _slice_label(sp))
         style = _line_style(style, color="k", linestyle="-", linewidth=1.5)
+        rng = _fault_limit_range(sp)       # None = no limit (as before)
         for jpos, j in enumerate(shown):
             if j == i:
                 continue
@@ -4434,9 +4895,19 @@ def slice_overlay_polylines(
                 mesh_file=mesh_file, n=n)
             if pts is None:
                 continue
-            out[f"overlay{i}_slice{jpos}"] = dict(
-                points=(pts, "model"), label=label, style=dict(style),
-                max_dist=0.0, panels=[jpos])
+            ent = dict(points=(pts, "model"), label=label,
+                       style=dict(style), max_dist=0.0, panels=[jpos])
+            if rng is not None:
+                # opacity 1 between the defining points, falling to
+                # alpha_outside outside: cut the line where the opacity
+                # changes, give the entry the factor as a function
+                pts = _refine_polyline_at_strike(pts, sp, _fault_cuts(rng))
+                fn = _fault_alpha_fn(sp, rng)
+                if not np.any(fn(0.5 * (pts[:-1] + pts[1:])) > 0.0):
+                    continue                   # nothing of it shows
+                ent["points"] = (pts, "model")
+                ent["alpha_fn"] = fn
+            out[f"overlay{i}_slice{jpos}"] = ent
     return out
 
 
@@ -4454,22 +4925,72 @@ def _overlay_piece_xy(pl, kind, *, z0=None, section=None):
 
     Added 2026-11-12, Claude Sonnet 5.5 (Anthropic).
     """
+    res = _overlay_piece_xy_alpha(pl, kind, z0=z0, section=section)
+    return None if res is None else res[0]
+
+
+def _segment_factors(pl, Q):
+    """Opacity factors of the segments of a 3-D piece ``Q`` of an overlay line.
+
+    ``None`` if the entry has no ``alpha_fn``; else ``alpha_fn`` of the
+    segment midpoints (``len(Q) - 1`` values).
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic).
+    """
+    fn = pl.get("alpha_fn")
+    if fn is None:
+        return None
+    Q = np.asarray(Q, dtype=float)
+    return np.asarray(fn(0.5 * (Q[:-1] + Q[1:])), dtype=float)
+
+
+def _join_pieces(pieces, facs):
+    """Stack 2-D pieces with NaN rows between them; same for the factors.
+
+    ``pieces`` = list of ``(k, 2)`` arrays, ``facs`` = list of the factor
+    arrays (``k - 1`` values) or ``None``. Returns ``(xy, seg)``: ``seg`` has
+    ``len(xy) - 1`` values (NaN for the two segments at every break), or is
+    ``None`` without factors.
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic).
+    """
+    gap = np.full((1, 2), np.nan)
+    xy = np.vstack([q for pc in pieces for q in (pc, gap)][:-1])
+    if facs is None:
+        return xy, None
+    nan2 = np.full(2, np.nan)
+    seg = np.concatenate([q for f in facs for q in (f, nan2)][:-1])
+    return xy, seg
+
+
+def _overlay_piece_xy_alpha(pl, kind, *, z0=None, section=None):
+    """As :func:`_overlay_piece_xy`, with the opacity factor per segment.
+
+    Returns ``(xy, seg)`` or ``None``; ``seg`` is ``None`` for an entry
+    without ``alpha_fn`` (see :func:`slice_overlay_polylines`), else an array
+    with one factor per segment of ``xy`` (NaN where ``xy`` has a break).
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic).
+    """
     P = pl["pts"]
     if kind == "map":
         zr = pl["z_range"]
         if zr is not None and not (zr[0] - 1e-3 <= z0 <= zr[1] + 1e-3):
             return None
         pieces = [np.column_stack([P[:, 0], P[:, 1]])]
+        facs = None if pl.get("alpha_fn") is None else [
+            _segment_factors(pl, P)]
     else:
         point, normal, u_ax, v_ax, to_disp = section
-        pieces = []
+        pieces, facs = [], ([] if pl.get("alpha_fn") is not None else None)
         for Q in _clip_polyline_to_slab(P, point, normal, pl["max_dist"]):
             X, Y = to_disp(Q @ u_ax, Q @ v_ax)
             pieces.append(np.column_stack([X, Y]))
+            if facs is not None:
+                facs.append(_segment_factors(pl, Q))
     if not pieces:
         return None
-    gap = np.full((1, 2), np.nan)
-    return np.vstack([q for pc in pieces for q in (pc, gap)][:-1])
+    return _join_pieces(pieces, facs)
 
 
 def _clip_polyline_to_slab(points, point, normal, dmax):
@@ -4543,7 +5064,8 @@ def _prepare_polylines(
     Returns a list of dicts (``name``, ``pts`` (m, 3) model-local metres,
     ``label``, ``style``, ``color``, ``kinds`` (frozenset of panel kinds or
     ``None``), ``max_dist`` [m] or ``None``, ``z_range``, ``panels``
-    (frozenset of 0-based panel indices or ``None``)). See the
+    (frozenset of 0-based panel indices or ``None``), ``alpha_fn`` (function
+    or ``None``)). See the
     ``polylines`` parameter of :func:`plot_model_slices` for the format.
     """
     if not polylines:
@@ -4629,10 +5151,15 @@ def _prepare_polylines(
             raise ValueError(f"polylines[{name!r}]: style must be a dict.")
         style = dict(style or {})
         label = style.pop("label", ent.get("label", name))
+        afn = ent.get("alpha_fn")
+        if afn is not None and not callable(afn):
+            raise ValueError(
+                f"polylines[{name!r}]: alpha_fn must be a function "
+                "(m, 3) model-local metres -> (m,) opacity factors, or None.")
         out.append(dict(
             name=name, pts=arr, label=label, style=style,
             color=_POLYLINE_COLORS[idx % len(_POLYLINE_COLORS)],
-            kinds=kinds, max_dist=md, z_range=zr, panels=pn))
+            kinds=kinds, max_dist=md, z_range=zr, panels=pn, alpha_fn=afn))
     return out
 
 
@@ -4903,6 +5430,19 @@ def plot_model_slices(
         ``panel=False`` the spec is no panel of its own, it only supplies
         its ``overlay`` lines (a fault trace in all the slices, without a
         fault panel); default ``panel=True``.
+
+        A fault from two surface points (``kind="profile"`` resolved by
+        ``femtic.resolve_slice_positions``, with ``dip != 90`` or with
+        ``overlay``) is shown at full opacity between its two defining points
+        and fainter outside them: ``limit_km`` (km, default 0.0; ``> 0``
+        widens the stretch at both ends, ``< 0`` narrows it; ``None`` = off),
+        ``alpha_outside`` (default 0.25; opacity far outside, 0 = fully
+        transparent there) and ``fade_km`` (default 2.0; the opacity falls
+        linearly from 1 at the ends of the stretch to ``alpha_outside`` over
+        this width, like ``alpha_mode="fade"``; 0 = abrupt). This applies to
+        the overlay lines on the other panels (``alpha_outside`` relative to
+        their own ``alpha``) and, with ``panel=True``, to the fault panel
+        itself (faded towards white).
     cmap
         Matplotlib colormap name.
     clim
@@ -5001,6 +5541,14 @@ def plot_model_slices(
           indices into ``slices`` (the displayed ones, i.e. without
           ``panel=False`` specs); the polyline is drawn on those panels
           only (default: on all, as before).
+        - ``alpha_fn`` (optional): a function ``(m, 3)`` model-local metres
+          -> ``(m,)`` opacity factors in ``[0, 1]``, called with the midpoint
+          of every segment of the drawn line; the opacity of the segment is
+          the ``alpha`` of its style times the factor (0 = not drawn). The
+          dash pattern stays continuous along the line. Faults limited to
+          their defining points (``limit_km``) use it
+          (:func:`slice_overlay_polylines`); the line must have vertices
+          where the factor changes (the function is evaluated per segment).
 
         The polylines never change the axis limits. Units are metres; the
         km scripts convert with ``fem.polylines_km_to_m``.
@@ -5615,6 +6163,14 @@ def plot_model_slices(
             if out and _ov_in:
                 print(f"  plot: {len(_ov_in)} overlay line(s) of slice(s) with "
                       "'overlay'")
+            for _s in slices:
+                _fr = _fault_limit_range(_s) if isinstance(_s, dict) else None
+                if out and _fr is not None:
+                    print(f"  plot: fault '{_s.get('title', '')}': defining "
+                          f"stretch {_fr[0] / 1000.0:.2f} ... "
+                          f"{_fr[1] / 1000.0:.2f} km along strike from its "
+                          f"midpoint; opacity falls to {_fr[2]:g} over "
+                          f"{_fr[3] / 1000.0:g} km outside")
         # panel=False: overlay source only, no panel of its own
         slices = [_s for _s in slices if not _is_hidden_slice(_s)]
         if not slices:
@@ -5779,29 +6335,35 @@ def plot_model_slices(
             if pl["panels"] is not None and _cur_panel[0] not in pl["panels"]:
                 continue
             P = pl["pts"]
+            _has_fn = pl.get("alpha_fn") is not None
             if kind == "map":
                 zr = pl["z_range"]
                 if zr is not None and not (zr[0] - 1e-3 <= z0 <= zr[1] + 1e-3):
                     continue
                 pieces = [np.column_stack([(P[:, 0] + dE) * sc,
                                            (P[:, 1] + dN) * sc])]
+                facs = [_segment_factors(pl, P)] if _has_fn else None
             else:
                 point, normal, u_ax, v_ax, to_disp = section
                 pieces = []
+                facs = [] if _has_fn else None
                 for Q in _clip_polyline_to_slab(P, point, normal,
                                                 pl["max_dist"]):
                     X, Y = to_disp(Q @ u_ax, Q @ v_ax)
                     pieces.append(np.column_stack([X, Y]))
+                    if _has_fn:
+                        facs.append(_segment_factors(pl, Q))
             if not pieces:
                 continue
-            gap = np.full((1, 2), np.nan)       # breaks the line between pieces
-            xy = np.vstack([q for pc in pieces for q in (pc, gap)][:-1])
+            # NaN rows break the line between pieces; `seg` = opacity factor
+            # per segment (alpha_fn of a fault limited to its points)
+            xy, seg = _join_pieces(pieces, facs)
             kw = _line_style(pl["style"], color=pl["color"], linewidth=1.5,
                              linestyle="-", zorder=7)
             if pl["label"] is not None:
                 kw["label"] = str(pl["label"])
                 labelled = True
-            ax.add_artist(Line2D(xy[:, 0], xy[:, 1], **kw))
+            _add_overlay_line(ax, xy, seg, kw)
         return labelled
 
     # -- sample boreholes (before figure, so depth range is known) ---------------
@@ -6262,6 +6824,7 @@ def plot_model_slices(
                     ax.invert_xaxis()
                 _apply_aspect(ax, "section", _hsc)
                 _ref_drawn = _overlay_reference(ax, polys_d, eidx)
+                _fault_veil(ax, _fault_limit_range(spec), _hsc)
                 _poly_drawn = _overlay_polylines(
                     ax, "plane",
                     section=(_pt, normal, u_ax, v_ax,
@@ -6312,6 +6875,7 @@ def plot_model_slices(
                     ocean_color=ocean_color, air_color=air_color,
                     ocean_value=ocean_value, invert_v=False, poly_alphas=_pa)
                 _ref_drawn = _overlay_reference(ax, polys_d, eidx)
+                _fault_veil(ax, _fault_limit_range(spec), _psc)
                 _poly_drawn = _overlay_polylines(
                     ax, "plane",
                     section=(_pt, normal, u_ax, v_ax,
@@ -7648,6 +8212,7 @@ def plot_ensemble_slices(
                                    invert_x=bool(spec.get("invert_x", False)),
                                    xlabel="along-strike [m]", ylabel="down-dip [m]",
                                    xlim=_pxl, ylim=_pyl, zlim=None, title=title_tmpl,
+                                   veil=_fault_limit_range(spec),
                                    ov_kind="plane", ov_z0=None,
                                    ov_section=(_pt, normal, u_ax, v_ax,
                                                lambda pu, pv, _a=_u0, _b=_v0:
@@ -7779,16 +8344,17 @@ def plot_ensemble_slices(
                 ax.invert_xaxis()
             # overlay lines (fault traces ...) of this column; add_artist
             # leaves the data limits and the axis limits as they are.
+            _fault_veil(ax, sg.get("veil"), 1.0)  # metres here
             for pl in _ov_lines:
                 if pl["panels"] is not None and col not in pl["panels"]:
                     continue
-                xy = _overlay_piece_xy(pl, sg["ov_kind"], z0=sg["ov_z0"],
-                                       section=sg["ov_section"])
-                if xy is None:
+                res = _overlay_piece_xy_alpha(pl, sg["ov_kind"], z0=sg["ov_z0"],
+                                              section=sg["ov_section"])
+                if res is None:
                     continue
                 kw = _line_style(pl["style"], color=pl["color"],
                                  linewidth=1.5, linestyle="-", zorder=7)
-                ax.add_artist(Line2D(xy[:, 0], xy[:, 1], **kw))
+                _add_overlay_line(ax, res[0], res[1], kw)
 
     # -- figure titles / joint colour bars ---------------------------------------
     def _suptitle(key, auto, **fields):

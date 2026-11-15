@@ -95,7 +95,8 @@ list can stay as it is.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `MOD_STATS_WHAT` | list of str | `["best","avg","med","err","mad"]` + one key per percentile level + one per `QDIFF_PAIRS` entry (+ `"err_boot"`) | Which panels to plot. `"best"` plots the best-nRMS converged member (to `MOD_QC_FILE`) — the former `MOD_QC` switch. Every other entry is a statistic key: subset of `"avg"`, `"var"`, `"err"`, `"med"`, `"mad"`, `"var_boot"`, `"err_boot"`, the log10 sensitivity keys (`"sens_mean_raw"`, `"sens_{mean,median,min,max,std}_{na,an}"`), `"sens_cv_na"`/`"sens_cv_an"` (linear), `"simrc_coef"`/`"simrc_corr"` (log10), plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). `"err"` = `sqrt(var)` is plotted by default *instead of* `"var"`, since `var` is in (log10 Ω·m)² and isn't on the same scale as `MAD`/`QDIFF` (log10 Ω·m); add `"var"` back manually (with a `MOD_STATS_STYLE` entry) if you specifically want the raw-variance panel. |
+| `MOD_STATS_WHAT` | list of str | `["best","avg","med","err","mad"]` + one key per percentile level + one per `QDIFF_PAIRS` entry (+ `"err_boot"`) | Which panels to plot. `"best"` plots the best-nRMS converged member (to `MOD_QC_FILE`) — the former `MOD_QC` switch. Every other entry is a statistic key: subset of `"avg"`, `"var"`, `"err"`, `"med"`, `"mad"`, `"var_boot"`, `"err_boot"`, the log10 sensitivity keys (`"sens_{mean,median,min,max,std}"`, each divided by its own max, so each peaks at 0), `"sens_cv"` (linear); with a results file that holds both kinds the same names are suffixed `_cum` / `_vn`, see *Raw or volume-normalised sensitivity*, `"simrc_coef"`/`"simrc_corr"` (log10), plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). `"err"` = `sqrt(var)` is plotted by default *instead of* `"var"`, since `var` is in (log10 Ω·m)² and isn't on the same scale as `MAD`/`QDIFF` (log10 Ω·m); add `"var"` back manually (with a `MOD_STATS_STYLE` entry) if you specifically want the raw-variance panel. |
+| `MOD_SENS_KIND` | str | `"auto"` | Which sensitivity the `sens_*` entries of `MOD_STATS_WHAT` and the name in `MOD_ALPHA_SOURCE` stand for: `"raw"` (cumulative sum\|J\|, key suffix `_cum`), `"volume_normalised"` (raw / cell volume, suffix `_vn`; `"volume_normalized"` accepted), `"auto"` (the one kind of a single-kind file; the volume-normalised one of a file with both) or `"both"` (panels: every `sens_*` panel once per kind; the blanking uses the `"auto"` kind). See *Raw or volume-normalised sensitivity* below. |
 | `MOD_QC` | bool | derived | `"best" in MOD_STATS_WHAT`. Not user-set — edit `MOD_STATS_WHAT` instead. |
 | `MOD_QC_FILE` | str | `<prefix>_best` | Output path for the `"best"` panel; `_plot_slice()` appends `.<fmt>` per `MOD_PLOT_FORMAT` entry. |
 | `MOD_STATS` | bool | derived | `bool(set(MOD_STATS_WHAT) - {"best"})`. Not user-set — edit `MOD_STATS_WHAT` instead. |
@@ -121,6 +122,53 @@ Block files use the template block file (`TEMPLATE_BLOCK`, default the best
 member's own file; preserves header, bounds, and flag columns).  Output
 filenames follow the pattern `resistivity_block_<prefix>_<stat>.dat`.
 
+
+### Raw or volume-normalised sensitivity
+
+`femtic_ens_post.py` stores the sensitivity statistics of one kind under plain
+keys (`SENS_KIND = "raw"` or `"volume_normalised"`) or of both kinds under
+suffixed keys (`SENS_KIND = "both"`: `_cum` = raw, `_vn` =
+volume-normalised). `MOD_SENS_KIND` picks among what the results file holds:
+
+| `MOD_SENS_KIND` | file with one kind | file with both kinds | file from before 2026-11-15 |
+|---|---|---|---|
+| `"auto"` | its kind, plain names | volume-normalised (`..._vn`) | plain names, as before |
+| `"raw"` | plain names if the file holds raw, else the entry is skipped with a message | `..._cum` | plain names, used with a note (the file does not say which kind it holds) |
+| `"volume_normalised"` | plain names if the file holds that kind, else skipped with a message | `..._vn` | as above |
+| `"both"` | its kind | every `sens_*` panel twice (`..._cum`, `..._vn`) | plain names |
+
+- An entry that names the kind itself (`"sens_mean_cum"`, or
+  `MOD_ALPHA_SOURCE = "sens_median_cum > -3."`) is used as it is whatever
+  `MOD_SENS_KIND` says: e.g. blank by one kind and plot the other.
+- A kind the file does not hold gives a message and no panel; the other kind's
+  map is never drawn under the wrong name. If `MOD_ALPHA_SOURCE` cannot be
+  resolved, blanking is switched off (printed).
+- The two kinds have different spatial distributions, so a
+  `MOD_ALPHA_SOURCE` threshold chosen for one is not valid for the other:
+  look at the ROI diagnostic of each kind before choosing it.
+- `MOD_STATS_STYLE` of the plain name (`"sens_mean"`) applies to both
+  suffixed keys unless the suffixed key has its own entry. Colour bars of
+  suffixed panels get the kind appended (`[raw]`, `[volume_normalised]`);
+  block files and figures are named with the key actually plotted
+  (`resistivity_block_<P>_sens_mean_vn.dat`, `<P>_sens_mean_vn.pdf`).
+  Single-kind files keep the names and labels of earlier versions.
+- **Normalisation.** Every `sens_*` statistic (`mean`, `median`, `min`,
+  `max`, `std`) is stored by `femtic_ens_post.py` (2026-11-15 (c)) as log10
+  of the statistic divided by **its own max** over the free blocks, so each
+  peaks at exactly 0 and the default colour range is `[-5, 0]`;
+  `sens_cv` (`std / mean`) is linear. The statistics therefore do not share
+  a divisor: e.g. `sens_max` and `sens_mean` both peak at 0, and their native
+  ratio is in `res["sens_ranges"][kind][stat] = (min, max)` (native value of
+  a stored key = `10**key * max`). A threshold in `MOD_ALPHA_SOURCE` such as
+  `"sens_median > -3."` is relative to the median's own maximum.
+- **Results files from before 2026-11-15 (c)** hold `sens_<stat>_an` /
+  `sens_<stat>_na` (and the native-units `sens_mean_raw`). The new plain
+  names are then read from the nearest old key (`sens_mean` -> `sens_mean_an`,
+  one common divisor for all statistics there) with a printed note; `_na`
+  names have no equivalent. In the other direction, an old name such as
+  `"sens_mean_an"` asked of a new file is read as `sens_mean`, with a note;
+  `"sens_mean_na"` is reported and skipped. The legacy `MOD_STATS_STYLE`
+  entries (`_na` / `_an`, native `sens_mean_raw`) are kept for old files.
 
 ### Sensitivity panels: ROI
 
@@ -156,7 +204,7 @@ results file (`COMPUTE_SENS` in `femtic_ens_post.py`).
 
 | Parameter | Description |
 |---|---|
-| `MOD_SLICES` | List of slice-spec dicts (`kind`, `z0`/`x0`/`y0`). Kinds: `"map"`, `"ns"`, `"ew"`, `"plane"` (see "Vertical section" below). |
+| `MOD_SLICES` | List of slice-spec dicts (`kind`, `z0`/`x0`/`y0`). Kinds: `"map"`, `"ns"`, `"ew"`, `"plane"` (see "Vertical section" below) and `"profile"` (a fault from two surface points, see "Fault from two surface points" below). |
 | `MOD_XLIM / YLIM / ZLIM` | Global axis limits (model-local **km**); `None` = auto. Overridden automatically by `MOD_ROI_AUTO` (below) when sites are available. |
 | `MOD_ROI_AUTO` | Default `True`. When site positions are available, derives `MOD_XLIM`/`MOD_YLIM` from the site bounding box + `MOD_ROI_PAD_XY`, and sets `MOD_ZLIM` from `MOD_ROI_ZLIM` — overriding any literal values set above. Falls back to the literals (or full-mesh auto-scaling) when no sites are found. |
 | `MOD_ROI_PAD_XY` | Default `2.0` km. Padding added around the site bounding box for `MOD_XLIM`/`MOD_YLIM`. |
@@ -167,7 +215,7 @@ results file (`COMPUTE_SENS` in `femtic_ens_post.py`).
 | `MOD_OCEAN_COLOR` | Flat colour for ocean/lake cells; `None` = colormap. |
 | `MOD_AIR_COLOR` | Flat colour for air cells. |
 | `MOD_AIR_BGCOLOR` | Axes facecolor for air; `None` = figure default. |
-| `MOD_ALPHA_SOURCE` | Single condition `"<name> <op> <value>"` selecting the cells to **show** (e.g. `"sens_mean_an > -3."`); `<name>` is any statistic key stored in the results file (see `MOD_STATS_WHAT`), `<op>` one of `> >= < <=`, `<value>` in that statistic's own units (log10 for sensitivities). Parsed with a regex, never `eval`ed. `None` = off. |
+| `MOD_ALPHA_SOURCE` | Single condition `"<name> <op> <value>"` selecting the cells to **show** (e.g. `"sens_median > -3."`); `<name>` is any statistic key stored in the results file (see `MOD_STATS_WHAT`), `<op>` one of `> >= < <=`, `<value>` in that statistic's own units (log10 for sensitivities). Parsed with a regex, never `eval`ed. `None` = off. All names, units and examples: `femtic_ens_plot_slices_alpha.xlsx`, [Fading the model](#fading-the-model-mod_alpha_). |
 | `MOD_ALPHA_MODE` | `"blank"` (failing cells removed) or `"fade"` (failing cells fade linearly from opaque at the threshold to transparent `MOD_ALPHA_FADE_WIDTH` beyond it). |
 | `MOD_ALPHA_FADE_WIDTH` | Fade width in the source's units (e.g. `1.0` = one decade). Default `1.0`. |
 | `MOD_ALPHA_QC` | Also apply the mask to the `MOD_QC` best-member figure. Default `True`. |
@@ -185,6 +233,83 @@ results file (`COMPUTE_SENS` in `femtic_ens_post.py`).
 | `MOD_TICK_DECIMALS` | Decimal digits shown on depth / easting-northing / lat-lon tick labels (all share this one value). Default `None` = `fviz.plot_model_slices`' own per-axis-type formatting unchanged. |
 | `MOD_TITLE_FONTSIZE` | Font size of the figure title; `None` = `MOD_LABEL_FONTSIZE + 6`. |
 | `MOD_SHOW_IN_SPYDER` | `True` (default) and running inside Spyder (detected via `utl.runtime_env() == "spyder"`) → every saved figure is also displayed inline in Spyder's Plots pane via `plt.show()`, in addition to being written to disk. No effect outside Spyder; set `False` to disable even under Spyder. |
+
+### Fading the model (`MOD_ALPHA_*`)
+
+`MOD_ALPHA_SOURCE` blanks or fades the model panels by one statistic of the
+ensemble -- typically the cells the data hardly constrain. The settings are the
+rows `MOD_ALPHA_SOURCE`, `MOD_ALPHA_MODE`, `MOD_ALPHA_FADE_WIDTH`,
+`MOD_ALPHA_QC` and `MOD_ALPHA_EXCLUDE` of the table above, and
+`MOD_SENS_KIND` for sensitivities. The workbook
+**`femtic_ens_plot_slices_alpha.xlsx`** (in the folder of this readme) is the
+reference for them:
+
+| Sheet | Content |
+|---|---|
+| `About` | What the workbook is, the rule in three lines, provenance, colour legend. |
+| `Settings` | Every setting that fades something: the six above, `SENS_KIND` of `femtic_ens_post.py`, and the fault keys `limit_km`, `alpha_outside`, `fade_km` -- with values, defaults and effect. |
+| `Names` | The statistic names usable in `MOD_ALPHA_SOURCE` (`sens_*`, `avg`, `med`, `err`, `var`, `mad`, `p<level>`, `qdiff_<lo>_<hi>`, `err_boot`, `var_boot`, `simrc_*`): what each is, its units / range, the `femtic_ens_post.py` setting that stores it, an example condition. |
+| `Name resolution` | What a name turns into for a results file with both sensitivity kinds, with `volume_normalised` only and with `raw` only, for each `MOD_SENS_KIND` -- including the cases in which nothing is found (generated with `fem.resolve_sens_stat`, the function the script calls). |
+| `Fade calculator` | The alpha of a cell as a function of its value for a given name, operator, threshold, mode and width (live formulas; change the blue cells on yellow), and the three settings lines to paste into the script. |
+
+The rules in short:
+
+- `MOD_ALPHA_SOURCE = "<name> <op> <value>"`: **one** comparison, `<op>` one of
+  `> >= < <=`, `<value>` in the units of the statistic (log10 for the
+  sensitivities; they are divided by their own max, so <= 0). The cells that
+  satisfy it are shown; NaN cells always get alpha 0. It is parsed with a
+  regex, never evaluated, so two conditions cannot be combined.
+- `MOD_ALPHA_MODE = "blank"`: the other cells are removed. `"fade"`: their alpha
+  is `1 - distance / MOD_ALPHA_FADE_WIDTH` clipped to `0 ... 1`, `distance`
+  being how far the value lies beyond the threshold. With `"sens_median > -5."`
+  and width `1.`: alpha 1 down to -5, 0.5 at -5.5, 0 at -6 and below.
+- **Sensitivity names depend on the file.** `femtic_ens_post.py` with
+  `SENS_KIND = "volume_normalised"` (its default) or `"raw"` stores plain
+  names (`sens_median`); with `"both"` it stores `sens_median_cum` (raw) and
+  `sens_median_vn` (volume-normalised). A suffixed name is used only if the
+  file holds that key: `"sens_median_vn > -5."` on a file with one kind is not
+  resolved, a message is printed and the fading is **switched off**. The plain
+  name `"sens_median > -5."` works for every file (for a file with both kinds
+  it is the `_vn` map when `MOD_SENS_KIND = "auto"`).
+- The `sens_*` and `simrc_*` panels themselves are drawn without the mask
+  (`MOD_ALPHA_EXCLUDE`); `MOD_ALPHA_QC` extends it to the best-member figure.
+- The mask is a model block file (`resistivity_block_<P>_alpha.dat`, raw values
+  = alpha) that the slice plots read; the fault's own fade (`fade_km`) is a
+  separate mechanism of the slice entry.
+
+### Fault from two surface points
+
+A `kind="profile"` entry with `dip` is the plane through the two surface
+points `p1`, `p2`. The keys are degrees / metres even in this km script (`p1`,
+`p2` = `([lon, lat], "latlon")`, `([E, N], "utm")` or `[x, y]` model-local
+metres; `z_top`, `z_bot`, `xlim`, `ylim` in m), except `limit_km` and
+`fade_km`, which are in km as their names say.
+
+```python
+dict(kind="profile",
+     p1=([6.030869, 45.962166], "latlon"),
+     p2=([6.115936, 45.910655], "latlon"),
+     dip=110.0, z_top=0.0, z_bot=20000.0,
+     overlay=dict(color="magenta", linestyle=":", linewidth=15.0, alpha=0.9),
+     title="Vuache fault",
+     limit_km=0.0, alpha_outside=0.25, fade_km=2.0,
+     panel=False)
+```
+
+| Key | Default | Meaning |
+|---|---|---|
+| `dip` | `90` | The plane dips to the **right** of the direction p1 -> p2 for `dip < 90`; `dip = 180 - d` dips `d` degrees to the left. For the Vuache fault p1 -> p2 runs NW -> SE, so `dip=110.0` is **70 deg to the NE**; `dip=70.0` would dip SW. A third point of that plane: (6.079571, 45.941367) at 2 km depth. |
+| `overlay` | none | `True` or `Line2D` keywords (`color`, `linestyle`, `linewidth`, `alpha`, `label`): draws the fault on every other panel of every figure (trace on the maps, dipping line on the sections). |
+| `panel` | `True` | `False` = no panel of its own, only the lines; drop it to also get the fault panel (the model on the fault plane, along strike x down dip). |
+| `limit_km` | `0.0` | **Limit to the defining points** (`femtic_viz.py` of 2026-11-15). The part of the fault between p1 and p2 is drawn as given; the rest of the plane -- the extrapolation along strike -- fades out. `limit_km` widens that stretch at both ends (`2.0` = 2 km beyond each point) or narrows it (`< 0`); `0` = exactly p1 ... p2; `None` = no distinction (one line, as before). |
+| `alpha_outside` | `0.25` | Opacity (`0 ... 1`) of the fault **far outside** the stretch: of the overlay lines (relative to their own `alpha`: `0.9` x `0.25` = 0.225) and, on the fault panel, of the model (faded towards white). `0` = fully transparent there, `1` = no difference. |
+| `fade_km` | `2.0` | Width (km) of the linear fade from full opacity at the ends of the stretch to `alpha_outside` -- the same ramp as `MOD_ALPHA_MODE = "fade"` for cells. `0` = abrupt step at the ends. With `alpha_outside = 0.0` the fault fades to nothing over `fade_km`. |
+
+The default `limit_km = 0.0` applies to every fault entry (`dip != 90` or with
+`overlay`), so an existing entry changes its look when the file is replaced:
+the lines outside p1 ... p2 fade out. A plain vertical `kind="profile"`
+without `overlay` keeps its look unless it carries `limit_km`. Details of the
+geometry: `femtic_viz_readme.md`, "Fault planes".
 
 ### Titles
 
@@ -456,3 +581,9 @@ the file.
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `MOD_POLYLINES = {name: entry}` (km; `{}` = none): lines drawn on the slice panels of every figure. Maps: plan view, optional `z_range`; ns / ew / plane sections: the parts within `max_dist` (default `MOD_PROJECTION_DIST`) of the section plane, projected into it. Points model-local km or CRS-tagged (`"utm"` metres, `"latlon"` degrees, longitude first); `style`, `label`, `kinds`. Passed to `fviz.plot_model_slices(polylines=...)` through `fem.polylines_km_to_m`. The intersection line of two slices is available as `fviz.slice_intersection_polyline` / `slice_intersection_polylines` (example in the Polylines section); it is not drawn automatically. With `MOD_POLYLINES = {}` the figures are unchanged. Needs `femtic.py` and `femtic_viz.py` of the same date. Tested on a synthetic mesh only. AI-generated; review before production use. |
 | 2026-11-11b | Claude Sonnet 5.5 (Anthropic) | `_title_for()` now calls `fviz.resolve_title` (the shared title logic of all plot scripts); behaviour as before, plus: a dict key is also found by its text form (`0` finds `"0"`). The title and colour bar settings of this script (`MOD_TITLE`, `MOD_PANEL_TITLES`, `MOD_CBAR_*`) are unchanged. Needs the `femtic_viz.py` of the same date. |
 | 2026-11-12 | Claude Sonnet 5.5 (Anthropic) | Fault from two surface points. A `kind="profile"` entry of `MOD_SLICES` takes `dip` (default 90 = as before; otherwise the dipping plane through p1 -> p2, dipping to the right of p1 -> p2) and any entry may carry `overlay` (`True` or `Line2D` keywords, + `label`): that plane is also drawn on every other panel (trace on maps, dipping line on sections). New polyline-entry key `panels`. Commented example in the script. Profile keys are degrees / metres, not km. Needs `femtic.py` and `femtic_viz.py` of the same date. Without `dip` / `overlay` the figures are unchanged. Tested on a synthetic mesh only. AI-generated; review before production use. New slice-spec key `panel=False`: the entry is no panel, it only draws its `overlay` line on all the other panels (fault trace without a fault panel). |
+| 2026-11-15 | Claude Sonnet 5.5 (Anthropic) | Raw or volume-normalised sensitivity: new `MOD_SENS_KIND` (`"auto"` / `"raw"` / `"volume_normalised"` / `"both"`) chooses among the sensitivity kinds that `femtic_ens_post.py` (`SENS_KIND = "both"`) stores as `_cum` / `_vn` keys, for the `sens_*` entries of `MOD_STATS_WHAT` and for `MOD_ALPHA_SOURCE`. Names that carry the kind win; a kind the file does not hold is reported, never substituted. `MOD_STATS_STYLE` of the plain name applies to the suffixed keys. Single-kind and older results files give the same panels as before (checked against the previous script on synthetic results). Needs the `femtic.py` of the same date. Drawing itself not run here (tested with the drawing stubbed). AI-generated; review before production use. |
+| 2026-11-15 (b) | Claude Sonnet 5.5 (Anthropic) | `sens_mean_raw` is stored max-normalised by `femtic_ens_post.py` (it was the one key in native units): its default `MOD_STATS_STYLE` is now `clim = [-5, 0]`, label `log10 S/Smax (mean, plain)`; results files from before that date (no `sens_ranges`) keep the native-units, auto-scaled style unless `MOD_STATS_STYLE["sens_mean_raw"]` is your own entry. Nothing else changed. Needs the `femtic.py` of the same date. Tested with the drawing stubbed out. AI-generated; review before production use. (Superseded by (c): `sens_mean_raw` is no longer stored.) |
+| 2026-11-15 (c) | Claude Sonnet 5.5 (Anthropic) | Follows `femtic_ens_post.py` (c): the sensitivity statistics are `sens_{mean,median,min,max,std}` (log10, each divided by its own max) and `sens_cv` (linear), with `_cum` / `_vn` suffixes for a file with both kinds; `_na` / `_an` and `sens_mean_raw` are gone from new files. Defaults changed: `MOD_STATS_WHAT` has `"sens_mean"`, `"sens_median"`, `"sens_cv"`; `MOD_ALPHA_SOURCE = "sens_median > -3."` (relative to the median's own max; the old default was relative to the max of the mean, so the blanked area changes slightly); new `MOD_STATS_STYLE` entries `sens_*` (`clim = [-5, 0]`, label `log10 S/Smax (stat)`). Old names and old results files are mapped with a printed note (`fem.resolve_sens_stat`). Commented fault example in `MOD_SLICES`: `dip=110.0` (a profile dips to the RIGHT of p1->p2, so `dip=70` would have dipped to the SW for the Annecy fault). Needs the `femtic.py` of the same date. Tested with the drawing stubbed out and on synthetic results only. AI-generated; review before production use. |
+| 2026-11-15 (f) | Claude Sonnet 5.5 (Anthropic) | **Workbook for the fading settings.** New `femtic_ens_plot_slices_alpha.xlsx` (sheets `About`, `Settings`, `Names`, `Name resolution`, `Fade calculator`): the settings that blank or fade the model, the statistic names usable in `MOD_ALPHA_SOURCE` with units and the `femtic_ens_post.py` setting that stores them, how a name is resolved for files with one or both sensitivity kinds (generated with `fem.resolve_sens_stat`), and a calculator of alpha from the cell value (checked against `fem.alpha_from_condition`: 200 cells, 4 operators, both modes, no difference). New section "Fading the model" above. Documentation only: no code change in the script. AI-generated; review before production use. |
+| 2026-11-15 (e) | Claude Sonnet 5.5 (Anthropic) | **`alpha_outside` fades.** New optional key `fade_km` of the `kind="profile"` entry (km, default `2.0`): outside p1 ... p2 the opacity of the fault falls linearly from 1 at the ends of the stretch to `alpha_outside` over `fade_km`, like `MOD_ALPHA_MODE = "fade"` for cells (`fade_km = 0` = the abrupt step of (d); `alpha_outside = 0` fades to fully transparent). For the overlay lines `alpha_outside` is now relative to the line's own `alpha`; dotted / dashed lines keep their pattern across the fade. The Vuache entry carries `fade_km=2.0`. No code change in the script body; needs the `femtic_viz.py` of the same date. Tested on a synthetic mesh (drawing run); not on your data. AI-generated; review before production use. |
+| 2026-11-15 (d) | Claude Sonnet 5.5 (Anthropic) | **Fault limited to its defining points.** The `kind="profile"` entry of `MOD_SLICES` takes `limit_km` (km, default `0.0`: the stretch p1 ... p2; `> 0` widens, `< 0` narrows it at both ends, `None` = off) and `alpha_outside` (default `0.25`): the fault between the two points is drawn as given, the rest fainter (overlay lines on the other panels; the model on the fault panel faded towards white). The Vuache entry carries both keys; the comment above it and the new section "Fault from two surface points" describe them. Based on the script as of 2026-11-15 16:12: all settings kept, `sens_*` names as in (c); MOD_ALPHA_SOURCE `"sens_median > -6."` (was `"sens_median_an > -6."`, now relative to the median's own max). No code change in the script; needs the `femtic_viz.py` of the same date. Tested on a synthetic mesh (drawing run); not on your data. AI-generated; review before production use. |

@@ -234,7 +234,7 @@ MARK_BEST = True
 #: and the best-fit table cover all accepted members. The figure files get the
 #: names of the members added (femtic_distort_stat_<member>.png). The histograms
 #: of one member show its sites; PER_SITE figures need two or more members.
-PLOT_MEMBERS = None
+PLOT_MEMBERS = "best"
 
 #: Print the distortion matrices of the best-fit member (the accepted member with
 #: the smallest nRMS) for every site: elements of C (or C'), cond(C), det(C).

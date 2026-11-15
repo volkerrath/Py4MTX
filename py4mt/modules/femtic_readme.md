@@ -203,6 +203,7 @@ python femtic.py edi-to-observe SITE01.edi SITE02.edi \
 | `read_resistivity_block()` | Parse resistivity block file → dict of arrays.     |
 | `tet_volumes()` | Vectorised tetrahedral volume via scalar triple product (nelem,). |
 | `build_region_geometry()` | Volume-weighted centroid and total volume for each free region. |
+| `read_h5_block_volumes()` | Volume of every resistivity block, summed from the mesh stored in `results_iterX.h5` (index space of `/model/sensitivity/*`); checks it against `raw / volume_normalised`. |
 | `ellipsoid_mask()` | Boolean mask for points inside a rotated ellipsoid (ZYX or SDS convention). |
 | `brick_mask()` | Boolean mask for points inside a rotated rectangular prism. |
 | `read_site_position()` | Return (x_m, y_m) model-local position for a site from observe.dat (4-6 token station lines). |
@@ -509,8 +510,9 @@ member directories except where a block file is named.
 
 | Function | Purpose |
 |---|---|
-| `read_ensemble_results(path, prefix=None, *, percentiles=None, out=True)` | Read the results `.npz` of `femtic_ens_post.py` into a dict: `ens`, `pert` (perturbed models of the same members or `None`), `model_source`, `avg`/`var`/`err`/`med`/`mad`, `prc`/`prc_levels`, `qdiff`, `var_boot`/`err_boot`/`var_boot_se`, `sens` (`{suffix: vector}`), `simrc_coef`/`simrc_corr`, `model_list`, `best_index`/`best_member`/`best_file`/`best_iter`/`best_nrms`, `nrms_table`, `nrms_max`, `perturbed_file`, `subsample` (`idx`, `n_accepted`, `seed`, or `None`). `prefix=None` detects the file's only ensemble. Statistics missing from the file are derived from the stored members. |
+| `read_ensemble_results(path, prefix=None, *, percentiles=None, out=True)` | Read the results `.npz` of `femtic_ens_post.py` into a dict: `ens`, `pert` (perturbed models of the same members or `None`), `model_source`, `avg`/`var`/`err`/`med`/`mad`, `prc`/`prc_levels`, `qdiff`, `var_boot`/`err_boot`/`var_boot_se`, `sens` (`{suffix: vector}`), `sens_kinds`/`sens_suffixes` (the kinds the `sens` keys hold and their key suffixes, or `None` for files from before 2026-11-15), `sens_ranges` (`{kind: {stat: (min, max)}}`, the native range of each stored statistic, or `None` for files from before 2026-11-15 (c)), `simrc_coef`/`simrc_corr`, `model_list`, `best_index`/`best_member`/`best_file`/`best_iter`/`best_nrms`, `nrms_table`, `nrms_max`, `perturbed_file`, `subsample` (`idx`, `n_accepted`, `seed`, or `None`). `prefix=None` detects the file's only ensemble. Statistics missing from the file are derived from the stored members. |
 | `ensemble_stat_map(res)` | `(stat_map, value_keys)`: every plottable statistic `key -> (vector, description)` (avg, var, err, med, mad, `p<level>`, `qdiff_*`, bootstrap, `sens_*`, `simrc_*`) and the keys on the resistivity scale (usable as borehole lines). |
+| `resolve_sens_stat(name, available, *, stored_kinds=None, stored_suffixes=None, kind="auto")` | `(key, note)`: the stored key that a `sens_*` panel / blanking name stands for, for the wanted sensitivity kind (`"auto"`, `"raw"`, `"volume_normalised"`; see `normalise_sens_kind`, `strip_sens_suffix`). `key` is `None` if nothing fits or the file holds only the other kind. Maps the dropped names `sens_<stat>_an` / `_na` too (see the 2026-11-15 (c) changelog). |
 | `resolve_results_template(res, template=None, *, ocean=None)` | Block file supplying header / region structure for the panels: the best member's own file, or `template`. Returns `(path, from_vector)`; `from_vector` is `True` when the "best" panel must be rebuilt from the stored best vector. |
 | `write_nrms_table(path, rows)` / `read_nrms_table(path)` | CSV of the per-member best nRMS (member, iteration, nRMS, status), sorted by nRMS. |
 
@@ -519,7 +521,7 @@ member directories except where a block file is named.
 | Function | Purpose |
 |---|---|
 | `km_to_m`, `lim_km_to_m`, `slices_km_to_m`, `plane_spec_km_to_m`, `plane_point_km_to_m`, `polylines_km_to_m` | `MOD_*` settings are in model-local km, `femtic_viz` wants metres; these convert scalars, limit pairs, `MOD_SLICES` lists and `kind="plane"` entries. The plane `point` may be model-local km (plain list or `([x, y, z], "model")`), `([E, N, z], "utm")` (E / N in UTM metres) or `([lon, lat, z], "latlon")` (degrees, longitude first); `z` is always km, depth positive down. The tagged UTM / latlon forms need the keyword arguments `zone`, `northern`, `origin_E`, `origin_N` of `plane_spec_km_to_m` (2026-11-09). `polylines_km_to_m(polylines)` converts the `MOD_POLYLINES` dict `{name: entry}` of `femtic_ens_plot_slices.py` for `fviz.plot_model_slices(polylines=...)`: `points` (model-local km, `z` = depth in km) are multiplied by 1000 (`x`, `y`, `z`), for `(pts, "utm")` only `z` (E / N stay UTM metres) and for `(pts, "latlon")` only `z` (degrees stay, longitude first); `max_dist` and `z_range` are km; `style` / `label` / `kinds` pass through; the input is not modified; `None` / `{}` -> `None`; `ValueError` / `TypeError` for malformed entries (2026-11-11). |
-| `parse_alpha_source(expr)` | `"sens_mean_an > -3."` -> `(name, op, value)`; regex, never `eval`. |
+| `parse_alpha_source(expr)` | `"sens_median > -3."` -> `(name, op, value)`; regex, never `eval`. |
 | `alpha_from_condition(arr, op, thr, mode, width)` | Per-free-parameter alpha in [0, 1] (`"blank"` hard cut, `"fade"` linear over `width`). |
 | `write_alpha_block(alpha, template, path, ocean=None, out=True)` | Block file whose raw values are the alpha values (read by `plot_model_slices(alpha_mode="direct")`). |
 | `STATS_AIR_RHO`, `STATS_AIR_LOG10_THRESH`, `STATS_OCEAN_RHO` | Sentinels (`1e30`, `29.0`, `1e-30`) written for air / ocean in statistics block files, so that a statistic near the ordinary air / ocean values is not painted as air / ocean. |
@@ -622,7 +624,114 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-11-12
+Updated: 2026-11-15
+
+### Changelog (2026-11-15) --- block volumes from `results_iterX.h5`
+- New `read_h5_block_volumes(h5_path, *, check_sensitivity=True, rtol=1e-4,
+  out=True)` (Section 6a, after `read_results_model`). FEMTIC does not write
+  the volume of a resistivity block, but `results_iterX.h5` holds the mesh
+  (`/model/mesh/node_coords`, `/model/mesh/elem_nodes`) and the
+  `/model/element_block_map`, so the function sums `tet_volumes()` per block.
+  Returns a dict: `volume` (`(nBlocks,)`, m^3, in the index space of the
+  `/model/sensitivity/*` datasets, fixed blocks included, 0 for a block without
+  elements), `n_elem`, `n_blocks`, `n_empty`, `n_unassigned` (elements with a
+  block index outside `0..nBlocks-1`, not counted) and `check`.
+- `check`: when both `/model/sensitivity/raw` and `.../volume_normalised` are
+  present, `raw / volume_normalised` is compared with the mesh volumes for all
+  blocks where both are positive; the dict holds `n_compared`, `max_rel_dev`
+  (`max |raw/vn/vol - 1|`), `ratio_median` and `ok` (`max_rel_dev <= rtol`).
+  A failed check only prints a WARNING. A constant `ratio_median != 1` points to
+  a unit difference between the two; a varying ratio to an element-block map that
+  is not in the index space of the sensitivity datasets (e.g. a permuted
+  `blockID`).
+- Only tetrahedral meshes (first four columns of `elem_nodes` are the
+  vertices, 0-based). `ValueError` for inconsistent mesh arrays (wrong shape,
+  node indices out of range, element counts that differ), `KeyError` if the mesh
+  or the block map is missing, `FileNotFoundError` for a missing file.
+- Used by `femtic_ens_post.py` (`SENS_STORE_VOLUMES`, `.npz` key
+  `<P>_cell_volume`), which maps the result to the free parameters with the same
+  function as the sensitivities. No existing function changed.
+- Tested against an in-memory `h5py` stand-in only (`h5py` was not installed
+  where this was written): consistent file, unit mismatch, missing sensitivity,
+  datasets of different length, bad node indices, bad element count, 3-column
+  connectivity, missing file, and inside a full run of `femtic_ens_post.py` on a
+  synthetic ensemble. Not yet run against a real `results_iterX.h5`: the
+  `check` line it prints is the test on real data. AI-generated (Claude
+  Sonnet 5.5, Anthropic); review before production use.
+
+### Changelog (2026-11-15, b) --- raw or volume-normalised sensitivity in the plot scripts
+- `femtic_ens_post.py` (`SENS_KIND = "both"`) stores the sensitivity statistics
+  of both kinds, with the key suffix `_cum` (raw) / `_vn` (volume_normalised);
+  a single kind keeps the plain keys. The plot side needs to know which keys a
+  file holds and to turn a name like `sens_mean` into the right key:
+- `read_ensemble_results()` also returns `sens_kinds` (list of
+  `"raw"` / `"volume_normalised"`) and `sens_suffixes` (`["_cum", "_vn"]`, or
+  `[""]` for one kind), read from `<P>_sensitivity_kinds` /
+  `<P>_sensitivity_key_suffixes`; both are `None` for results files from before
+  this date. `ensemble_stat_map()` names the kind in the description of a
+  suffixed `sens_*` key. Everything else it returns is as before.
+- New: `resolve_sens_stat(name, available, *, stored_kinds, stored_suffixes,
+  kind="auto")` -> `(key, note)`. An available name is used as it is (a plain
+  name of a single-kind file is checked against `kind`; a file that does not
+  record its kind is used as it is, with a note if a kind other than `"auto"`
+  was asked for); a plain name that exists only with suffixes takes the suffix
+  of `kind` (`"auto"` = `SENS_KIND_DEFAULT_BOTH` = volume_normalised); anything
+  else gives `key=None`, with a note when the reason is a kind the file does
+  not hold. Helpers: `normalise_sens_kind()` (`None` -> `"auto"`,
+  `"volume_normalized"` accepted, `ValueError` otherwise),
+  `strip_sens_suffix()`, constants `SENS_KIND_SUFFIX`, `SENS_KIND_SPELLING`,
+  `SENS_KIND_DEFAULT_BOTH`.
+- Used by `femtic_ens_plot_slices.py` (`MOD_SENS_KIND`). Tested on synthetic
+  results only (single-kind raw / volume_normalised, both, file without the
+  kind keys, subsample file): resolution rules, mismatch refusals, and the plot
+  script's panel list / blanking / names with the drawing stubbed out. AI-generated
+  (Claude Sonnet 5.5, Anthropic); review before production use.
+
+### Changelog (2026-11-15, c) --- one normalisation, ranges of the sensitivity statistics
+- `femtic_ens_post.py` now takes the ensemble statistics of the native
+  sensitivity and divides each (`mean`, `median`, `min`, `max`, `std`) by **its
+  own max** over the free blocks just before storing it (log10, each peaks at
+  0); `cv = std / mean` stays linear. The keys are `sens_{mean,median,min,max,
+  std,cv}` (+ `_cum` / `_vn` for a file with both kinds). The two versions
+  `sens_*_na` / `sens_*_an` and `sens_mean_raw` are gone.
+- `read_ensemble_results()` returns `sens_ranges = {kind: {stat: (min, max)}}`,
+  the native [min, max] over the free blocks of each statistic (read from
+  `<P>_sensitivity_native_range` / `<P>_sensitivity_range_stats`; `NaN` where
+  there is none); native value of a stored key = `10**key * max`. `None` for
+  results files from before this date. (The structure with `scale`,
+  `member_max` and `member_rows` of the intermediate delivery earlier the
+  same day, `py4mt_femtic_sens_norm_ranges_20261115.zip`, is replaced; files
+  written by that version are read with `sens_ranges = None` semantics only
+  where the new keys are missing.)
+- `resolve_sens_stat()` maps the dropped names: `sens_<stat>_an[_cum|_vn]`
+  asked of a new file is read as the plain statistic (note: same statistic,
+  divided by its own max), `_na` gives `None` with a note; a new plain name
+  asked of an OLD file is read from its `_an` key (note: there all statistics
+  were divided by the max of the mean). `ensemble_stat_map()` descriptions name
+  the kind of a suffixed key. `parse_alpha_source()`'s error example is now
+  `'sens_median > -3.'`.
+- Needs `femtic_ens_post.py` and `femtic_ens_plot_slices.py` of the same date.
+  Tested on synthetic results only (old-format files written by the previous
+  post script included). AI-generated (Claude Sonnet 5.5, Anthropic); review
+  before production use.
+
+### Changelog (2026-11-15, e) --- `alpha_outside` fades
+- Documentation only. The `kind="profile"` entry takes one more key that passes
+  through `resolve_slice_positions()`: `fade_km` (km, default 2.0). Outside the
+  stretch between its two defining points the fault's opacity now falls
+  linearly to `alpha_outside` over `fade_km` instead of stepping to it (like
+  `alpha_mode="fade"`); `0` = the abrupt step of (d). Handled by `femtic_viz.py`
+  of the same date, see its readme, "Limit to the defining points". No code
+  change in `femtic.py`.
+
+### Changelog (2026-11-15, d) --- fault limited to its defining points
+- Documentation only. The two keys `limit_km` and `alpha_outside` of a
+  `kind="profile"` slice entry (fault from two surface points) pass through
+  `resolve_slice_positions()` like `overlay` and `panel`; the resolved plane
+  spec already carries the end points as `p1_model` / `p2_model`, which
+  `femtic_viz.py` (same date) uses to draw the part of the fault between the
+  points as given and the rest fainter. See the `femtic_viz.py` readme, "Fault
+  planes". No code change in `femtic.py`.
 
 ### Changelog (2026-11-12) --- fault plane from two surface points
 - `resolve_pos_two_point_profile(..., dip=90.0)`: new keyword `dip`. The

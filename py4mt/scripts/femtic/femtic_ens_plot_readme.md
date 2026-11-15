@@ -218,7 +218,7 @@ Notes:
 ```python
 RESULTS_NPZ = "/data/ens/results/ANNECY_RTO_results.npz"
 RESULTS_MEMBERS = "best"
-RESULTS_STATS = ["avg", "err", "sens_mean_an"]
+RESULTS_STATS = ["avg", "err", "sens_mean"]
 PLOT_VERT_EXAG = 2.0
 PLOT_FORMAT = ["pdf"]
 ```
@@ -743,3 +743,4 @@ Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 - **2026-11-10 (Claude Sonnet 5.5, Anthropic):** New `MESH_SWAP_XY` (default `True`), applied before the mesh is read (slice maps and borehole search). `mesh.dat` holds x = northing, y = easting; since 2026-10-11 `femtic.read_femtic_mesh` does not swap by default, which drew the maps transposed (a NNE structure as ENE) and put the boreholes in the wrong tetrahedra. `None` keeps femtic's default, `False` forces no swap. AI-generated; review before production use.
 - **2026-11-11b (Claude Sonnet 5.5 (Anthropic)):** Titles and colour bars: `PLOT_TITLE`, `PLOT_PANEL_TITLES`, `PLOT_CBAR_LOCATION`, `PLOT_CBAR_SHRINK`, `PLOT_CBAR_THICKNESS`, `BOREHOLE_HEAT_TITLE`, `BOREHOLE_HEAT_PANEL_TITLES`, `BOREHOLE_HEAT_CBAR_LOCATION`, `BOREHOLE_HEAT_CBAR_SHRINK`, `BOREHOLE_HEAT_CBAR_THICKNESS` (section *Titles and colour bars*). Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. Not run end to end (needs an ensemble directory); the changed calls were compile-checked. AI-generated; review before production use.
 - **2026-11-11c (Claude Sonnet 5.5, Anthropic):** `CNV_FILE` now defaults to the list `["femtic.cnv", "FEMTIC-DABIC.cnv"]` (as in `femtic_ens_post.py`); the member directories are searched with `fem.find_cnv_file()` (names also matched ignoring case). Needs the `femtic.py` of the same date. AI-generated; review before production use.
+- **2026-11-15 (Claude Sonnet 5.5, Anthropic):** Documentation only: the sensitivity statistic keys are named as `femtic_ens_post.py` of this date stores them (`sens_mean`, `sens_median`, `sens_cv`, ...; `_cum` / `_vn` suffixes for `SENS_KIND = "both"`; the former `sens_*_an` / `sens_*_na` exist only in older results files). This script reads stored keys as they are, with no renaming, so `RESULTS_STATS` entries of the old names must be changed for new files. No code change. AI-generated; review before production use.

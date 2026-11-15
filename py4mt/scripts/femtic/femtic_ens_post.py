@@ -966,6 +966,85 @@ Provenance
             femtic.py of the same date. AI-generated code -- review before
             production use.
 
+2026-11-15  Claude Sonnet 5.5 (Anthropic)
+            Sensitivity storage options and cell volumes.
+            SENS_KIND is now "both" | "raw" | "volume_normalised"
+            ("volume_normalized" is accepted as a spelling of the last).
+            "raw" and "volume_normalised" behave as before (one kind read,
+            same .npz key names). "both" reads both /model/sensitivity
+            datasets of every member, aggregates each of them with the
+            same _na/_an pipelines and stores both sets; to keep them apart
+            every key then carries a suffix: "_cum" (raw = sum|J|) or "_vn"
+            (volume_normalised), e.g. <P>_sens_mean_an_cum,
+            <P>_sens_mean_an_vn, <P>_sens_cv_na_vn. A member is used for
+            "both" only if both datasets could be read and mapped, so the
+            two sets always rest on the same members. New .npz keys:
+            <P>_cell_volume (n_free, volume of every free block in m^3,
+            same order as <P>_ens), <P>_sensitivity_kinds and
+            <P>_sensitivity_key_suffixes (which kinds are stored and with
+            which key suffix; deliberately NOT named <P>_sens_*, because
+            femtic.read_ensemble_results() reads every <P>_sens_* key as a
+            float array). The volumes are summed from the mesh in the first
+            usable results_iter<N>.h5 (new fem.read_h5_block_volumes(), which
+            also checks raw / volume_normalised against them) and mapped to
+            the free parameters like a sensitivity vector. New switch
+            SENS_STORE_VOLUMES (default True; only used with COMPUTE_SENS).
+            The module variable sens_matrix is replaced by the dict
+            sens_matrices (kind -> (n_members, n_free)). Needs the
+            femtic.py of the same date. AI-generated code -- review before
+            production use.
+
+2026-11-15 (b)  Claude Sonnet 5.5 (Anthropic)
+            Every stored sensitivity is normalised to its max, and the
+            ranges are stored. The key "mean_raw" (plain ensemble mean) was
+            the one key in the kind's native units and, for the raw kind,
+            ranged far above 1 (log10 > 0); it is now divided by the max of
+            the ensemble mean, the divisor of the *_an keys, so it equals
+            mean_an (key kept for older plot settings). The scale and the
+            native ranges that were divided out are stored: new .npz keys
+            <P>_sensitivity_scale (n_kinds,), <P>_sensitivity_native_range
+            (n_kinds, 5, 2: [min, max] of the native mean / median / min /
+            max / std over the free blocks), <P>_sensitivity_range_stats,
+            <P>_sensitivity_member_max (n_kinds, n_used: each member's own
+            max, the divisor of *_na) and <P>_sensitivity_member_rows; all
+            printed per kind. The run also lists the keys that are still
+            above 1: max_an (and, for skewed ensembles, std_an / median_an),
+            because all _an statistics share one divisor (max of the mean)
+            so that they stay comparable -- the comment under SENS_KIND said
+            "log10 <= 0" for all of them, which was not right. All other
+            keys unchanged. A results file from before this date has
+            mean_raw in native units and none of the new keys; the plot
+            script handles both. Needs the femtic.py and
+            femtic_ens_plot_slices.py of the same date. Tested on synthetic
+            results only. AI-generated code -- review before production
+            use.
+
+2026-11-15 (c)  Claude Sonnet 5.5 (Anthropic)
+            One normalisation, done right before storing; the "_na" and
+            "_an" versions are gone. Per sensitivity kind the ensemble
+            statistics mean / median / min / max / std are taken of the
+            sensitivity in its native units (no per-member normalisation),
+            and each one is divided by ITS OWN max over the free blocks just
+            before it is stored (as log10, so each peaks at exactly 0); cv
+            = std / mean stays a ratio. New key names: <P>_sens_mean,
+            _median, _min, _max, _std, _cv (plus _cum / _vn with
+            SENS_KIND = "both"); removed: all <P>_sens_*_na, <P>_sens_*_an
+            and <P>_sens_mean_raw (it equalled mean_an since (b)). Stored
+            ranges: <P>_sensitivity_native_range (n_kinds, 5, 2: native
+            [min, max] of the five statistics over the free blocks; the max
+            is the divisor, native value = 10**key * max) and
+            <P>_sensitivity_range_stats; the keys <P>_sensitivity_scale,
+            _member_max and _member_rows of (b) are dropped (they served
+            only the _an / _na divisors). Every stored statistic is now <= 1
+            (log10 <= 0) by construction, which the "_an" set was not
+            (max_an, std_an used the max of the mean as common divisor).
+            Consequence: the statistics no longer share a divisor, so
+            comparing them (e.g. max against mean) needs the stored ranges.
+            Needs the femtic.py and femtic_ens_plot_slices.py of the same
+            date (the plot side still reads files with the old keys).
+            Tested on synthetic results only. AI-generated code -- review
+            before production use.
+
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
 """
@@ -1229,46 +1308,87 @@ SENS_H5_PATTERN = "results_iter{numit}.h5"
 #: results_iterX.h5 -- so no group override is normally needed.
 SENS_H5_GROUP = None
 
-#: Which of FEMTIC's two precomputed per-block sensitivity datasets to use:
+#: Which of FEMTIC's two precomputed per-block sensitivity datasets to read,
+#: aggregate and store:
 #:   "raw"                -- sum|J[:,block]| across all data rows (Ohm.m
 #:                            units follow the model parameterisation)
 #:   "volume_normalised"  -- the above divided by block volume (m^-3),
 #:                            i.e. sensitivity density
-#: Passed through as fem.read_h5_sensitivity()'s cumsens_key.
+#:                            ("volume_normalized" is accepted as well)
+#:   "both"               -- both of them, each normalised and stored as
+#:                            described below
+#: The dataset names are passed on as fem.read_h5_sensitivity()'s
+#: cumsens_key.
+#:
+#: Key names in the .npz: with a single kind the keys are the plain
+#: <P>_sens_<stat> (e.g. <P>_sens_mean, <P>_sens_cv). With "both" every key
+#: carries a suffix naming its kind, so that the two sets cannot be
+#: confused:
+#:   "_cum"  raw (cumulative sum|J|):   <P>_sens_mean_cum, <P>_sens_cv_cum
+#:   "_vn"   volume_normalised:         <P>_sens_mean_vn,  <P>_sens_cv_vn
+#: (The same suffixes are the panel names of femtic_ens_plot_slices.py:
+#: "sens_mean_vn", ...). Which kinds a file holds is recorded in
+#: <P>_sensitivity_kinds / <P>_sensitivity_key_suffixes.
+#: With "both" a member counts only if BOTH datasets can be read and
+#: mapped to the free parameters, so that the two sets rest on the same
+#: members.
 SENS_KIND = "volume_normalised"
-assert SENS_KIND in (
+_SENS_KIND_SPELLING = {"volume_normalized": "volume_normalised"}
+_sens_kind = _SENS_KIND_SPELLING.get(SENS_KIND, SENS_KIND)
+assert _sens_kind in (
+    "both",
     "raw",
     "volume_normalised",
-), f"SENS_KIND must be 'raw' or 'volume_normalised', got {SENS_KIND!r}"
+), (
+    f"SENS_KIND must be 'both', 'raw' or 'volume_normalised', "
+    f"got {SENS_KIND!r}"
+)
+#: HDF5 dataset names (kinds) read for every member, in this order.
+_SENS_KINDS = (
+    ("raw", "volume_normalised") if _sens_kind == "both" else (_sens_kind,)
+)
+#: Key suffix per kind; used only if more than one kind is stored.
+_SENS_KIND_SUFFIX = {"raw": "_cum", "volume_normalised": "_vn"}
+
+#: Also store the volume of every free block (m^3) as <P>_cell_volume, in
+#: the order of <P>_ens. FEMTIC does not write block volumes; they are
+#: summed from the mesh inside the first usable member's results_iter<N>.h5
+#: (fem.read_h5_block_volumes(); the mesh is the same for all members, like
+#: the region table already assumed here). Needs COMPUTE_SENS (it takes the
+#: file and the block-to-free mapping from the sensitivity read); a file
+#: without sensitivity or mesh is reported and the key is omitted. With both
+#: sensitivity datasets in the file, the mesh volumes are checked against
+#: raw / volume_normalised (printed).
+SENS_STORE_VOLUMES = True
 
 #: FEMTIC's per-block sensitivity in results_iterX.h5 (whichever SENS_KIND
-#: dataset is used) is NOT normalised to each member's own max -- confirmed
-#: against an actual results_iterX.h5 (raw min/max did not peak at 1). So
-#: there is no single "correct" way to bring per-member sensitivities onto
-#: a common, threshold-friendly [0, 1]-ish scale before aggregating across
-#: the ensemble; two different, both defensible, orders of operations are
-#: computed side by side below instead of picking one:
+#: dataset is used) is NOT normalised to anything -- confirmed against an
+#: actual results_iterX.h5 (raw min/max did not peak at 1); the raw kind is
+#: in the units of sum|J| and ranges far above 1, the volume-normalised one
+#: is a density per m^3. Per kind, the statistics across the ensemble are
+#: therefore taken of the sensitivity as it is (members equally weighted;
+#: a member with a larger absolute sensitivity counts more, as in a plain
+#: ensemble mean), and
 #:
-#:   "_na" ("normalise, then average") -- each member's own raw vector is
-#:         divided by ITS OWN max right after reading (so every member
-#:         contributes equally regardless of its absolute sensitivity
-#:         scale), THEN mean/median/min/max/std/cv are taken across the
-#:         (now per-member-normalised) ensemble. A member with uniformly
-#:         weak sensitivity everywhere still gets to say "relatively
-#:         speaking, my most-sensitive cell is here".
-#:   "_an" ("average, then normalise") -- mean/median/min/max/std/cv are
-#:         taken across the RAW ensemble first (so a member with larger
-#:         absolute sensitivity dominates the average, same as a plain
-#:         ensemble mean would), THEN the resulting aggregate is divided
-#:         by ITS OWN max, purely so the final numbers/threshold sit on a
-#:         [0, ~1] scale (log10 <= 0) for plotting and the alpha mask
-#:         (MOD_ALPHA_SOURCE in femtic_ens_plot_slices.py).
+#:   mean, median, min, max, std   each is divided by ITS OWN max over the
+#:                                 free blocks, right before it is stored,
+#:                                 and stored as log10 -- so every one of
+#:                                 them peaks at exactly 0 (value 1);
+#:   cv = std / mean               a ratio, stored as it is (linear).
 #:
-#: Both give a max-normalised statistic (_na's own max may be < 1, since
-#: different members peak at different cells; _an's is exactly 1 by
-#: construction), i.e. log10 values <= 0 after the log10 conversion. Both
-#: are always computed when COMPUTE_SENS succeeds; use whichever (or both)
-#: in MOD_STATS_WHAT / MOD_ALPHA_SOURCE of femtic_ens_plot_slices.py.
+#: What was divided out is stored too: <P>_sensitivity_native_range
+#: (n_kinds, 5, 2) = native [min, max] of mean / median / min / max / std
+#: over the free blocks (names in <P>_sensitivity_range_stats; rows follow
+#: <P>_sensitivity_kinds), so the native value of a stored key is
+#: 10**key * max. Because every statistic has its own divisor, comparing two
+#: of them (e.g. max against mean) needs the stored ranges.
+#:
+#: Older files have two such normalisations side by side, "_na" (each
+#: member divided by its own max, then aggregated) and "_an" (aggregated,
+#: then divided by the max of the mean) plus "mean_raw" in native units;
+#: those were dropped on 2026-11-15 (c). The "_an" keys correspond to the
+#: keys below, except that they shared ONE divisor (the max of the mean),
+#: which let max_an and std_an exceed 1.
 
 #: Jacobian/error dataset names, used only if SENS_KIND's dataset is not
 #: found in results_iter{numit}.h5 (e.g. sensitivity was disabled for that
@@ -1283,15 +1403,14 @@ assert SENS_KIND in (
 SENS_JACOBIAN_KEY = "jacobian"
 SENS_ERROR_KEY = "data_errors"  # None to disable error-weighting
 
-#: All sensitivity aggregates (sens_mean/_median/_min/_max/_std, in their
-#: _raw/_na/_an versions) and the SimRC sums (simrc_coef/_corr) are strictly
-#: positive and span many decades, so they are converted to log10 right
-#: after aggregation -- in memory, in the .npz, in the plotted block files,
-#: and in MOD_ALPHA_SOURCE expressions of femtic_ens_plot_slices.py
-#: (e.g. "sens_mean_an > -3." means
-#: "an-normalised mean sensitivity above 1e-3 of its maximum"). Values <= 0
-#: (e.g. a cell with exactly zero sensitivity) become NaN. sens_cv_na/_an
-#: are ratios and stay linear.
+#: The sensitivity statistics (sens_mean/_median/_min/_max/_std) and the
+#: SimRC sums (simrc_coef/_corr) are strictly positive and span many
+#: decades, so they are converted to log10 right after normalisation -- in
+#: memory, in the .npz, in the plotted block files, and in MOD_ALPHA_SOURCE
+#: expressions of femtic_ens_plot_slices.py (e.g. "sens_median > -3." means
+#: "median sensitivity above 1e-3 of its own maximum"). Values <= 0 (e.g. a
+#: cell with exactly zero sensitivity) become NaN. sens_cv is a ratio and
+#: stays linear.
 
 # --- (2) Ensemble-native SimRC sensitivity ----------------------------------
 #: Set False to skip entirely.
@@ -1657,11 +1776,17 @@ pert_links = []  # ENS_MODEL_SOURCE="perturbed": members whose file is a symlink
 model_count = 0
 ens_matrix = None  # will become (n_members, n_free) float64
 
-sens_matrix = None  # will become (n_sens_members, n_free) float64
+#: kind ("raw" / "volume_normalised", see SENS_KIND) -> (n_sens_members,
+#: n_free) float64; empty until the first member has been read. All kinds
+#: always have the same rows (same members, same order).
+sens_matrices = {}
 sens_count = 0  # accepted members whose results_iterX.h5 was found
 #: Row indices into ens_matrix of the members that contributed a row to
-#: sens_matrix (needed by the random subsample, like simrc_keep_idx).
+#: every matrix of sens_matrices (needed by the random subsample, like
+#: simrc_keep_idx).
 sens_keep_idx = []
+cell_volume = None  # (n_free,) block volumes in m^3 (SENS_STORE_VOLUMES)
+vol_fail = []  # (member dir, reason) for members tried for the volumes
 sens_missing_any = False
 sens_fail = []  # (member dir, reason) for skipped members
 
@@ -1873,28 +1998,39 @@ for d in dir_list:
     # --- (1) Per-member cumulative sensitivity (optional) -------------
     if COMPUTE_SENS:
         sens_h5 = os.path.join(d, SENS_H5_PATTERN.format(numit=numit))
+        sens_vecs = {}  # kind -> vector in the block order of the file
         try:
-            sens_vec = fem.read_h5_sensitivity(
-                sens_h5,
-                group=SENS_H5_GROUP,
-                cumsens_key=SENS_KIND,
-                jacobian_key=SENS_JACOBIAN_KEY,
-                error_key=SENS_ERROR_KEY,
-                normalize=False,
-                out=OUT,
-            )
+            for _kind in _SENS_KINDS:
+                sens_vecs[_kind] = fem.read_h5_sensitivity(
+                    sens_h5,
+                    group=SENS_H5_GROUP,
+                    cumsens_key=_kind,
+                    jacobian_key=SENS_JACOBIAN_KEY,
+                    error_key=SENS_ERROR_KEY,
+                    normalize=False,
+                    out=OUT,
+                )
         except (FileNotFoundError, KeyError) as e:
             # No fallback to jacobian.h5 by design (see SENS_JACOBIAN_KEY
             # comment above) -- a missing SENS_KIND dataset at this
             # member's numit just means sensitivity wasn't computed for
             # that iteration; skip this member for sensitivity and move on.
+            # With SENS_KIND = "both" a member needs both datasets.
             print(f"    COMPUTE_SENS: {e} — member skipped for sensitivity.")
             sens_missing_any = True
             sens_fail.append((d, f"{type(e).__name__}: {e}"))
         else:
-            _n_raw = sens_vec.shape[0]
-            sens_vec = _sens_to_free(sens_vec, mod_file, sens_h5)
-            if sens_vec is None or sens_vec.shape[0] != log_m.shape[0]:
+            sens_free = {
+                _kind: _sens_to_free(_v, mod_file, sens_h5)
+                for _kind, _v in sens_vecs.items()
+            }
+            _bad = [
+                _kind
+                for _kind, _v in sens_free.items()
+                if _v is None or _v.shape[0] != log_m.shape[0]
+            ]
+            if _bad:
+                _n_raw = sens_vecs[_bad[0]].shape[0]
                 print(
                     f"    COMPUTE_SENS: {sens_h5} gives {_n_raw} "
                     f"values; no mapping to {log_m.shape[0]} free "
@@ -1911,14 +2047,50 @@ for d in dir_list:
                     )
                 )
             else:
-                if sens_matrix is None:
-                    sens_matrix = sens_vec[np.newaxis, :]
-                else:
-                    sens_matrix = np.vstack((sens_matrix, sens_vec))
+                for _kind in _SENS_KINDS:
+                    if _kind not in sens_matrices:
+                        sens_matrices[_kind] = sens_free[_kind][np.newaxis, :]
+                    else:
+                        sens_matrices[_kind] = np.vstack(
+                            (sens_matrices[_kind], sens_free[_kind])
+                        )
                 sens_count += 1
                 sens_keep_idx.append(
                     model_count - 1
                 )  # row just appended to ens_matrix
+
+                # Cell volumes: once, from the first member that has a
+                # usable mesh in its results file (same mesh for all).
+                if SENS_STORE_VOLUMES and cell_volume is None:
+                    try:
+                        _bv = fem.read_h5_block_volumes(sens_h5, out=OUT)
+                    except (FileNotFoundError, KeyError, ValueError, OSError) as e:
+                        print(
+                            f"    COMPUTE_SENS: cell volumes not read from "
+                            f"{sens_h5}: {type(e).__name__}: {e}"
+                        )
+                        vol_fail.append((d, f"{type(e).__name__}: {e}"))
+                    else:
+                        _vf = _sens_to_free(_bv["volume"], mod_file, sens_h5)
+                        if _vf is None or _vf.shape[0] != log_m.shape[0]:
+                            print(
+                                f"    COMPUTE_SENS: {_bv['volume'].shape[0]} "
+                                f"block volumes from {sens_h5} cannot be "
+                                f"mapped to {log_m.shape[0]} free parameters "
+                                f"(nreg={_SENS_MAP.get('nreg')}) -- not used."
+                            )
+                            vol_fail.append(
+                                (d, f"size {_bv['volume'].shape[0]} vs n_free "
+                                    f"{log_m.shape[0]}")
+                            )
+                        else:
+                            cell_volume = _vf
+                            print(
+                                f"    COMPUTE_SENS: cell volumes of "
+                                f"{cell_volume.size} free blocks taken from "
+                                f"{os.path.basename(sens_h5)} of "
+                                f"{os.path.basename(os.path.normpath(d))}."
+                            )
 
     # --- (2) Per-member forward response for SimRC (optional) ---------
     if COMPUTE_SIMRC:
@@ -1987,11 +2159,16 @@ if ENS_SUBSAMPLE_N is not None and model_count > 0:
         if pert_matrix is not None:
             pert_matrix = pert_matrix[subsample_idx]
         # sensitivity / SimRC rows belong to accepted members; keep those drawn
-        if sens_matrix is not None:
+        if sens_matrices:
             _k = [j for j, r in enumerate(sens_keep_idx) if r in _pos]
-            sens_matrix = sens_matrix[_k] if _k else None
+            sens_matrices = (
+                {_kind: _m[_k] for _kind, _m in sens_matrices.items()}
+                if _k
+                else {}
+            )
             sens_keep_idx = [_pos[sens_keep_idx[j]] for j in _k]
             sens_count = len(_k)
+        # (cell_volume belongs to the mesh, not to a member: unaffected)
         if ens_data_matrix is not None:
             _k = [j for j, r in enumerate(simrc_keep_idx) if r in _pos]
             ens_data_matrix = ens_data_matrix[_k] if _k else None
@@ -2035,6 +2212,21 @@ def _report_skips(tag, flag, count, fails, nmax=5):
 
 
 _report_skips("COMPUTE_SENS", COMPUTE_SENS, sens_count, sens_fail)
+if COMPUTE_SENS and SENS_STORE_VOLUMES:
+    if cell_volume is not None:
+        print(
+            f"  COMPUTE_SENS: cell volumes of {cell_volume.size} free blocks "
+            f"will be stored (total {cell_volume.sum():.6e} m^3)."
+        )
+    else:
+        print(
+            "  COMPUTE_SENS: cell volumes not available -- "
+            "<P>_cell_volume will not be written."
+        )
+        for _d, _why in vol_fail[:5]:
+            print(f"    {os.path.basename(os.path.normpath(_d))}: {_why}")
+        if not vol_fail:
+            print("    (no member with a usable sensitivity file to take them from)")
 _report_skips("COMPUTE_SIMRC", COMPUTE_SIMRC, simrc_count, simrc_fail)
 
 if n_members == 0:
@@ -2141,16 +2333,22 @@ if BOOTSTRAP_VAR:
     )
 
 # --- (2b) Sensitivity statistics: (1) per-member Jacobian aggregation ------
-# Two aggregation orders, computed side by side -- see SENS_KIND's
-# docstring above for why there is no single "correct" one now that the
-# per-member sensitivity in results_iterX.h5 is confirmed NOT to already
-# be normalised to that member's own max.
+# The ensemble statistics are taken of the sensitivity as FEMTIC wrote it
+# (per kind, in its native units) and each one is divided by its own max
+# right before it is stored -- see SENS_KIND's comment above. The native
+# [min, max] of every statistic is stored next to it.
 _SENS_STATS = ("mean", "median", "min", "max", "std")
-#: key -> log10 array, e.g. sens["mean_na"], sens["cv_an"] (cv linear);
+#: key -> log10 array of the statistic divided by its own max, e.g.
+#: sens["mean"], sens["median"] (cv linear: sens["cv"]);
+#: with SENS_KIND = "both" every key carries its kind suffix, e.g.
+#: sens["mean_vn"], sens["cv_cum"];
 #: empty when COMPUTE_SENS is off or found no usable files.
 sens = {}
+#: kind -> (len(_SENS_STATS), 2) native [min, max] over the free blocks of
+#: each statistic (the max is what the stored key was divided by).
+sens_ranges = {}
 if COMPUTE_SENS:
-    if sens_matrix is None or sens_count == 0:
+    if not sens_matrices or sens_count == 0:
         print(
             "\n  COMPUTE_SENS: no results_iterX.h5 sensitivity files found — skipped."
         )
@@ -2180,40 +2378,64 @@ if COMPUTE_SENS:
             agg["cv"] = cv
             return agg
 
-        # "_raw": plain ensemble mean in SENS_KIND's native units.
-        sens["mean_raw"] = _log10_pos(np.mean(sens_matrix, axis=0))
+        def _sens_keys(M):
+            """Statistics of ONE sensitivity kind: (keys, native_range).
 
-        # "_na": normalise each member by its own max, THEN aggregate.
-        _row_max = np.max(sens_matrix, axis=1, keepdims=True)
-        _row_max[_row_max == 0.0] = 1.0  # guard an all-zero member
-        _agg = _aggregate(sens_matrix / _row_max)
-        for _st in _SENS_STATS:
-            sens[f"{_st}_na"] = _log10_pos(_agg[_st])
-        sens["cv_na"] = _agg["cv"]
+            M is the (n_members, n_free) matrix of that kind, in native
+            units. keys: mean, median, min, max, std -- each the ensemble
+            statistic divided by its OWN max over the free blocks, as log10
+            (max = 0); cv -- std / mean, a ratio, stored as it is. Plain
+            names; the kind suffix of SENS_KIND = "both" is added by the
+            caller. native_range: (len(_SENS_STATS), 2) native [min, max] of
+            each statistic over the blocks where it is positive and finite
+            (NaN if there is none, e.g. the std of one member); the max is
+            the divisor, so the native value of a stored key is
+            10**key * native_range[stat, 1].
+            """
+            _agg = _aggregate(M)  # native units
+            keys = {}
+            _rng = np.full((len(_SENS_STATS), 2), np.nan)
+            for _i, _st in enumerate(_SENS_STATS):
+                _a = _agg[_st]
+                _ok = np.isfinite(_a) & (_a > 0.0)
+                if _ok.any():
+                    _rng[_i] = (_a[_ok].min(), _a[_ok].max())
+                    # the max-normalisation, right before storing
+                    keys[_st] = _log10_pos(_a / _rng[_i, 1])
+                else:
+                    keys[_st] = _log10_pos(_a)  # all NaN
+            keys["cv"] = _agg["cv"]
+            return keys, _rng
 
-        # "_an": aggregate the RAW ensemble, THEN normalise by max(mean).
-        _agg = _aggregate(sens_matrix)
-        _renorm = np.nanmax(_agg["mean"])
-        _renorm = _renorm if _renorm > 0 else 1.0
-        for _st in _SENS_STATS:
-            sens[f"{_st}_an"] = _log10_pos(_agg[_st] / _renorm)
-        sens["cv_an"] = _agg["cv"]
+        # One kind: plain key names (as always). Several kinds: every key
+        # gets the suffix of its kind (_cum / _vn), see SENS_KIND.
+        _multi = len(_SENS_KINDS) > 1
+        for _kind in _SENS_KINDS:
+            _sfx = _SENS_KIND_SUFFIX[_kind] if _multi else ""
+            _keys, sens_ranges[_kind] = _sens_keys(sens_matrices[_kind])
+            for _k, _v in _keys.items():
+                sens[f"{_k}{_sfx}"] = _v
 
-        print(
-            f"\n  Sensitivity (Jacobian, {sens_count} members, SENS_KIND="
-            f"'{SENS_KIND}'), log10:"
-        )
-        for _k in ("mean_raw", "mean_na", "mean_an"):
             print(
-                f"    sens_{_k:<9s}: [{np.nanmin(sens[_k]):.3f}, "
-                f"{np.nanmax(sens[_k]):.3f}]  "
-                f"({int(np.sum(~np.isfinite(sens[_k])))} non-positive -> NaN)"
+                f"\n  Sensitivity (Jacobian, {sens_count} members, SENS_KIND="
+                f"'{SENS_KIND}', kind '{_kind}'"
+                + (f", key suffix '{_sfx}'" if _multi else "")
+                + "): each statistic as log10 of itself / its own max;"
+                + " native [min, max] over the free blocks:"
             )
-        print(
-            f"    sens_cv (na / an, linear): "
-            f"[{sens['cv_na'].min():.3f}, {sens['cv_na'].max():.3f}]  /  "
-            f"[{sens['cv_an'].min():.3f}, {sens['cv_an'].max():.3f}]"
-        )
+            for _i, _st in enumerate(_SENS_STATS):
+                _key = f"{_st}{_sfx}"
+                print(
+                    f"    sens_{_key:<11s}: log10 [{np.nanmin(sens[_key]):7.3f}, "
+                    f"{np.nanmax(sens[_key]):6.3f}]   native "
+                    f"[{sens_ranges[_kind][_i, 0]:.4e}, "
+                    f"{sens_ranges[_kind][_i, 1]:.4e}]  "
+                    f"({int(np.sum(~np.isfinite(sens[_key])))} non-positive -> NaN)"
+                )
+            print(
+                f"    sens_cv{_sfx} (std / mean, linear): "
+                f"[{sens['cv' + _sfx].min():.3f}, {sens['cv' + _sfx].max():.3f}]"
+            )
 
 # --- (2c) Sensitivity statistics: (2) ensemble-native SimRC ----------------
 simrc_coef = simrc_corr = None  # log10 after computation
@@ -2366,6 +2588,31 @@ if BOOTSTRAP_VAR:
     ens_dict[f"{P}_var_boot_se"] = ens_var_boot_se
 for _k, _v in sens.items():  # log10 (cv_* linear)
     ens_dict[f"{P}_sens_{_k}"] = _v
+if sens:
+    # Which sensitivity kinds the <P>_sens_* keys hold, and the key suffix of
+    # each ("" = plain names, single kind). NOT named <P>_sens_*: the results
+    # reader takes every <P>_sens_* key for a float array.
+    ens_dict[f"{P}_sensitivity_kinds"] = np.array(_SENS_KINDS, dtype=str)
+    ens_dict[f"{P}_sensitivity_key_suffixes"] = np.array(
+        [_SENS_KIND_SUFFIX[_kind] if len(_SENS_KINDS) > 1 else ""
+         for _kind in _SENS_KINDS],
+        dtype=str,
+    )
+    # Native ranges behind the max-normalised <P>_sens_* keys (rows follow
+    # <P>_sensitivity_kinds; not named <P>_sens_*, for the same reason as
+    # above): (n_kinds, 5, 2) native [min, max] over the free blocks of the
+    # ensemble mean / median / min / max / std; native value of a stored key
+    # = 10**key * max.
+    if sens_ranges:
+        ens_dict[f"{P}_sensitivity_native_range"] = np.array(
+            [sens_ranges[_kind] for _kind in _SENS_KINDS if _kind in sens_ranges],
+            dtype=float,
+        )
+        ens_dict[f"{P}_sensitivity_range_stats"] = np.array(
+            _SENS_STATS, dtype=str
+        )
+if cell_volume is not None:  # m^3, same order as <P>_ens
+    ens_dict[f"{P}_cell_volume"] = cell_volume
 if simrc_coef is not None:  # log10
     ens_dict[f"{P}_simrc_coef"] = simrc_coef
     ens_dict[f"{P}_simrc_corr"] = simrc_corr

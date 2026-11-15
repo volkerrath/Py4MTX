@@ -162,41 +162,41 @@ degrades gracefully (printed warning, corresponding `.npz` keys and
 panels in the plot script skipped) if its required per-member files are
 missing for some or all members.
 
-> **Two aggregation orders, computed side by side.** FEMTIC's per-block
+> **One normalisation, done right before storing.** FEMTIC's per-block
 > sensitivity in `results_iterX.h5` (whichever `SENS_KIND` dataset is
-> used) is confirmed **not** normalised to each member's own max, so
-> there is no single "correct" way to bring per-member sensitivities onto
-> a common, threshold-friendly scale before aggregating across the
-> ensemble. Both orders below are always computed when `COMPUTE_SENS`
-> succeeds (suffixes `_na`/`_an` throughout — config, `.npz` keys,
-> `MOD_STATS_WHAT`/`MOD_ALPHA_SOURCE` names in `femtic_ens_plot_slices.py`):
-> - **`_na` (normalise, then average)** — each member's raw vector is
->   divided by *its own* max right after reading, so every member
->   contributes equally regardless of its absolute sensitivity scale,
->   then `mean`/`median`/`min`/`max`/`std`/`cv` are taken across the
->   (now per-member-normalised) ensemble. Its own max is generally
->   `< 1` (different members peak at different cells).
-> - **`_an` (average, then normalise)** — `mean`/`median`/`min`/`max`/
->   `std`/`cv` are taken across the raw ensemble first (a larger-
->   magnitude member dominates, as a plain ensemble mean would), then
->   the resulting aggregate is divided by *its own* max, so it always
->   peaks at exactly `1.0`.
+> used) is confirmed **not** normalised: the raw kind is in the units of
+> `sum|J|` and ranges far above 1, the volume-normalised kind is a density
+> per m^3. Per kind, the statistics across the ensemble are taken of the
+> sensitivity as it is (a member with a larger absolute sensitivity counts
+> more, as in a plain ensemble mean); then
+> - `mean`, `median`, `min`, `max`, `std` are each **divided by their own
+>   max over the free blocks** and stored as **log10**, so every one of them
+>   peaks at exactly `0` (value 1) and none exceeds it;
+> - `cv = std / mean` is a ratio and stored as it is (linear).
 >
-> Both are max-normalised statistics.
+> The native `[min, max]` of the five statistics is stored next to them
+> (`<P>_sensitivity_native_range`), so the native value of a stored key is
+> `10**key * max`. Because each statistic has its own divisor, comparing two
+> of them (e.g. `max` against `mean`) needs the stored ranges. (Until
+> 2026-11-15 (c) two versions were stored, `_na` -- each member divided by
+> its own max, then aggregated -- and `_an` -- aggregated, then divided by
+> the max of the mean, one divisor for all statistics, which let `max_an`
+> and `std_an` exceed 1 -- plus `mean_raw` in native units; all dropped.)
 >
-> **log10.** All sensitivity aggregates (`mean`/`median`/`min`/`max`/`std`,
-> `_raw`/`_na`/`_an`) and the SimRC sums (`simrc_coef`/`simrc_corr`) are
-> strictly positive and are stored, plotted and used in `MOD_ALPHA_SOURCE` (`femtic_ens_plot_slices.py`)
-> as **log10** (values <= 0 -> NaN). Normalised sensitivities are
-> therefore <= 0, e.g. `"sens_mean_an > -3."` keeps cells within three
-> decades of the maximum. `sens_cv_*` are ratios and stay linear.
+> **log10.** The sensitivity statistics and the SimRC sums
+> (`simrc_coef`/`simrc_corr`) are strictly positive and are stored,
+> plotted and used in `MOD_ALPHA_SOURCE` (`femtic_ens_plot_slices.py`) as
+> **log10** (values <= 0 -> NaN). E.g. `"sens_median > -3."` keeps cells
+> whose median sensitivity is within three decades of its own maximum.
+> `sens_cv` is a ratio and stays linear.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
 | `COMPUTE_SENS` | bool | `True` | (1) Per-member linearised cumulative sensitivity, aggregated across the ensemble. Requires a `results_iter{numit}.h5` alongside each accepted member's `resistivity_block_iterX.dat` (FEMTIC's current, settled 2026-09-13 merged HDF5 output — see note below). |
 | `SENS_H5_PATTERN` | str | `"results_iter{numit}.h5"` | Per-member HDF5 filename, relative to the member's run directory, with `{numit}` substituted by that member's best (accepted) iteration — the same iteration used for `ens_matrix`. Older ensembles predating the 2026-09-13 merged schema (separate `model_iterX.h5`) are not supported here. |
 | `SENS_H5_GROUP` | str or `None` | `None` | HDF5 group containing the sensitivity dataset(s); `None` tries the file root, then falls back to `"model/sensitivity"` automatically (FEMTIC's real location in `results_iterX.h5`). |
-| `SENS_KIND` | str | `"volume_normalised"` | Which precomputed per-block sensitivity dataset to use: `"raw"` (`sum\|J[:,block]\|`) or `"volume_normalised"` (the same, divided by block volume — sensitivity density). Passed as `fem.read_h5_sensitivity()`'s `cumsens_key`. Confirmed against an actual `results_iterX.h5` that neither dataset is normalised to a member's own max, so two independent aggregation orders are always computed instead of picking one — see `sens_mean_na`/`sens_mean_an` below. |
+| `SENS_KIND` | str | `"volume_normalised"` | Which precomputed per-block sensitivity dataset(s) to read, aggregate and store: `"raw"` (`sum\|J[:,block]\|`), `"volume_normalised"` (the same, divided by block volume, i.e. sensitivity density; `"volume_normalized"` is accepted as a spelling), or `"both"`. Each dataset is passed as `fem.read_h5_sensitivity()`'s `cumsens_key`. With one kind the `.npz` keys are the plain `<P>_sens_*` names. With `"both"` every key carries a kind suffix, `_cum` (raw) or `_vn` (volume-normalised), see "Output files". A member counts for `"both"` only if both datasets could be read and mapped, so the two sets always rest on the same members. Confirmed against an actual `results_iterX.h5` that neither dataset is normalised to a member's own max (the raw kind ranges far above 1); the ensemble statistics are therefore taken of the native values and each statistic is divided by its own max just before it is stored, see "One normalisation" above. Plotting: `MOD_SENS_KIND` in `femtic_ens_plot_slices.py` chooses the kind (raw or volume-normalised) of the `sens_*` panels and of the blanking. |
+| `SENS_STORE_VOLUMES` | bool | `True` | Also store the volume of every free block (m^3) as `<P>_cell_volume`, in the order of `<P>_ens`. FEMTIC does not write block volumes; they are summed from the mesh inside the first usable member's `results_iter{numit}.h5` (`fem.read_h5_block_volumes()`; the mesh is taken to be the same for all members, as the region table already is). Only used with `COMPUTE_SENS`. A file without mesh is reported and the key is left out; the run goes on. Whenever the file also has both sensitivity datasets, the mesh volumes are compared with `raw / volume_normalised` and the result is printed (a wrong block order or a unit difference shows up there). |
 | `SENS_JACOBIAN_KEY` | str | `"jacobian"` | Dataset name for a raw 2-D Jacobian, used only if `SENS_KIND`'s dataset is absent. In practice this never resolves against `results_iterX.h5` (the raw Jacobian only lives in the separate, fixed-name `jacobian.h5`, deliberately not consulted here — see below), so a missing `SENS_KIND` dataset just means that member is skipped for sensitivity. |
 | `SENS_ERROR_KEY` | str or `None` | `"data_errors"` | Dataset name for a 1-D per-datum error vector used to weight the Jacobian sum if the fallback above ever fires; `None` disables weighting. |
 
@@ -214,7 +214,7 @@ diagnostic (Christiansen & Auken, 2012, *Geophysics* 77, WB171,
 doi:10.1190/geo2011-0393.1) computed once per member and then
 aggregated — the aggregation (mean/median/min/max/std/CV across members)
 guards against trusting a single, possibly locally atypical,
-linearisation point; a large coefficient of variation (`<P>_sens_cv_na`/`<P>_sens_cv_an`)
+linearisation point; a large coefficient of variation (`<P>_sens_cv`)
 flags cells where the linearised sensitivity itself is strongly
 model-dependent (i.e. the problem is locally nonlinear there), which is
 exactly where (2) should be trusted instead. (2) (Bobe, Keller & Van De
@@ -385,13 +385,14 @@ scripts read the file with `femtic.read_ensemble_results()`.
 | `<P>_var_boot` | `(N_free,)` | Bootstrap mean variance across `BOOTSTRAP_N` resamples. Present only if `BOOTSTRAP_VAR=True`. |
 | `<P>_err_boot` | `(N_free,)` | `sqrt(var_boot)`. Present only if `BOOTSTRAP_VAR=True`. |
 | `<P>_var_boot_se` | `(N_free,)` | Bootstrap standard error of `var_boot` itself (estimator-noise diagnostic, not a model spread statistic). Present only if `BOOTSTRAP_VAR=True`. |
-| `<P>_sens_mean_raw` | `(N_free,)` | Mean per-member cumulative sensitivity across the ensemble, **no normalisation**: `sens_matrix.mean(axis=0)` in `SENS_KIND`'s native units (`"raw"` = `sum\|J\|`, or `"volume_normalised"` = `sum\|J\|`/block volume). Present only if `COMPUTE_SENS=True` and at least one member's `results_iterX.h5` was found. Plottable as the `"sens_mean_raw"` `MOD_STATS` panel, on the same slice geometry as the model itself. |
-| `<P>_sens_mean_na` | `(N_free,)` | Mean per-member cumulative sensitivity across the ensemble, **normalise-then-average**: each member's raw vector is divided by its own max before averaging (Christiansen & Auken, 2012). Present only if `COMPUTE_SENS=True` and at least one member's `results_iterX.h5` was found. |
-| `<P>_sens_median_na/_min_na/_max_na/_std_na` | `(N_free,)` | Corresponding median, min, max, and standard deviation (ddof=1) for the `_na` aggregation. Same presence condition as `<P>_sens_mean_na`. |
-| `<P>_sens_cv_na` | `(N_free,)` | Coefficient of variation, `sens_std_na/sens_mean_na` — large values flag cells where the linearised sensitivity is strongly model-dependent (nonlinear regime). Same presence condition as `<P>_sens_mean_na`. |
-| `<P>_sens_mean_an` | `(N_free,)` | Mean per-member cumulative sensitivity across the ensemble, **average-then-normalise**: the raw ensemble is averaged first, then the result is divided by its own max (always peaks at exactly `1.0`). Same presence condition as `<P>_sens_mean_na`. |
-| `<P>_sens_median_an/_min_an/_max_an/_std_an` | `(N_free,)` | Corresponding median, min, max, and standard deviation (ddof=1) for the `_an` aggregation, all divided by the same renormalisation factor as `<P>_sens_mean_an`. Same presence condition as `<P>_sens_mean_na`. |
-| `<P>_sens_cv_an` | `(N_free,)` | Coefficient of variation, `sens_std_an/sens_mean_an` (renormalisation cancels in the ratio, so this equals the raw ensemble's CV). Same presence condition as `<P>_sens_mean_na`. |
+| `<P>_sens_mean`, `<P>_sens_median`, `<P>_sens_min`, `<P>_sens_max`, `<P>_sens_std` | `(N_free,)` | Ensemble mean / median / min / max / standard deviation (ddof=1) over the members of the per-block sensitivity (`SENS_KIND`'s native units), each **divided by its own max over the free blocks and stored as log10** (so each peaks at exactly `0`). Present only if `COMPUTE_SENS=True` and at least one member's `results_iterX.h5` was found. The native value is `10**key * max`, the max being in `<P>_sensitivity_native_range`. |
+| `<P>_sens_cv` | `(N_free,)` | Coefficient of variation `std / mean` of the native sensitivity (a ratio: no normalisation, stored linear) -- large values flag cells where the linearised sensitivity is strongly model-dependent (nonlinear regime). Same presence condition. |
+| `<P>_sens_<stat>_cum`, `<P>_sens_<stat>_vn` | `(N_free,)` | **Only with `SENS_KIND = "both"`**: the 6 keys above (`mean`, `median`, `min`, `max`, `std`, `cv`), once for the raw sensitivity (suffix `_cum`, e.g. `<P>_sens_mean_cum`) and once for the volume-normalised one (suffix `_vn`, e.g. `<P>_sens_cv_vn`). The plain, unsuffixed names are then absent. Same log10 / linear rules (`cv` linear); each statistic of each kind is divided by its own max. |
+| `<P>_cell_volume` | `(N_free,)` | Volume of every free block in m^3, in the order of `<P>_ens` (so `<P>_sens_*_raw / cell_volume` relates the raw to the volume-normalised sensitivity). Summed from the mesh of the first usable member's `results_iter<numit>.h5`. Present only if `COMPUTE_SENS=True`, `SENS_STORE_VOLUMES=True` and a member with a mesh in its results file was found. The same for all subsamples. Absent in files from before 2026-11-15. |
+| `<P>_sensitivity_kinds` | `(n_kinds,)` str | Which sensitivity datasets the `<P>_sens_*` keys hold: `["volume_normalised"]`, `["raw"]` or `["raw", "volume_normalised"]`. Present whenever any `<P>_sens_*` key is. Deliberately not named `<P>_sens_*`: `femtic.read_ensemble_results()` reads every `<P>_sens_*` key as a float array. |
+| `<P>_sensitivity_key_suffixes` | `(n_kinds,)` str | Key suffix of each kind in `<P>_sensitivity_kinds`: `[""]` for a single kind, `["_cum", "_vn"]` for `"both"`. |
+| `<P>_sensitivity_native_range` | `(n_kinds, 5, 2)` | Native `[min, max]` over the free blocks of the ensemble mean / median / min / max / std of each kind (rows follow `<P>_sensitivity_kinds`; positive finite values; `NaN` where there are none, e.g. the std of one member). The max is the divisor of the stored key of that statistic: native value = `10**key * max`. The statistics are named in `<P>_sensitivity_range_stats`. Absent in files from before 2026-11-15 (c). |
+| `<P>_sensitivity_range_stats` | `(5,)` str | `["mean", "median", "min", "max", "std"]`, the middle axis of `<P>_sensitivity_native_range`. |
 | `<P>_simrc_coef` | `(N_free,)` | Cumulative `\|regression coefficient\|` between the forward-response ensemble and the model ensemble (Bobe, Keller & Van De Vijver, 2021). Present only if `COMPUTE_SIMRC=True` and at least one member's result files were found. |
 | `<P>_simrc_corr` | `(N_free,)` | Cumulative `\|correlation\|`, the normalised counterpart of `<P>_simrc_coef`. Same presence condition. |
 | `<P>_best` | `(N_free,)` | log10(rho) of the best-nRMS member (within the draw when subsampled), free blocks. Plotted as the `"best"` panel by `femtic_ens_plot_slices.py` (the block-file structure comes from a template, see there). |
@@ -566,4 +567,6 @@ correct.
 | 2026-11-06 | Claude Sonnet 5.5 (Anthropic) | **Directory scan report** appended to `femtic_ens_post_summary.md` after a full run: every scanned directory that is not in the ensemble, with a reason (`no_cnv_file`, `cnv_unreadable`, `cnv_no_iterations`, `rejected_nrms`, `no_model_file`, `no_perturbed_file`) and detail, counts per reason, members accepted via `ITER_FALLBACK`, and ignored non-directory glob matches. Uses the path returned by `utl.write_param_summary()`; falls back to `femtic_ens_post_scan_report.md` if the summary cannot be appended to. New helpers `build_scan_report()` / `append_scan_report()` (same code as in `femtic_ens_repair.py`); no change to member selection, `NRMS_CSV`, the `.npz` or any figure. Tested by executing the edited scan loop and the helpers on a synthetic ensemble (all six reasons, fallback, non-directory matches); the full script was not run. AI-generated; review before production use. |
 | 2026-11-06b | Claude Sonnet 5.5 (Anthropic) | Scan report: the number of glob matches is always shown next to the directories scanned (they differ for a file or broken symbolic link), and a new **"Directory numbering"** part reads the number after `ENSEMBLE_NAME` in each name and lists numbers with no entry at all, numbers matched only by a non-directory, numbers matched by several names and unnumbered names (prompted by a report of 255 directories scanned for an ensemble numbered 0..255). New optional `ENSEMBLE_INDEX_RANGE = (first, last)`, default `None` = inferred from the names. No change to member selection or any output other than the summary. Tested by executing the edited scan loop and helpers on a synthetic ensemble; the full script was not run. AI-generated; review before production use. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | The member directories are searched for the convergence file with `fem.find_cnv_file()` (names of `CNV_FILE` tried in order, then ignoring case); the scan report is unchanged. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
-
+| 2026-11-15 | Claude Sonnet 5.5 (Anthropic) | **Storage of both sensitivities, and of the cell volumes.** `SENS_KIND` is now `"both"` \| `"raw"` \| `"volume_normalised"` (`"volume_normalized"` accepted). `"raw"` and `"volume_normalised"` give exactly the previous output (same `.npz` key names; checked bit-for-bit against the previous script on a synthetic ensemble). `"both"` reads both `/model/sensitivity` datasets of every member, runs the same `_na`/`_an` aggregation on each, and stores 26 keys: every `<P>_sens_*` key with the suffix `_cum` (raw) or `_vn` (volume-normalised). A member is used only if both datasets can be read, so the two sets rest on the same members. New keys `<P>_cell_volume` (volume of each free block, m^3, order of `<P>_ens`), `<P>_sensitivity_kinds`, `<P>_sensitivity_key_suffixes`; new switch `SENS_STORE_VOLUMES` (default `True`). Volumes come from the mesh in the first usable `results_iter<N>.h5` via the new `fem.read_h5_block_volumes()` (needs the `femtic.py` of the same date) and are checked against `raw / volume_normalised`. In the script `sens_matrix` became the dict `sens_matrices` (kind -> matrix). The panels of `femtic_ens_plot_slices.py` are the key names without `<P>_`, so with `"both"` they are e.g. `"sens_mean_an_vn"` (its default list uses the plain names and needs editing for `"both"`). Tested by running the whole script on a synthetic ensemble (4 members, 162 tetrahedra) with an in-memory stand-in for `h5py`: single kind vs previous script, `"both"`, the spelling alias, an invalid value, a missing mesh, a member without one dataset, subsampling, `SENS_STORE_VOLUMES=False`. **Not run against real `results_iterX.h5` files** (`h5py` was not installed where this was written): the first member's log line from `read_h5_block_volumes` (`raw/volume_normalised == mesh volume ...`) is the check on real data. AI-generated; review before production use. |
+| 2026-11-15 (b) | Claude Sonnet 5.5 (Anthropic) | Every stored sensitivity is normalised to its max, and the ranges are stored. `<P>_sens_mean_raw` (plain ensemble mean) was the one key in native units and, for the raw kind, ranged far above 1; it is now divided by the max of the mean (the divisor of the `*_an` keys), so it equals `mean_an`. New keys `<P>_sensitivity_scale`, `<P>_sensitivity_native_range`, `<P>_sensitivity_range_stats`, `<P>_sensitivity_member_max`, `<P>_sensitivity_member_rows` hold what was divided out (native values are recoverable); printed per kind. The run lists the keys still above 1: `max_an` (and for skewed ensembles `std_an` / `median_an`), because the `*_an` keys share one divisor; the earlier comment under `SENS_KIND` ("log10 <= 0" for all) was not right and is corrected. All other keys unchanged. Needs the `femtic.py` and `femtic_ens_plot_slices.py` of the same date. Tested on synthetic results only. AI-generated; review before production use. |
+| 2026-11-15 (c) | Claude Sonnet 5.5 (Anthropic) | **One normalisation, done right before storing; `_na` / `_an` removed.** Per kind, `mean` / `median` / `min` / `max` / `std` are taken of the native sensitivity and each is divided by **its own max** over the free blocks just before it is stored (log10, so each peaks at exactly 0); `cv = std / mean` stays a ratio. New key names `<P>_sens_mean`, `_median`, `_min`, `_max`, `_std`, `_cv` (+ `_cum` / `_vn` with `SENS_KIND = "both"`); gone: all `<P>_sens_*_na`, `<P>_sens_*_an`, `<P>_sens_mean_raw`, and the keys `<P>_sensitivity_scale`, `_member_max`, `_member_rows` of (b). Stored ranges: `<P>_sensitivity_native_range` (n_kinds, 5, 2) with `<P>_sensitivity_range_stats`; printed per kind. Every stored statistic is now <= 1; the old `max_an` / `std_an` were not (one common divisor). The statistics no longer share a divisor, so comparing them needs the stored ranges. Needs the `femtic.py` and `femtic_ens_plot_slices.py` of the same date; the plot script still reads files with the old keys. Tested on synthetic results only. AI-generated; review before production use. |

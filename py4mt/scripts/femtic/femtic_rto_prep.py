@@ -555,9 +555,10 @@ N_SAMPLES = 128
 
 # ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_reset-err/"
 # ENSEMBLE_NAME = "ann_rto_reset-err_"
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
-ENSEMBLE_NAME = "ann_rto_orig-err_"
-
+# ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
+# ENSEMBLE_NAME = "ann_rto_orig-err_"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/krafla2026/RTO/kra_rto/"
+ENSEMBLE_NAME = "kra_rto_"
 # TEMPLATES = ENSEMBLE_DIR + "templates/"
 TEMPLATES = ENSEMBLE_DIR + "/templates/"
 if not os.path.isdir(TEMPLATES):
@@ -581,7 +582,7 @@ ENS_LIST accepts two forms:
   None              — process all members 0 … N_SAMPLES-1 (default)
   [i, j, k, …]     — explicit list of member indices to process
 """
-ENS_LIST = np.arange(128, 255)
+ENS_LIST = np.arange{50)
 
 
 """

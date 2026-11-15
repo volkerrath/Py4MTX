@@ -653,6 +653,9 @@ fviz.plot_ensemble_slices(..., slices=slices)            # same, every row
 | `z_bot` | `20000` | Bottom of the panel (m); sets the default down-dip range `ylim = [0, (z_bot - z_top) / sin(dip)]`. |
 | `xlim`, `ylim` | derived | As for every plane: along-strike and down-dip range in m relative to `point` (the midpoint of p1-p2 at depth `z_top`). Without `xlim` the fault runs through the whole ROI box; `xlim=[-L/2, L/2]` limits it to the segment p1-p2 (`L` = its length). |
 | `overlay` | none | `True` or `Line2D` keywords (optionally `label`): also draw this plane on every other panel. |
+| `limit_km` | `0.0` (fault) | Limit to the defining points, see [below](#limit-to-the-defining-points): the stretch of the fault between p1 and p2 is drawn as given, the rest fades out. `limit_km` widens that stretch at both ends (`> 0`, km) or narrows it (`< 0`); `None` = no distinction. A *fault* is a profile with `dip != 90` or with `overlay`; a plain vertical fence section keeps its old look unless it carries `limit_km`. |
+| `alpha_outside` | `0.25` | Opacity (`0 ... 1`) of the fault **far outside** the stretch: of its overlay lines on the other panels (relative to their own `alpha`), and of the model on the fault panel (faded towards white). `0` = fully transparent there (a fade to nothing, like `alpha_mode="fade"`), `1` = no difference. |
+| `fade_km` | `2.0` | Width (km) of the **linear fade** from full opacity at the ends of the stretch to `alpha_outside`. `0` or `None` = abrupt step at the ends. |
 | `panel` | `True` | `False` = the spec is **not** a panel; it only supplies its `overlay` lines (the fault trace in all the slices, no fault panel). Without `overlay` such a spec is simply dropped. At least one spec must stay a panel (else `ValueError`). |
 
 `overlay` can be put on **any** slice spec. `plot_model_slices` then draws the
@@ -684,6 +687,71 @@ the ROI box (`xlim` x `ylim` x `zlim` of the call, mesh extent where `None`).
 In the ensemble figure the vertical axis of a dipping-plane column is the
 down-dip distance (inverted axis) and the horizontal axes are in metres, as
 for all its panels.
+
+#### Limit to the defining points
+
+The two points p1, p2 are the only places where the fault is known; the plane
+through them runs on along strike as an extrapolation. With the spec keys
+`limit_km`, `alpha_outside` and `fade_km` (new 2026-11-15) the figure says so:
+
+- The **stretch** is the part of the plane between p1 and p2 *along strike*,
+  at every depth (a map at depth `z` shows it displaced by `z / tan(dip)`
+  towards the dip side, like the whole line). `limit_km = 0` (default for a
+  fault) is exactly p1 ... p2; `limit_km = 2.0` extends it by 2 km beyond each
+  point, `limit_km = -1.0` shortens it by 1 km at each end (a negative value
+  larger than half the length leaves no stretch: everything is outside, at
+  `alpha_outside`).
+- **Fade.** Opacity is 1 inside the stretch, then falls linearly with the
+  along-strike distance `d` from its end:
+  `1 - (1 - alpha_outside) * min(d / fade_km, 1)`, and stays at
+  `alpha_outside` beyond `fade_km` -- the same ramp as
+  `alpha_mode="fade"` for cells. `alpha_outside = 0` fades to fully
+  transparent (the fault simply ends, softly); `fade_km = 0` is a step at the
+  ends. The ramp is a staircase of 16 steps per side (steps of at most
+  `(1 - alpha_outside) / 16` in opacity, invisible); the lines and the veil use
+  the same one.
+- **Overlay lines** (the fault on the maps and sections): one entry
+  `overlay<i>_slice<j>` per panel, cut where the opacity changes (the along-strike
+  distance is linear along a line, so the cuts are exact) and with an entry key
+  `alpha_fn` -- a function of position that gives the opacity factor of every
+  segment. The factor multiplies the `alpha` of the style you gave, so
+  `alpha_outside` is **relative** to it (`alpha=0.9`, `alpha_outside=0.25`:
+  0.225 far out). Dotted and dashed lines keep their pattern continuous across
+  the steps (no gaps or jumps), and there is no seam where the opacity
+  changes: the line is drawn as stacked layers, one per opacity (butt caps, so
+  a solid line is half a line width shorter at each end than before). One
+  entry per panel carries the legend label, which shows the line as given. A
+  panel where nothing is visible (`alpha_outside = 0`, line outside the
+  fade) gets no entry.
+- **Fault panel** (`panel=True`, the model on the plane): white rectangles
+  over the part outside the stretch -- one per step, stacked, each reaching
+  to the border, so that the total follows the ramp without seams -- above
+  the model and below the lines; the axis limits do not change.
+  `plot_ensemble_slices` does the same (the line has no legend there).
+- `limit_km=None` draws everything as before; the figures are then byte-
+  identical to those of the previous version (checked, also for a profile
+  without `dip` and without `overlay`, which is untouched by default).
+- The verbose output of `plot_model_slices` names the stretch (along-strike
+  range from the midpoint of p1-p2, km), the opacity far outside and the
+  fade width. `limit_km` and `fade_km` are in **km** whatever unit the other
+  keys of the entry use (they are metres in a `femtic_viz` call, degrees /
+  metres in the km scripts); `alpha_outside` is a plain number.
+- A `limit_km` that is not a number (or `None`), a `fade_km` that is negative
+  or not a number (or `None`), or an `alpha_outside` outside `[0, 1]` raises
+  `ValueError` when the lines / the panel are prepared.
+- The entries of `polylines` take the key `alpha_fn` also from your own
+  code: `(m, 3)` model-local metres -> `(m,)` factors in `[0, 1]`, evaluated at
+  the midpoint of every segment (so put vertices where the factor changes).
+
+```python
+dict(kind="profile", p1=([6.030869, 45.962166], "latlon"),
+     p2=([6.115936, 45.910655], "latlon"), dip=110.0,
+     overlay=dict(color="magenta", linewidth=4, alpha=0.9), title="Vuache fault",
+     limit_km=2.0,          # known stretch = p1 ... p2 plus 2 km at each end
+     alpha_outside=0.2,     # far outside: 20 % of the opacity ...
+     fade_km=3.0,           # ... reached linearly over 3 km beyond the stretch
+     panel=False)
+```
 
 Not every slice meets the fault: a map above its top, or a section parallel to
 it, shows no line; the fault trace is not drawn on a vertical section that
@@ -1230,3 +1298,5 @@ Author: Volker Rath (DIAS)
 | 2026-11-11b | Claude Sonnet 5.5 (Anthropic) | Titles and colour bar position for all plot scripts. New public helpers `check_cbar_location`, `resolve_title` (the former `_title_for()` of `femtic_ens_plot_slices.py`) and `add_colorbar`. `plot_ensemble_slices`: new `figure_title`, `figure_title_fontsize`, `panel_titles`, `cbar_location`, `cbar_shrink`, `cbar_thickness` (joint colour bars at right / left / top / bottom; new private helpers `_cbar_tracks`, `_joint_cbar_geometry`, `_place_joint_colorbars`). `BoreholeFigureOptions`: new `heat_cbar_location`, `heat_cbar_shrink`, `heat_cbar_thickness`, `panel_titles`. `plot_borehole_logs`: new `panel_titles`, `figure_title_fontsize`; `figure_title=""` = no title. Defaults: figures pixel-identical to before (checked). **Fix:** `plot_ensemble_slices` raised `AttributeError` on Matplotlib 3.11 (`matplotlib.cm.colormaps` removed), now `plt.get_cmap(name).copy()`. Tests: `test_femtic_viz_titles_cbar.py`, `test_femtic_viz_ens_titles_cbar.py`, `test_femtic_viz_bh_cbar.py`. AI-generated code -- review before production use. |
 | 2026-11-11c | Claude Sonnet 5.5 (Anthropic) | **Fix:** `plot_boreholes` panel placement with a heat-map colour bar at a chosen side (`heat_cbar_location` `"top"` / `"bottom"` / `"left"` / `"right"`, or `heat_cbar_thickness`). The bar was added after `tight_layout` and took its space from the panels, which squeezed the rows of a multi-row figure (the x label of one row ran into the titles of the next) and left a wide empty strip between the panels and the bar. Now the strip for the bar is reserved in the `tight_layout` rectangle first (`_joint_cbar_geometry`) and the bar is put into it afterwards (`_place_joint_colorbars`, which now also takes an `extend` entry), as in `plot_model_slices`. Default placement (`heat_cbar_location=None`, no thickness) unchanged; an explicit `"right"` now also uses the strip, and the bar thickness defaults to that of the slice figures. Tests added to `test_femtic_viz_bh_cbar.py` (rows do not collide, bar clear of the text and 0.1 in from it on every side, row spacing independent of the bar); they fail with the former code. AI-generated code -- review before production use. |
 | 2026-11-12 | Claude Sonnet 5.5 (Anthropic) | Fault planes on slice figures. New public `slice_overlay_polylines()`; `plot_model_slices`: a slice spec with `overlay` (`True` or `Line2D` keywords, optional `label`) is drawn as a line on every other panel (trace on maps, dipping line on sections; clipped to the ROI box and the extent of the flagged slice; each line on its own panel only). New polyline-entry key `panels` (panel index or list of 0-based indices; default all). With `femtic.py` of the same date, `kind="profile"` takes `dip` and so defines a fault from two surface points. No `overlay`, no `panels`: figures byte-identical to before (checked on a synthetic mesh, default slices + polylines). New slice-spec key `panel=False`: the spec is no panel, only the source of its `overlay` lines (fault trace in all slices without a fault panel); panel numbers of `panels` count displayed slices. `plot_ensemble_slices` handles `overlay` / `panel=False` too (line in every row of the column; no legend). Tests: `test_femtic_fault_plane.py` (26 cases; synthetic mesh with a conductive fault zone; plot_model_slices and plot_ensemble_slices; mutation-checked). AI-generated code -- review before production use. |
+| 2026-11-15 | Claude Sonnet 5.5 (Anthropic) | **Fault plane limited to its defining points.** New slice-spec keys `limit_km` (km; default `0.0` for a fault = profile with `dip != 90` or with `overlay`; `> 0` widens, `< 0` narrows the stretch p1-p2 at both ends; `None` = off) and `alpha_outside` (default `0.25`). `slice_overlay_polylines` splits each overlay line at the ends of the stretch (inside = style as given, outside = `alpha_outside`, `0` = not drawn; entries `..._out<k>`); `plot_model_slices` and `plot_ensemble_slices` fade the fault panel itself outside the stretch (white veil). New private helpers `_fault_limit_range`, `_split_polyline_by_strike_range`, `_fault_veil`. Faults with `dip != 90` or `overlay` now show the part outside the points fainter by default (`limit_km=None` restores the old look); every other figure is byte-identical to before (checked against the previous module: plain plane, vertical fence profile, overlay and fault panel with `limit_km=None`). Tests (`test_fault_limit.py`, 84 checks): the stretch geometry, the exact cuts, the legend label, the panel positions, the veil, and real figures of a synthetic tetra mesh with a conductive fault zone (plot_model_slices and plot_ensemble_slices, Agg backend); not tried on a real model. AI-generated code -- review before production use. The step at the points of this first version was replaced by a fade the same day (next row). |
+| 2026-11-15b | Claude Sonnet 5.5 (Anthropic) | **`alpha_outside` fades.** The opacity of a fault outside its defining points now falls linearly from 1 at the ends of the stretch to `alpha_outside` over the new spec key `fade_km` (default `2.0` km; `0` / `None` = the abrupt step of the first version; `alpha_outside=0` fades to fully transparent), like `alpha_mode="fade"`. `slice_overlay_polylines` returns one entry per panel (no more `..._out<k>`), cut at the ends and at the 16 steps of the fade, with the new entry key `alpha_fn` (opacity factor per segment, multiplies the style's `alpha`: `alpha_outside` is now relative to it, not absolute). New private `_FadeLine2D` (a `Line2D` with an opacity per segment, drawn as stacked layers: no seam, dash pattern continuous, butt caps) and helpers; the fault panel's veil is a stack of overlapping rectangles. `_prepare_polylines` carries `alpha_fn`; `_fault_limit_range` returns `(lo, hi, alpha_outside, fade)`. Without `limit_km` nothing changes (byte-identical figures). AI-generated code -- review before production use. Tests (`test_fault_limit.py`, 114 checks; `test_fade_draw.py`, 36 checks): the ramp and its staircase, exact cuts, dash positions of a faded dotted / dashed / dash-dot line equal to the plain line's within 1 px, no seam in a solid line, veil pixels over black, real figures of a synthetic mesh (plot_model_slices, plot_ensemble_slices; Agg, png / pdf / svg); not tried on a real model. |

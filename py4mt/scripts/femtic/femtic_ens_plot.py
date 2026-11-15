@@ -430,6 +430,14 @@ Provenance
                 directories are searched with fem.find_cnv_file() (names also
                 matched ignoring case). Needs the femtic.py of the same date.
                 AI-generated; review before production use.
+    2026-11-15  Claude Sonnet 5.5 (Anthropic)
+                Comment only: the sensitivity keys of RESULTS_STATS are named
+                as femtic_ens_post.py (2026-11-15 (c)) stores them
+                ("sens_mean", "sens_median", "sens_cv", ... with "_cum" /
+                "_vn" for SENS_KIND = "both"); the old "sens_mean_an" /
+                "sens_mean_na" exist only in older results files. This script
+                reads the keys as they are stored (no renaming). No code
+                change. AI-generated; review before production use.
 """
 
 import os
@@ -622,7 +630,8 @@ RESULTS_MEMBERS = "best"
 
 #: Statistic figures, by key: "avg", "med", "var", "err" (std), "mad",
 #: "p<level>" (e.g. "p50", "p2_3"), "qdiff_<lo>_<hi>" (e.g. "qdiff_15_9_84_1"),
-#: "var_boot" / "err_boot", "sens_<kind>" (e.g. "sens_mean_an"),
+#: "var_boot" / "err_boot", "sens_<kind>" (e.g. "sens_mean"; "sens_mean_cum" /
+#: "sens_mean_vn" for a file written with SENS_KIND = "both"),
 #: "simrc_coef" / "simrc_corr" -- whatever the file holds; a key without data
 #: is skipped with a message. [] = none.
 RESULTS_STATS = ["avg", "med", "err", "mad"]

@@ -270,11 +270,11 @@ in `ensembles.py` (they are no longer re-exported here: call `ens.get_roughness`
 | Resistivity-block NPZ workflow | `read_model_to_npz`, `modify_model_npz`, `write_model_from_npz` |
 | Distortion file I/O | `read_distortion_file`, `read_results_distortion` |
 | Mesh I/O | `read_femtic_mesh(path, swap_xy=None)` → `(nodes, conn)`, the **only** mesh reader (`femtic_viz` calls it); `write_femtic_mesh`. `mesh.dat` is x = northing, y = easting, z positive down; `swap_xy=True` or the module default `MESH_SWAP_XY` swaps x/y for old conventions. |
-| Results HDF5 (`results_iterN.h5`) | `read_results_hdf5`, `read_results_model`, `read_results_data` (structured rows with observed and calculated values), `read_results_distortion`; `read_h5_sensitivity` |
+| Results HDF5 (`results_iterN.h5`) | `read_results_hdf5`, `read_results_model`, `read_results_data` (structured rows with observed and calculated values), `read_results_distortion`; `read_h5_sensitivity`; `read_h5_block_volumes` (block volumes summed from the stored mesh) |
 | Convergence file (a name or a list of candidate names, default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`) | `read_cnv`, `read_cnv_last`, `get_nrms`, `find_cnv_file`, `resolve_cnv_path`, `cnv_names` |
 | Sites and positions | `read_site_dat`, `read_site_position`, `utm_to_model`, `latlon_to_model`, `estimate_utm_origin`, `resolve_slice_positions` |
 | Borehole sampling | `extract_borehole_log` |
-| Ensemble results file (`femtic_ens_post.py` `.npz`) | `read_ensemble_results`, `select_ensemble_source` (setting `ENS_MODEL_SOURCE`: `auto` / `converged` / `perturbed` / `both`), `ensemble_stat_map`, `resolve_results_template`, `write_nrms_table`, `read_nrms_table` |
+| Ensemble results file (`femtic_ens_post.py` `.npz`) | `read_ensemble_results`, `select_ensemble_source` (setting `ENS_MODEL_SOURCE`: `auto` / `converged` / `perturbed` / `both`), `ensemble_stat_map`, `resolve_sens_stat` (+ `normalise_sens_kind`, `strip_sens_suffix`), `resolve_results_template`, `write_nrms_table`, `read_nrms_table` |
 | Ensemble plotting support | km/m helpers (`slices_km_to_m`, `plane_spec_km_to_m`, ...), alpha mask (`parse_alpha_source`, `alpha_from_condition`, `write_alpha_block`), `resolve_origin_and_sites`, `ReferenceModel`, `roi_free_mask` |
 | Ensemble borehole sampling | `BoreholeMesh`, `expand_site_templates`, `sample_boreholes`, `heat_scale_*` |
 | Directory scan report | `build_scan_report`, `append_scan_report` |
@@ -306,6 +306,7 @@ Visualisation for FEMTIC resistivity models operating directly on
 | RTO/GST ensemble model plots | `plot_model_ensemble` |
 | Model slice panels (map, curtains, oblique plane) | `plot_model_slices`; ensemble version `plot_ensemble_slices` |
 | Polylines on slice panels; intersection line of two slices | `plot_model_slices(polylines=...)`, `slice_intersection_polyline`, `slice_intersection_polylines` |
+| Fault plane from two surface points on all slices (`overlay`, `panel=False`); the part between the two points as given, the rest fading out (`limit_km`, `alpha_outside`, `fade_km`) | slice spec `kind="profile"` of `plot_model_slices` / `plot_ensemble_slices`; `slice_overlay_polylines` |
 | Titles and colour bar position of the plot scripts | `resolve_title`, `check_cbar_location`, `add_colorbar`; `figure_title` / `panel_titles` / `cbar_location` of `plot_ensemble_slices`, `plot_borehole_logs`, `BoreholeFigureOptions` |
 | Borehole ρ(z) logs | `plot_borehole_logs` |
 | Ensemble borehole figures (profiles, heat maps) | `plan_borehole_figures`, `draw_borehole_figures`, `plot_boreholes`, `BoreholeFigureOptions` |
