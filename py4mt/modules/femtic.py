@@ -326,6 +326,21 @@ Modified: 2026-11-15 (d), (e) by Claude Sonnet 5.5 (Anthropic) -- documentation
     defining points, with a linear fade of the opacity outside it; handled by
     femtic_viz.py of the same date) pass through resolve_slice_positions()
     like every other key; docstrings say so. No code change.
+Modified: 2026-11-15 (f) by Claude Sonnet 5.5 (Anthropic) -- new
+    markers_km_to_m() (next to polylines_km_to_m): converts the MOD_MAP_
+    MARKERS list of the km scripts (femtic_ens_plot_slices.py) to the metre
+    list femtic_viz.plot_model_slices(map_markers=...) takes: the entry keys
+    `depth`, `depth_err` and `max_dist` are km there (the entry keys
+    `latlon`, `marker`, ... pass through). Nothing else changed. AI-generated
+    code -- review before production use.
+Modified: 2026-11-15 (g) by Claude Sonnet 5.5 (Anthropic) -- the difference
+    to the prior model written by femtic_ens_post.py (<P>_diff_prior,
+    <P>_prior, <P>_diff_prior_info): read_ensemble_results() returns it as
+    res["diff_prior"], res["prior"], res["diff_prior_info"] (None for older
+    files), ensemble_stat_map() offers the plot names "diff_prior" (signed)
+    and "abs_diff_prior" (its absolute value), select_ensemble_source() drops
+    it when the perturbed models alone are drawn. Nothing else changed.
+    AI-generated code -- review before production use.
 """
 from __future__ import annotations
 
@@ -8905,6 +8920,46 @@ def polylines_km_to_m(polylines):
     return out
 
 
+def markers_km_to_m(markers):
+    """Convert a MOD_MAP_MARKERS list (km) to the metre list of plot_model_slices.
+
+    ``markers`` is the list of entries described for the ``map_markers``
+    parameter of ``femtic_viz.plot_model_slices`` (``latlon`` = [lat, lon]
+    in degrees, ``marker``, ``color``, ``ms``, ``name``, ``kinds``, other
+    Matplotlib ``Line2D`` keywords, ``is_model_centre``), with the lengths of
+    the km scripts: ``depth`` (positive down), ``depth_err`` (the +- of the
+    depth bar) and ``max_dist`` (distance from a section) are km here, metres
+    in ``plot_model_slices``. Everything else passes through unchanged. A
+    list of entries is returned (``[]`` for ``None`` / ``[]``); the input is
+    not modified. ``TypeError`` for a non-dict entry or a non-sequence.
+
+    Example (Epagny 1996, 2 +- 1 km deep)::
+
+        markers_km_to_m([dict(latlon=[45.9383, 6.0883], marker="*",
+                              depth=2.0, depth_err=1.0)])
+        # -> depth=2000.0, depth_err=1000.0
+
+    Added 2026-11-15, Claude Sonnet 5.5 (Anthropic).
+    """
+    if not markers:
+        return []
+    if isinstance(markers, dict) or not isinstance(markers, (list, tuple)):
+        raise TypeError(
+            "markers must be a list of dicts, got "
+            f"{type(markers).__name__}.")
+    out = []
+    for i, ent in enumerate(markers):
+        if not isinstance(ent, dict):
+            raise TypeError(
+                f"markers[{i}]: expected a dict, got {type(ent).__name__}.")
+        ent = dict(ent)
+        for key in ("depth", "depth_err", "max_dist"):
+            if ent.get(key) is not None:
+                ent[key] = km_to_m(ent[key])
+        out.append(ent)
+    return out
+
+
 def parse_alpha_source(expr: str):
     """Parse MOD_ALPHA_SOURCE ("name op value") -> (name, op, value).
 
@@ -9174,6 +9229,13 @@ def read_ensemble_results(path, prefix=None, *, percentiles=None, out=True):
         avg, var, err, med, mad (n_free,) ; prc (n_prc, n_free) ; prc_levels
         qdiff {key: (n_free,)} ; var_boot, err_boot, var_boot_se | None
         sens {suffix: (n_free,)} ; simrc_coef, simrc_corr | None
+        diff_prior, prior (n_free,) | None  model(ens) - model(prior) and
+                                        model(prior), log10(rho), signed
+                                        (femtic_ens_post.py of 2026-11-15 (d);
+                                        None for older files)
+        diff_prior_info [stat, source kind, text] | None  how they were made:
+                                        "mean" | "median" of the ensemble;
+                                        "reference" | "perturbed" prior
         sens_kinds, sens_suffixes  lists | None: the sensitivity kinds the
                                         ``sens`` keys hold ("raw" and/or
                                         "volume_normalised") and the key
@@ -9340,6 +9402,24 @@ def read_ensemble_results(path, prefix=None, *, percentiles=None, out=True):
         simrc_coef = simrc_corr = None
         if f"{pk}_simrc_coef" in keys and f"{pk}_simrc_corr" in keys:
             simrc_coef, simrc_corr = _arr("simrc_coef"), _arr("simrc_corr")
+        # difference to the prior model (files from 2026-11-15 (d))
+        diff_prior = prior = diff_prior_info = None
+        if f"{pk}_diff_prior" in keys:
+            _dp = _arr("diff_prior")
+            if _dp.shape == (ens.shape[1],):
+                diff_prior = _dp
+                if f"{pk}_prior" in keys and _arr("prior").shape == _dp.shape:
+                    prior = _arr("prior")
+                if f"{pk}_diff_prior_info" in keys:
+                    diff_prior_info = [
+                        str(v)
+                        for v in np.asarray(z[f"{pk}_diff_prior_info"]).ravel()
+                    ]
+            elif out:
+                print(
+                    f"  results: '{pk}_diff_prior' has shape {_dp.shape}, "
+                    f"expected ({ens.shape[1]},) - ignored."
+                )
 
         # [block file, best iteration, nRMS] per row of ``ens`` (stored as a
         # string array: mixed-type lists are saved that way)
@@ -9419,7 +9499,9 @@ def read_ensemble_results(path, prefix=None, *, percentiles=None, out=True):
         err_boot=err_boot, var_boot_se=var_boot_se, sens=sens,
         sens_kinds=sens_kinds, sens_suffixes=sens_suffixes,
         sens_ranges=sens_ranges,
-        simrc_coef=simrc_coef, simrc_corr=simrc_corr, model_list=model_list,
+        simrc_coef=simrc_coef, simrc_corr=simrc_corr,
+        diff_prior=diff_prior, prior=prior, diff_prior_info=diff_prior_info,
+        model_list=model_list,
         best_index=bi, best_member=best_member, best_file=best_file,
         best_iter=int(model_list[bi][1]), best_nrms=float(model_list[bi][2]),
         nrms_table=nrms_table, nrms_max=nrms_max,
@@ -9433,10 +9515,11 @@ def ensemble_stat_map(res):
     Returns ``(stat_map, value_keys)``: ``stat_map[key] = (vector over the
     free parameters, description)`` for avg / var / err / med / mad, one
     ``p<level>`` key per percentile level, the qdiff_* spreads, the
-    bootstrap statistics, ``sens_*`` and ``simrc_*`` -- whatever the file
-    holds.  ``value_keys`` are the keys on the resistivity scale
-    (log10(rho): avg, med and the percentiles), the ones that make sense as
-    borehole lines.
+    bootstrap statistics, ``sens_*``, ``simrc_*``, ``diff_prior`` (the signed
+    log10 difference ensemble - prior model) and ``abs_diff_prior`` (its
+    absolute value, made here) -- whatever the file holds.  ``value_keys``
+    are the keys on the resistivity scale (log10(rho): avg, med and the
+    percentiles), the ones that make sense as borehole lines.
     """
     stat = {
         "avg": (res["avg"], "mean"),
@@ -9473,6 +9556,13 @@ def ensemble_stat_map(res):
             res["simrc_coef"], "log10 SimRC cumulative |regression coeff.|")
         stat["simrc_corr"] = (
             res["simrc_corr"], "log10 SimRC cumulative |correlation|")
+    _dp = res.get("diff_prior")
+    if _dp is not None:
+        _info = res.get("diff_prior_info") or []
+        _what = (f"{_info[0]}(ens) - prior ({_info[1]})" if len(_info) >= 2
+                 else "model(ens) - model(prior)")
+        stat["diff_prior"] = (_dp, f"log10 {_what}, signed")
+        stat["abs_diff_prior"] = (np.abs(_dp), f"|log10 {_what}|")
     return stat, value_keys
 
 
@@ -9501,9 +9591,10 @@ def select_ensemble_source(res, source="auto", *, out=True):
         used as it is. For a ``"both"`` file the perturbed models become the
         ensemble (``res["ens"]``, ``res["model_source"] = "perturbed"``) and
         the statistics ``avg, var, err, med, mad, prc`` are recomputed from
-        them; ``qdiff``, the bootstrap, ``sens`` and SimRC statistics belong to
-        the converged models and are dropped. ``res["source_swapped"]`` is
-        True, so that a script can give its outputs another name. Rows keep
+        them; ``qdiff``, the bootstrap, ``sens``, SimRC and ``diff_prior``
+        statistics belong to the converged models and are dropped.
+        ``res["source_swapped"]`` is True, so that a script can give its
+        outputs another name. Rows keep
         the order of the members: ``model_list``, ``best_index`` and
         ``best_file`` still describe the converged inversions.
     ``"both"``
@@ -9579,6 +9670,9 @@ def select_ensemble_source(res, source="auto", *, out=True):
         sens={},
         simrc_coef=None,
         simrc_corr=None,
+        diff_prior=None,
+        prior=None,
+        diff_prior_info=None,
         source_swapped=True,
     )
     if out:

@@ -150,6 +150,10 @@ Notes:
 |---|---|---|---|
 | `PERCENTILES` | list of float | `[2.3, 15.9, 50.0, 84.1, 97.7]` | Percentile levels (2-σ / 1-σ normal-equivalent). |
 | `QDIFF_PAIRS` | list of `(lo, hi)` | `[(15.9, 84.1), (2.3, 97.7)]` | Percentile-pair differences `\|P_hi - P_lo\|` computed as extra, outlier-robust spread statistics (both values must also appear in `PERCENTILES`). The default gives both a 1-sigma-equivalent (`15.9`/`84.1`) and 2-sigma-equivalent (`2.3`/`97.7`) spread. Saved as `<P>_qdiff_<lo>_<hi>` and plottable under the same key in `MOD_STATS_WHAT`. |
+| `COMPUTE_PRIOR_DIFF` | bool | `True` | Store the difference to the prior model, `<P>_diff_prior = model(ens) - model(prior)`, per free parameter in log10(Ohm.m) (see "Difference to the prior model" below). **Signed**: positive = the ensemble is more resistive than the prior; no absolute value is taken here (the plot script offers `abs_diff_prior`). A prior that cannot be used gives a message and no keys, never an error. |
+| `PRIOR_DIFF_STAT` | str | `"mean"` | `model(ens)`: the `"mean"` or the `"median"` of this run's models (the converged ones, or the perturbed ones with `ENS_MODEL_SOURCE = "perturbed"`). Anything else is rejected. |
+| `PRIOR_DIFF_SOURCE` | str | `"auto"` | `model(prior)`: `"reference"` = the unperturbed prior model, the block file `PRIOR_DIFF_FILE` (must have the members' mesh and free regions); `"perturbed"` = the same statistic of the members' perturbed references `ENS_PERTURBED_FILE` (needs `ENS_MODEL_SOURCE = "both"`; it differs from the reference by the sampling noise of the draws); `"auto"` = the reference if it can be used, else the perturbed ones if the run has them, else no difference. What was used is printed and stored in `<P>_diff_prior_info`. |
+| `PRIOR_DIFF_FILE` | str | `ENSEMBLE_DIR/templates/referencemodel.dat` | Block file of the unperturbed prior model, used by `"reference"` / `"auto"`. It is the base of the RTO draws; the members' own `referencemodel.dat` are the perturbed ones. |
 
 
 ### Sensitivity statistics
@@ -382,6 +386,9 @@ scripts read the file with `femtic.read_ensemble_results()`.
 | `<P>_prc` | `(N_prc, N_free)` | Percentile values at `PERCENTILES` levels. |
 | `<P>_prc_levels` | `(N_prc,)` | The `PERCENTILES` levels themselves, for self-describing output. |
 | `<P>_qdiff_<lo>_<hi>` | `(N_free,)` | `\|P_hi - P_lo\|` per free parameter, one key per `QDIFF_PAIRS` entry (e.g. `<P>_qdiff_15_9_84_1`, `<P>_qdiff_2_3_97_7`). |
+| `<P>_diff_prior` | `(N_free,)` | **Signed** difference `model(ens) - model(prior)` in log10(Ohm.m): `PRIOR_DIFF_STAT` of this run's models minus the prior model (`PRIOR_DIFF_SOURCE`); positive = more resistive than the prior. Present only if `COMPUTE_PRIOR_DIFF=True` and a prior could be used. No absolute value is stored: plot with `"diff_prior"` or, for the size alone, `"abs_diff_prior"` (made from it by `femtic.ensemble_stat_map()`). |
+| `<P>_prior` | `(N_free,)` | The prior model in log10(Ohm.m) that was subtracted (the reference file, or the statistic of the perturbed references). Present with `<P>_diff_prior`. |
+| `<P>_diff_prior_info` | `(3,)` str | `[PRIOR_DIFF_STAT, "reference" or "perturbed", text]`: which statistic and which prior were used. Present with `<P>_diff_prior`. |
 | `<P>_var_boot` | `(N_free,)` | Bootstrap mean variance across `BOOTSTRAP_N` resamples. Present only if `BOOTSTRAP_VAR=True`. |
 | `<P>_err_boot` | `(N_free,)` | `sqrt(var_boot)`. Present only if `BOOTSTRAP_VAR=True`. |
 | `<P>_var_boot_se` | `(N_free,)` | Bootstrap standard error of `var_boot` itself (estimator-noise diagnostic, not a model spread statistic). Present only if `BOOTSTRAP_VAR=True`. |
@@ -458,6 +465,38 @@ missing first or last member cannot be seen; set `ENSEMBLE_INDEX_RANGE = (0, 255
 for a known ensemble size.
 
 Plain ASCII only (other characters in directory names show as `?`).
+
+
+## Difference to the prior model
+
+`<P>_diff_prior` is `model(ens) - model(prior)` in log10(Ohm.m), per free
+parameter and **signed** (positive = the ensemble is more resistive than the
+prior). It shows where the data moved the ensemble away from the prior; where
+it is near zero the prior is what the model still says.
+
+- `model(ens)` is the mean (default) or median (`PRIOR_DIFF_STAT`) of the
+  run's models, i.e. the same `<P>_avg` / `<P>_med` that is stored; the
+  difference is exactly `<P>_avg - <P>_prior`. With `ENS_SUBSAMPLE_N` it is
+  the statistic of the drawn members.
+- `model(prior)` is, by `PRIOR_DIFF_SOURCE`, the unperturbed reference model
+  (`PRIOR_DIFF_FILE`, default `ENSEMBLE_DIR/templates/referencemodel.dat`) or
+  the same statistic of the members' perturbed references
+  (`ENS_MODEL_SOURCE = "both"`; with the same drawn rows after a subsample).
+  The two differ by the sampling noise of the RTO draws, so with only a few
+  members the reference is the cleaner choice; `"auto"` takes it when it can
+  be used and says in the log when it fell back.
+- A prior that is missing, unreadable or of another structure (number of free
+  parameters) gives a printed reason and no keys; the rest of the run is not
+  affected.
+- With `ENS_MODEL_SOURCE = "perturbed"` the ensemble *is* the perturbed
+  models, so only a reference prior gives a difference (it measures the
+  sampling noise of the prior draws); no reference file means no keys.
+- The absolute value is not stored: in `femtic_ens_plot_slices.py` add
+  `"diff_prior"` (signed, diverging map) and/or `"abs_diff_prior"` to
+  `MOD_STATS_WHAT`, or use either as the name in `MOD_ALPHA_SOURCE`.
+  Needs the `femtic.py` and `femtic_ens_plot_slices.py` of 2026-11-15.
+- Not stored for a results file made before this change; the plot scripts
+  then skip the panel with a printed message.
 
 
 ## Quick start
@@ -570,3 +609,4 @@ correct.
 | 2026-11-15 | Claude Sonnet 5.5 (Anthropic) | **Storage of both sensitivities, and of the cell volumes.** `SENS_KIND` is now `"both"` \| `"raw"` \| `"volume_normalised"` (`"volume_normalized"` accepted). `"raw"` and `"volume_normalised"` give exactly the previous output (same `.npz` key names; checked bit-for-bit against the previous script on a synthetic ensemble). `"both"` reads both `/model/sensitivity` datasets of every member, runs the same `_na`/`_an` aggregation on each, and stores 26 keys: every `<P>_sens_*` key with the suffix `_cum` (raw) or `_vn` (volume-normalised). A member is used only if both datasets can be read, so the two sets rest on the same members. New keys `<P>_cell_volume` (volume of each free block, m^3, order of `<P>_ens`), `<P>_sensitivity_kinds`, `<P>_sensitivity_key_suffixes`; new switch `SENS_STORE_VOLUMES` (default `True`). Volumes come from the mesh in the first usable `results_iter<N>.h5` via the new `fem.read_h5_block_volumes()` (needs the `femtic.py` of the same date) and are checked against `raw / volume_normalised`. In the script `sens_matrix` became the dict `sens_matrices` (kind -> matrix). The panels of `femtic_ens_plot_slices.py` are the key names without `<P>_`, so with `"both"` they are e.g. `"sens_mean_an_vn"` (its default list uses the plain names and needs editing for `"both"`). Tested by running the whole script on a synthetic ensemble (4 members, 162 tetrahedra) with an in-memory stand-in for `h5py`: single kind vs previous script, `"both"`, the spelling alias, an invalid value, a missing mesh, a member without one dataset, subsampling, `SENS_STORE_VOLUMES=False`. **Not run against real `results_iterX.h5` files** (`h5py` was not installed where this was written): the first member's log line from `read_h5_block_volumes` (`raw/volume_normalised == mesh volume ...`) is the check on real data. AI-generated; review before production use. |
 | 2026-11-15 (b) | Claude Sonnet 5.5 (Anthropic) | Every stored sensitivity is normalised to its max, and the ranges are stored. `<P>_sens_mean_raw` (plain ensemble mean) was the one key in native units and, for the raw kind, ranged far above 1; it is now divided by the max of the mean (the divisor of the `*_an` keys), so it equals `mean_an`. New keys `<P>_sensitivity_scale`, `<P>_sensitivity_native_range`, `<P>_sensitivity_range_stats`, `<P>_sensitivity_member_max`, `<P>_sensitivity_member_rows` hold what was divided out (native values are recoverable); printed per kind. The run lists the keys still above 1: `max_an` (and for skewed ensembles `std_an` / `median_an`), because the `*_an` keys share one divisor; the earlier comment under `SENS_KIND` ("log10 <= 0" for all) was not right and is corrected. All other keys unchanged. Needs the `femtic.py` and `femtic_ens_plot_slices.py` of the same date. Tested on synthetic results only. AI-generated; review before production use. |
 | 2026-11-15 (c) | Claude Sonnet 5.5 (Anthropic) | **One normalisation, done right before storing; `_na` / `_an` removed.** Per kind, `mean` / `median` / `min` / `max` / `std` are taken of the native sensitivity and each is divided by **its own max** over the free blocks just before it is stored (log10, so each peaks at exactly 0); `cv = std / mean` stays a ratio. New key names `<P>_sens_mean`, `_median`, `_min`, `_max`, `_std`, `_cv` (+ `_cum` / `_vn` with `SENS_KIND = "both"`); gone: all `<P>_sens_*_na`, `<P>_sens_*_an`, `<P>_sens_mean_raw`, and the keys `<P>_sensitivity_scale`, `_member_max`, `_member_rows` of (b). Stored ranges: `<P>_sensitivity_native_range` (n_kinds, 5, 2) with `<P>_sensitivity_range_stats`; printed per kind. Every stored statistic is now <= 1; the old `max_an` / `std_an` were not (one common divisor). The statistics no longer share a divisor, so comparing them needs the stored ranges. Needs the `femtic.py` and `femtic_ens_plot_slices.py` of the same date; the plot script still reads files with the old keys. Tested on synthetic results only. AI-generated; review before production use. |
+| 2026-11-15 (d) | Claude Sonnet 5.5 (Anthropic) | **Difference to the prior model.** New switches `COMPUTE_PRIOR_DIFF` (default `True`), `PRIOR_DIFF_STAT` (`"mean"` \| `"median"`), `PRIOR_DIFF_SOURCE` (`"auto"` \| `"reference"` \| `"perturbed"`), `PRIOR_DIFF_FILE`; new keys `<P>_diff_prior` (signed `model(ens) - model(prior)`, log10), `<P>_prior`, `<P>_diff_prior_info`; section "Difference to the prior model". No absolute value in the script, as asked: `femtic.ensemble_stat_map()` offers `abs_diff_prior` for plotting. An unusable prior is reported and skipped. With the feature off, or without a prior, the output is the previous one (checked: every other array bit-identical, also against the original script). Needs the `femtic.py` of the same date to be plotted. Tested by running the whole script on a synthetic ensemble (reference, median, perturbed, auto fallback, missing / mismatching / unreadable prior, subsample, `ENS_MODEL_SOURCE = "perturbed"`); **not run on real ensembles**. AI-generated; review before production use. |

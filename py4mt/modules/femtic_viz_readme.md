@@ -367,14 +367,14 @@ fviz.plot_model_slices(
 | `sites_in_slices` | `False` | Site markers on curtain/plane panels |
 | `site_marker` | `dict(marker="v", …)` | Matplotlib kwargs for map markers |
 | `site_marker_slices` | `dict(marker="o", …)` | Matplotlib kwargs for curtain markers |
-| `map_markers` | `None` | Extra markers (lat/lon dicts) on map panels. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the `show_model_centre` marker's style rather than plotting as a regular marker. |
-| `show_model_centre` | `True` | Marks the model origin (model-local x=0, y=0) on `"map"` panels whenever `display_coords` is `"utm"`/`"latlon"`; no-op for `"model"`. Never gets a legend entry. Default style (since 2026-09-26): yellow 5-point star (`"*"`) with a black edge, `ms=14`, `mew=1.2`, `zorder=15` (above every other map-panel artist, including site markers); override via a `map_markers` entry as above. Set `False` to force off. |
+| `map_markers` | `None` | Point markers (epicentres, wells, the model centre, ...): dicts with `latlon`, `marker`, `color`, `ms`, `zorder`, `name` and any `Line2D` keyword, plus (2026-11-15c) `depth` (m, positive down), `depth_err` (+- depth bar), `kinds` (panels) and `max_dist` (m). Drawn on every map and, with a depth, on the vertical sections near the marker; see "Point markers" below. An entry with `"is_model_centre": True` (instead of `"latlon"`) sets the style, panels, depth and legend `name` of the `show_model_centre` marker rather than plotting as a regular marker. |
+| `show_model_centre` | `True` | Marks the model origin (model-local x=0, y=0) on `"map"` panels whenever `display_coords` is `"utm"`/`"latlon"`; no-op for `"model"`. No legend entry unless the `is_model_centre` entry has a `name`. Default style (since 2026-09-26): yellow 5-point star (`"*"`) with a black edge, `ms=14`, `mew=1.2`, `zorder=15` (above every other map-panel artist, including site markers); override via a `map_markers` entry as above. The sections show it only if the `is_model_centre` entry asks for them (`kinds` / `depth`), e.g. a black cross on maps and sections. Set `False` to force off everywhere. |
 | `polylines` | `None` | Dict `{name: entry}` of 3-D polylines (faults, boundaries, survey lines, intersection lines of slices, ...) drawn on the map and vertical panels; `None` / `{}` = none (figure unchanged, pixel-identical). Entry keys: `points` (required; model-local m, or CRS-tagged `(pts, "utm")`, `(pts, "latlon")`, `(pts, "model")`), `style`, `label`, `kinds`, `max_dist`, `z_range`. See [Polylines](#polylines). Never changes the axis limits. |
 | `display_coords` | `"model"` | `"model"` / `"utm"` / `"latlon"` |
 | `utm_origin_e`, `utm_origin_n` | `0.0` | Mesh-centre UTM [m] |
 | `utm_zone`, `utm_northern` | `1`, `True` | UTM zone and hemisphere |
 | `utm_to_latlon_fn` | `None` | Callable for lat/lon tick formatting |
-| `latlon_to_model_fn` | `None` | Callable for `map_markers` placement |
+| `latlon_to_model_fn` | `None` | Callable for `map_markers` placement; without it the lat/lon entries are skipped with a message |
 | `plot_file` | `None` | Save path; `None` = `plt.show()` |
 | `dpi` | `200` | Saved-figure DPI |
 | `show` | `False` | If `True`, also call `plt.show()` after saving (when `plot_file` is given) — displays the figure inline in addition to writing it to disk. Useful in interactive environments (Spyder, Jupyter). No effect when `plot_file=None` (already shown either way). |
@@ -555,6 +555,65 @@ Notes
   `style`, negative `max_dist`, and `"latlon"` without `latlon_to_model_fn`.
 - The km scripts convert their `MOD_POLYLINES` with `fem.polylines_km_to_m`
   (see `femtic_readme.md`).
+
+### Point markers
+
+`map_markers` is a list of dicts; each is one marker, a Matplotlib `Line2D`
+with one point:
+
+| Key | Meaning |
+|---|---|
+| `latlon` | `[lat, lon]`, degrees; placed with `latlon_to_model_fn` (entries are skipped with a message if there is none) |
+| `marker`, `color`, `ms`, `zorder`, `name` | symbol (`"+"`), colour (`"black"`), size (8), drawing order (11), legend label (`None` = none); any other key (`markerfacecolor`, `markeredgecolor`, `mew`, ...) is a `Line2D` keyword |
+| `depth` | m, positive down (model z; 0 if only `kinds` asks for sections). Sections draw the marker at this depth; maps ignore it |
+| `depth_err` | half-length of a depth bar in m: depth - depth_err ... depth + depth_err (`2 +- 1 km` = `depth=2000.0, depth_err=1000.0`). Style: `err_color` (default the marker's edge colour, else its colour), `err_lw` (1.5), `err_cap` (cap width in points, 6; 0 = no caps) |
+| `kinds` | panels that show it: `"map"`, `"ns"`, `"ew"`, `"plane"`, `"vertical"` (= ns + ew + plane), `"all"` or a list. Default `"all"` if the entry has a `depth`, else `"map"` (entries of earlier versions draw as before) |
+| `max_dist` | m; a section shows the marker if the marker is at most this far from the section plane (default `projection_dist`; `None` there = on every section) |
+
+- Maps: the marker is drawn on every map panel, whatever its depth, at its
+  position in the display coordinates (model, UTM or lat/lon).
+- Vertical sections (`ns`, `ew`, vertical and dipping `plane`, also the panels
+  of a `kind="profile"` fault): the marker sits at (x, y, depth); the distance
+  from the plane is measured to that point, so a marker 2 km deep is compared
+  with a dipping plane at 2 km depth, not at the surface. In a dipping plane
+  the horizontal axis is the along-strike and the vertical axis the down-dip
+  distance, so the depth bar is the depth direction projected into the plane
+  (a bar of +- 1 km of depth is +- 1 km * sin(dip) of down-dip distance long).
+- The markers are free artists, like the polylines: they never change the
+  axis limits or the panel sizes. A marker whose position is outside the
+  view is clipped by the axes; one inside it is drawn whole, also on the
+  frame (a cross at depth 0 on the top edge is not cut in half).
+- Legend: an entry with a `name` gets a legend entry on every panel where it
+  is drawn (lower right, with the other labelled items).
+- Model centre: `dict(is_model_centre=True, ...)` takes the same keys
+  (`latlon` is not used: the position is x = y = 0) and sets the style of the
+  `show_model_centre` marker. Default: yellow star, maps only. With
+  `kinds="all"` (or a `depth`) it is also drawn on the sections that pass
+  within `max_dist` of the model origin; `show_model_centre=False` removes it
+  everywhere. On maps the rule "only for `display_coords` `"utm"` / `"latlon"`"
+  is unchanged; on sections it applies in every display mode.
+- Errors: `TypeError` for an entry that is not a dict; `ValueError` for no
+  `latlon` (and no `is_model_centre`), a latitude beyond 90 degrees, an
+  unknown `kinds` name, a non-finite `depth`, a negative `depth_err` or
+  `max_dist`.
+- Not in `plot_ensemble_slices`, which has no `map_markers`.
+- The km scripts keep `depth`, `depth_err` and `max_dist` in km and convert
+  the list with `fem.markers_km_to_m` (see `femtic_readme.md`).
+
+Example: the Epagny 1996 earthquake (45.9383 N, 6.0883 E, 2 +- 1 km deep) as
+a yellow star with a depth bar, and the model centre as a black cross on the
+maps and the sections:
+
+```python
+map_markers = [
+    dict(latlon=[45.9383, 6.0883], marker="*", color="black",
+         markerfacecolor="yellow", markeredgecolor="black", ms=18, mew=1.0,
+         zorder=14, depth=2000.0, depth_err=1000.0,
+         name="Epagny 1996 (2 +- 1 km)"),
+    dict(is_model_centre=True, marker="+", color="black", ms=16, mew=2.2,
+         kinds="all", depth=0.0, name="model centre"),
+],
+```
 
 ### Intersection of two slices
 
@@ -1300,3 +1359,4 @@ Author: Volker Rath (DIAS)
 | 2026-11-12 | Claude Sonnet 5.5 (Anthropic) | Fault planes on slice figures. New public `slice_overlay_polylines()`; `plot_model_slices`: a slice spec with `overlay` (`True` or `Line2D` keywords, optional `label`) is drawn as a line on every other panel (trace on maps, dipping line on sections; clipped to the ROI box and the extent of the flagged slice; each line on its own panel only). New polyline-entry key `panels` (panel index or list of 0-based indices; default all). With `femtic.py` of the same date, `kind="profile"` takes `dip` and so defines a fault from two surface points. No `overlay`, no `panels`: figures byte-identical to before (checked on a synthetic mesh, default slices + polylines). New slice-spec key `panel=False`: the spec is no panel, only the source of its `overlay` lines (fault trace in all slices without a fault panel); panel numbers of `panels` count displayed slices. `plot_ensemble_slices` handles `overlay` / `panel=False` too (line in every row of the column; no legend). Tests: `test_femtic_fault_plane.py` (26 cases; synthetic mesh with a conductive fault zone; plot_model_slices and plot_ensemble_slices; mutation-checked). AI-generated code -- review before production use. |
 | 2026-11-15 | Claude Sonnet 5.5 (Anthropic) | **Fault plane limited to its defining points.** New slice-spec keys `limit_km` (km; default `0.0` for a fault = profile with `dip != 90` or with `overlay`; `> 0` widens, `< 0` narrows the stretch p1-p2 at both ends; `None` = off) and `alpha_outside` (default `0.25`). `slice_overlay_polylines` splits each overlay line at the ends of the stretch (inside = style as given, outside = `alpha_outside`, `0` = not drawn; entries `..._out<k>`); `plot_model_slices` and `plot_ensemble_slices` fade the fault panel itself outside the stretch (white veil). New private helpers `_fault_limit_range`, `_split_polyline_by_strike_range`, `_fault_veil`. Faults with `dip != 90` or `overlay` now show the part outside the points fainter by default (`limit_km=None` restores the old look); every other figure is byte-identical to before (checked against the previous module: plain plane, vertical fence profile, overlay and fault panel with `limit_km=None`). Tests (`test_fault_limit.py`, 84 checks): the stretch geometry, the exact cuts, the legend label, the panel positions, the veil, and real figures of a synthetic tetra mesh with a conductive fault zone (plot_model_slices and plot_ensemble_slices, Agg backend); not tried on a real model. AI-generated code -- review before production use. The step at the points of this first version was replaced by a fade the same day (next row). |
 | 2026-11-15b | Claude Sonnet 5.5 (Anthropic) | **`alpha_outside` fades.** The opacity of a fault outside its defining points now falls linearly from 1 at the ends of the stretch to `alpha_outside` over the new spec key `fade_km` (default `2.0` km; `0` / `None` = the abrupt step of the first version; `alpha_outside=0` fades to fully transparent), like `alpha_mode="fade"`. `slice_overlay_polylines` returns one entry per panel (no more `..._out<k>`), cut at the ends and at the 16 steps of the fade, with the new entry key `alpha_fn` (opacity factor per segment, multiplies the style's `alpha`: `alpha_outside` is now relative to it, not absolute). New private `_FadeLine2D` (a `Line2D` with an opacity per segment, drawn as stacked layers: no seam, dash pattern continuous, butt caps) and helpers; the fault panel's veil is a stack of overlapping rectangles. `_prepare_polylines` carries `alpha_fn`; `_fault_limit_range` returns `(lo, hi, alpha_outside, fade)`. Without `limit_km` nothing changes (byte-identical figures). AI-generated code -- review before production use. Tests (`test_fault_limit.py`, 114 checks; `test_fade_draw.py`, 36 checks): the ramp and its staircase, exact cuts, dash positions of a faded dotted / dashed / dash-dot line equal to the plain line's within 1 px, no seam in a solid line, veil pixels over black, real figures of a synthetic mesh (plot_model_slices, plot_ensemble_slices; Agg, png / pdf / svg); not tried on a real model. |
+| 2026-11-15c | Claude Sonnet 5.5 (Anthropic) | **Point markers on the vertical sections.** `plot_model_slices(map_markers=...)`: entries take the new keys `depth` (m, positive down), `depth_err` (+- depth bar; `err_color`, `err_lw`, `err_cap`), `kinds` (`"map"`, `"ns"`, `"ew"`, `"plane"`, `"vertical"`, `"all"`; default `"all"` with a depth, else `"map"`) and `max_dist` (m, default `projection_dist`). With a depth a marker is also drawn on the ns / ew / vertical and dipping plane sections within `max_dist` of the section (distance measured to (x, y, depth)); the bar is the depth direction projected into the plane. The `is_model_centre` entry takes the same keys (e.g. a black cross on maps and sections) and its `name` is now used as legend label (it was ignored). Section markers are artists of the panel (no change of the axis limits); markers whose position is inside the final view are un-clipped. The legend is drawn above the white veil of a limited fault panel (zorder 6.5; the text was washed out there). **Changed:** lat/lon entries without `latlon_to_model_fn` are skipped with a message (they were drawn at the model origin). New private `_prepare_point_markers`. Entries with the old keys draw as before (figures byte-identical to the previous module, checked for maps, sections and sites). Tests: `test_markers.py` (positions on ns / ew / vertical / dipping sections against independent formulas, tolerance, limits, legends, byte-identity), `test_script_markers.py`. Not in `plot_ensemble_slices`. AI-generated code -- review before production use. |

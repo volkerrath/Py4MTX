@@ -95,7 +95,7 @@ list can stay as it is.
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `MOD_STATS_WHAT` | list of str | `["best","avg","med","err","mad"]` + one key per percentile level + one per `QDIFF_PAIRS` entry (+ `"err_boot"`) | Which panels to plot. `"best"` plots the best-nRMS converged member (to `MOD_QC_FILE`) — the former `MOD_QC` switch. Every other entry is a statistic key: subset of `"avg"`, `"var"`, `"err"`, `"med"`, `"mad"`, `"var_boot"`, `"err_boot"`, the log10 sensitivity keys (`"sens_{mean,median,min,max,std}"`, each divided by its own max, so each peaks at 0), `"sens_cv"` (linear); with a results file that holds both kinds the same names are suffixed `_cum` / `_vn`, see *Raw or volume-normalised sensitivity*, `"simrc_coef"`/`"simrc_corr"` (log10), plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). `"err"` = `sqrt(var)` is plotted by default *instead of* `"var"`, since `var` is in (log10 Ω·m)² and isn't on the same scale as `MAD`/`QDIFF` (log10 Ω·m); add `"var"` back manually (with a `MOD_STATS_STYLE` entry) if you specifically want the raw-variance panel. |
+| `MOD_STATS_WHAT` | list of str | `["best","avg","med","err","mad"]` + one key per percentile level + one per `QDIFF_PAIRS` entry (+ `"err_boot"`) | Which panels to plot. `"best"` plots the best-nRMS converged member (to `MOD_QC_FILE`) — the former `MOD_QC` switch. Every other entry is a statistic key: subset of `"avg"`, `"var"`, `"err"`, `"med"`, `"mad"`, `"var_boot"`, `"err_boot"`, the log10 sensitivity keys (`"sens_{mean,median,min,max,std}"`, each divided by its own max, so each peaks at 0), `"sens_cv"` (linear); with a results file that holds both kinds the same names are suffixed `_cum` / `_vn`, see *Raw or volume-normalised sensitivity*, `"simrc_coef"`/`"simrc_corr"` (log10), plus auto-generated percentile keys (e.g. `2.3` → `"p2_3"`, `50.0` → `"p50"`, `97.7` → `"p97_7"`) and qdiff keys (e.g. `(15.9, 84.1)` → `"qdiff_15_9_84_1"`). Also `"diff_prior"` / `"abs_diff_prior"` (not in the default list), see *Difference to the prior model*. `"err"` = `sqrt(var)` is plotted by default *instead of* `"var"`, since `var` is in (log10 Ω·m)² and isn't on the same scale as `MAD`/`QDIFF` (log10 Ω·m); add `"var"` back manually (with a `MOD_STATS_STYLE` entry) if you specifically want the raw-variance panel. |
 | `MOD_SENS_KIND` | str | `"auto"` | Which sensitivity the `sens_*` entries of `MOD_STATS_WHAT` and the name in `MOD_ALPHA_SOURCE` stand for: `"raw"` (cumulative sum\|J\|, key suffix `_cum`), `"volume_normalised"` (raw / cell volume, suffix `_vn`; `"volume_normalized"` accepted), `"auto"` (the one kind of a single-kind file; the volume-normalised one of a file with both) or `"both"` (panels: every `sens_*` panel once per kind; the blanking uses the `"auto"` kind). See *Raw or volume-normalised sensitivity* below. |
 | `MOD_QC` | bool | derived | `"best" in MOD_STATS_WHAT`. Not user-set — edit `MOD_STATS_WHAT` instead. |
 | `MOD_QC_FILE` | str | `<prefix>_best` | Output path for the `"best"` panel; `_plot_slice()` appends `.<fmt>` per `MOD_PLOT_FORMAT` entry. |
@@ -187,6 +187,36 @@ centroid falls inside the ROI: a quick read of the value range actually in
 view, to make picking a `MOD_ALPHA_SOURCE` threshold easier. Degrades
 gracefully (printed warning, diagnostic skipped) if the mesh or region
 geometry cannot be read.
+
+### Difference to the prior model
+
+When `femtic_ens_post.py` ran with `COMPUTE_PRIOR_DIFF` (its changelog
+2026-11-15 (d)) the results file holds `diff_prior`, the **signed**
+difference model(ens) - model(prior) in log10(Ohm.m), per free parameter.
+Two names are then available in `MOD_STATS_WHAT`; neither is in the default
+list:
+
+| Name | Shows | Default style (`MOD_STATS_STYLE`) |
+|---|---|---|
+| `"diff_prior"` | `log10(rho_ens) - log10(rho_prior)`, signed; positive = the ensemble is more resistive than the prior | diverging `"RdBu"` (red = more conductive, blue = more resistive, as in the resistivity maps), `clim=[-1, 1]` (a factor of 10 either way), label `"log10(rho_ens / rho_prior)"` |
+| `"abs_diff_prior"` | its absolute value (made when the file is read; the post script stores none) | `"viridis"`, `clim=[0, 1]`, label `"\|log10(rho_ens / rho_prior)\|"` |
+
+```python
+MOD_STATS_WHAT = MOD_STATS_WHAT + ["diff_prior", "abs_diff_prior"]
+```
+
+Either name can also be the `<name>` of `MOD_ALPHA_SOURCE`
+(e.g. `"abs_diff_prior > 0.3"` shows only the cells that moved by more than a
+factor 2), and either is masked by the alpha source like the `avg` panel
+(`MOD_ALPHA_EXCLUDE` only exempts `sens_` / `simrc_` by default). A file
+without the key (written before the change, `COMPUTE_PRIOR_DIFF = False`, or
+no usable prior) skips the panel with a printed message. Which statistic
+(mean / median) and which prior (the reference model file or the perturbed
+references) it is, is in the line printed per panel (`STATS: plotting ...`)
+and in the file's `<P>_diff_prior_info`. In a results file written with
+`ENS_MODEL_SOURCE = "perturbed"` (prefix with `_perturbed`) the ensemble is
+the set of perturbed models, so the difference exists only for a reference
+prior and measures the sampling noise of the prior draws.
 
 ### Statistics definition used in the panels
 
@@ -498,6 +528,66 @@ planes: a panel and an overlay". Needs `femtic.py` and `femtic_viz.py` of
 2026-11-12.
 
 
+### Point markers (`MOD_MAP_MARKERS`)
+
+A list of dicts, drawn by `fviz.plot_model_slices(map_markers=...)` on every
+figure of the script (`"best"` and all `MOD_STATS` panels). The script holds an
+example:
+
+```python
+MOD_MAP_MARKERS = [
+    # Epagny 1996: 45.9383 N, 6.0883 E, depth 2 +- 1 km
+    dict(latlon=[45.9383, 6.0883], marker="*", color="black",
+         markerfacecolor="yellow", markeredgecolor="black", ms=18, mew=1.0,
+         zorder=14, depth=2.0, depth_err=1.0, name="Epagny 1996 (2 +- 1 km)"),
+    # model centre (x = y = 0): black cross on maps and sections
+    dict(is_model_centre=True, marker="+", color="black", ms=16, mew=2.2,
+         kinds="all", depth=0.0, name="model centre"),
+]
+```
+
+| Key | Meaning |
+|---|---|
+| `latlon` | `[lat, lon]`, degrees |
+| `depth` | km, positive down (model z, like the z of a plane `point`). Maps ignore it; sections draw the marker at this depth |
+| `depth_err` | km; the `+-` of a depth bar on the sections (`2 +- 1 km` = `depth=2.0, depth_err=1.0`); bar style `err_color` (default the marker's edge colour), `err_lw` (1.5), `err_cap` (cap width in points, 6; 0 = none) |
+| `kinds` | panels that show it: `"map"`, `"ns"`, `"ew"`, `"plane"`, `"vertical"` (= ns + ew + plane), `"all"` or a list. Default `"all"` with a `depth`, else `"map"` |
+| `max_dist` | km; a section shows the marker within this distance of its plane. Default `MOD_PROJECTION_DIST` (`None` there = on every section). The distance is measured to the marker's own position (x, y, depth) |
+| `name` | legend label (lower right of the panel); `None` = none |
+| `marker`, `color`, `ms`, `zorder` and any `Line2D` keyword | `markerfacecolor`, `markeredgecolor`, `mew`, ... |
+
+- **Maps:** the markers are drawn on every map panel, whatever its depth. The
+  model centre is drawn on maps only when `MOD_DISPLAY_COORDS` is `"utm"` or
+  `"latlon"` (as before).
+- **Sections:** a marker appears on an `ns`, `ew`, vertical or dipping `plane`
+  panel (also a `kind="profile"` fault panel) when it is within `max_dist` of
+  the section plane. In a dipping plane the axes are along-strike and down-dip
+  distance, so the depth bar is the depth direction projected into the plane
+  (`+- 1 km` of depth = `+- 1 km * sin(dip)` of down-dip distance). The
+  markers never change the axis limits; one outside the view is clipped, one
+  inside it is drawn whole, also on the frame.
+- **Your slices:** with `MOD_PROJECTION_DIST = 1.0` the epicentre is shown on a
+  section only within 1 km of it, so the example sections through it are in
+  `MOD_SLICES` next to the Vuache entry (commented out): `dict(kind="ns",
+  x0=(6.0883, "latlon"))` and `dict(kind="ew", y0=(45.9383, "latlon"))`;
+  sections through the model origin are `dict(kind="ns", x0=0.0)` /
+  `dict(kind="ew", y0=0.0)` (the cross is drawn at depth 0, on the top frame).
+  The Vuache fault panel (`panel=True` on that entry) shows the epicentre too:
+  computed from the two surface points and dip = 110, the plane at 2 km depth
+  is about 0.2 km from it (the epicentre lies about 0.9 km NE of the surface
+  trace and 5.1 km from p1 along it); the depth bar crosses the plane at about
+  2.5 km depth.
+- **Default centre:** without an `is_model_centre` entry the centre is the
+  yellow star on the maps only (as before); `MOD_SHOW_MODEL_CENTRE = False`
+  removes it everywhere.
+- `MOD_MAP_MARKERS = []` = no markers; the figures are then unchanged. Entries
+  of earlier versions (no `depth`) are drawn on the maps only, as before.
+- `femtic_gst_prep.py` and `femtic_ens_plot.py` have their own marker settings
+  and are not changed by this entry; their lists reach the same
+  `plot_model_slices`, where the new keys are metres (no km conversion there).
+- Needs `femtic.py` (`markers_km_to_m`) and `femtic_viz.py` of 2026-11-15
+  (point markers).
+
 ### Site overlay
 
 | Parameter | Description |
@@ -508,8 +598,8 @@ planes: a panel and an overlay". Needs `femtic.py` and `femtic_viz.py` of
 | `MOD_PLOT_SITES_MAPS / SLICES` | Toggle site markers on map / curtain panels. |
 | `MOD_PROJECTION_DIST` | Maximum projection distance (m) for curtain panels; `None` = show all sites on every panel. |
 | `MOD_SITE_MARKER / MARKER_SLICES` | Marker style dicts for map / curtain overlays. |
-| `MOD_MAP_MARKERS` | Extra point markers on map panels only. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the model-centre marker's style rather than plotting as a regular marker. |
-| `MOD_SHOW_MODEL_CENTRE` | `True` (default): marks the model origin on `"map"` panels whenever `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`). Default style (since 2026-09-26): yellow star with a black edge, `ms=14`, at `zorder=15` (above every other map-panel artist); no legend entry. Override via `MOD_MAP_MARKERS` as above; set `False` to force off. |
+| `MOD_MAP_MARKERS` | Point markers (epicentres, wells, ...), a list of dicts; the default holds the example of the Epagny 1996 epicentre and the model centre, see "Point markers" below. On every map; on a section (`ns`, `ew`, `plane`, `profile` panel) those with a `depth` within `max_dist` of it. Lengths in km (`fem.markers_km_to_m`). `[]` = none. An entry with `"is_model_centre": True` (instead of `"latlon"`) sets the style, panels and depth of the model-centre marker. |
+| `MOD_SHOW_MODEL_CENTRE` | `True` (default): marks the model origin on `"map"` panels whenever `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`). Default style (since 2026-09-26): yellow star with a black edge, `ms=14`, at `zorder=15`; no legend entry. The `is_model_centre` entry of `MOD_MAP_MARKERS` overrides style, panels (`kinds`), depth and legend `name` (the script's default entry: black cross on the maps and the sections); `False` = no centre marker at all. |
 
 ### Geographic / UTM origin
 
@@ -587,3 +677,5 @@ the file.
 | 2026-11-15 (f) | Claude Sonnet 5.5 (Anthropic) | **Workbook for the fading settings.** New `femtic_ens_plot_slices_alpha.xlsx` (sheets `About`, `Settings`, `Names`, `Name resolution`, `Fade calculator`): the settings that blank or fade the model, the statistic names usable in `MOD_ALPHA_SOURCE` with units and the `femtic_ens_post.py` setting that stores them, how a name is resolved for files with one or both sensitivity kinds (generated with `fem.resolve_sens_stat`), and a calculator of alpha from the cell value (checked against `fem.alpha_from_condition`: 200 cells, 4 operators, both modes, no difference). New section "Fading the model" above. Documentation only: no code change in the script. AI-generated; review before production use. |
 | 2026-11-15 (e) | Claude Sonnet 5.5 (Anthropic) | **`alpha_outside` fades.** New optional key `fade_km` of the `kind="profile"` entry (km, default `2.0`): outside p1 ... p2 the opacity of the fault falls linearly from 1 at the ends of the stretch to `alpha_outside` over `fade_km`, like `MOD_ALPHA_MODE = "fade"` for cells (`fade_km = 0` = the abrupt step of (d); `alpha_outside = 0` fades to fully transparent). For the overlay lines `alpha_outside` is now relative to the line's own `alpha`; dotted / dashed lines keep their pattern across the fade. The Vuache entry carries `fade_km=2.0`. No code change in the script body; needs the `femtic_viz.py` of the same date. Tested on a synthetic mesh (drawing run); not on your data. AI-generated; review before production use. |
 | 2026-11-15 (d) | Claude Sonnet 5.5 (Anthropic) | **Fault limited to its defining points.** The `kind="profile"` entry of `MOD_SLICES` takes `limit_km` (km, default `0.0`: the stretch p1 ... p2; `> 0` widens, `< 0` narrows it at both ends, `None` = off) and `alpha_outside` (default `0.25`): the fault between the two points is drawn as given, the rest fainter (overlay lines on the other panels; the model on the fault panel faded towards white). The Vuache entry carries both keys; the comment above it and the new section "Fault from two surface points" describe them. Based on the script as of 2026-11-15 16:12: all settings kept, `sens_*` names as in (c); MOD_ALPHA_SOURCE `"sens_median > -6."` (was `"sens_median_an > -6."`, now relative to the median's own max). No code change in the script; needs the `femtic_viz.py` of the same date. Tested on a synthetic mesh (drawing run); not on your data. AI-generated; review before production use. |
+| 2026-11-15 (g) | Claude Sonnet 5.5 (Anthropic) | **Point markers on maps and sections.** `MOD_MAP_MARKERS` now holds the example of the Epagny 1996 epicentre (45.9383 N, 6.0883 E, depth 2 +- 1 km: yellow star with a depth bar) and the model centre (black cross, maps and sections). New entry keys `depth` / `depth_err` / `max_dist` (km), `kinds`, `err_color`, `err_lw`, `err_cap`; a marker with a depth is also drawn on `ns` / `ew` / `plane` / `profile` panels within `max_dist` (default `MOD_PROJECTION_DIST`) of the section. Commented example sections through both points next to the Vuache entry of `MOD_SLICES`. The call converts the list with the new `fem.markers_km_to_m`. With `MOD_MAP_MARKERS = []` the figures are unchanged. Needs `femtic.py` and `femtic_viz.py` of the same date. Tested on a synthetic mesh (drawing run, Agg backend); not on your data. AI-generated; review before production use. |
+| 2026-11-15 (h) | Claude Sonnet 5.5 (Anthropic) | **Difference to the prior model.** `MOD_STATS_WHAT` accepts `"diff_prior"` (signed log10 difference model(ens) - model(prior), written by `femtic_ens_post.py` (d)) and `"abs_diff_prior"` (its absolute value); `MOD_STATS_STYLE` has entries for both (diverging `"RdBu"`, `clim=[-1, 1]`; `"viridis"`, `clim=[0, 1]`); either can be the name in `MOD_ALPHA_SOURCE`. Neither is in the default list. No code change in the script body. Needs the `femtic.py` of the same date and a results file from the post script of the same date. Tested on synthetic results (stubbed and real drawing, Agg); not on your data. AI-generated; review before production use. |

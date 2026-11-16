@@ -213,6 +213,38 @@ AI-generated code -- review before production use.
               date (the one of (d) draws a step). Tested on a synthetic mesh
               (drawing run, Agg backend); not on your data. AI-generated;
               review before production use.
+
+2026-11-15 (g)  Claude Sonnet 5.5 (Anthropic)
+              Point markers on maps AND sections. MOD_MAP_MARKERS (km) now
+              holds an example: the Epagny 1996 epicentre (45.9383 N,
+              6.0883 E, depth 2 +- 1 km) as a yellow star with a +-1 km depth
+              bar, and the model centre as a black cross. Entries accept the
+              new keys depth / depth_err / max_dist (km), kinds and err_*;
+              with a depth a marker is also drawn on the ns / ew / plane /
+              profile sections within max_dist (default MOD_PROJECTION_DIST)
+              of the section; the is_model_centre entry takes the same keys.
+              Commented example sections through both points are next to the
+              Vuache entry of MOD_SLICES. The call converts the list with the
+              new fem.markers_km_to_m. Without markers (MOD_MAP_MARKERS = [])
+              the figures are unchanged. Needs femtic.py and femtic_viz.py of
+              the same date. Tested on a synthetic mesh (drawing run, Agg
+              backend); not on your data. AI-generated; review before
+              production use.
+
+2026-11-15 (h)  Claude Sonnet 5.5 (Anthropic)
+              Difference to the prior model. MOD_STATS_WHAT accepts
+              "diff_prior" (log10(rho_ens) - log10(rho_prior), signed) and
+              "abs_diff_prior" (its absolute value) when femtic_ens_post.py
+              ran with COMPUTE_PRIOR_DIFF; MOD_STATS_STYLE has entries for
+              both (diverging "RdBu", clim [-1, 1]; viridis, clim [0, 1]).
+              Neither is in the default MOD_STATS_WHAT; either can also be
+              the name in MOD_ALPHA_SOURCE ("abs_diff_prior > 0.3"). A file
+              without the key skips the panel with a printed message. No code
+              change in the script body; needs the femtic.py of the same date
+              ((g) of its header) and a results file of femtic_ens_post.py
+              2026-11-15 (d). Tested on synthetic data (drawing run, Agg
+              backend); not on your data. AI-generated; review before
+              production use.
 """
 
 from __future__ import annotations
@@ -349,6 +381,11 @@ QDIFF_PAIRS = [(15.9, 84.1), (2.3, 97.7)]
 #: (log10 of the statistic divided by its own max, so each peaks at 0), the
 #: linear ratio "sens_cv", and "simrc_coef"/"simrc_corr" (log10). Which
 #: sensitivity kind (raw / volume-normalised) they show: MOD_SENS_KIND below.
+#: "diff_prior" (signed) and "abs_diff_prior" (absolute value) = the log10
+#: difference model(ens) - model(prior) when femtic_ens_post.py ran with
+#: COMPUTE_PRIOR_DIFF (2026-11-15 (d)); not plotted unless listed here, e.g.
+#: MOD_STATS_WHAT + ["diff_prior"]. Positive = the ensemble is more resistive
+#: than the prior. Which statistic and prior it is: printed by the reader.
 #: Results files from before 2026-11-15 (c) hold "sens_<stat>_an" /
 #: "_na" instead: the plain names above are then read from the "_an" keys
 #: (with a printed note). A key requested here but not held by the
@@ -475,11 +512,43 @@ MOD_PROJECTION_DIST = 1.0  # km; None = show all sites on every panel
 
 MOD_SITE_MARKER = dict(marker="v", color="black", ms=8, zorder=10, label=None)
 MOD_SITE_MARKER_SLICES = None
-#: Extra point markers on map panels only (each dict: latlon, marker, color, ms, name).
-MOD_MAP_MARKERS = []
+#: Point markers (epicentres, wells, ...): a list of dicts. Every marker is
+#: drawn on all map panels; on the vertical sections (ns, ew, plane, profile)
+#: those with a depth, within max_dist of the section plane. Keys:
+#:   latlon     [lat, lon], degrees
+#:   depth      km, positive down (model z, as the z of a plane `point`)
+#:   depth_err  km; the +- of a depth bar on the sections (2 +- 1 km:
+#:              depth=2.0, depth_err=1.0); bar style: err_color (default =
+#:              marker edge colour), err_lw (1.5), err_cap (cap width, pt; 0 =
+#:              none)
+#:   kinds      panels that show it: "map", "ns", "ew", "plane", "vertical"
+#:              (= ns + ew + plane), "all" or a list. Default "all" with a
+#:              depth, else "map"
+#:   max_dist   km; a section shows the marker within this distance of its
+#:              plane (default MOD_PROJECTION_DIST, None there = always)
+#:   name       legend label (lower right of the panel); None = no label
+#:   marker, color, ms, zorder and any matplotlib Line2D keyword
+#:              (markerfacecolor, markeredgecolor, mew, ...)
+#: Lengths are km here; the call converts them (fem.markers_km_to_m).
+#: Section markers never change the axis limits (outside the view = clipped).
+MOD_MAP_MARKERS = [
+    # Epagny 1996 earthquake: 45.9383 N, 6.0883 E, depth 2 +- 1 km. Yellow
+    # star on every map; on a section through it (or within max_dist) at 2 km
+    # depth with a bar from 1 to 3 km. The Vuache fault plane (panel=True
+    # below) passes ~0.2 km from it at 2 km depth, so it shows on that panel.
+    dict(latlon=[45.9383, 6.0883], marker="*", color="black",
+         markerfacecolor="yellow", markeredgecolor="black", ms=18, mew=1.0,
+         zorder=14, depth=2.0, depth_err=1.0, name="Epagny 1996 (2 +- 1 km)"),
+    # Model centre (model-local x = y = 0): a black cross on the maps and, at
+    # depth 0, on the sections that pass within max_dist of it. Without this
+    # entry the centre is the default yellow star on the maps only.
+    dict(is_model_centre=True, marker="+", color="black", ms=16, mew=2.2,
+         kinds="all", depth=0.0, name="model centre"),
+]
 #: Mark the model origin on every "map" panel whenever MOD_DISPLAY_COORDS
-#: is "utm"/"latlon" (no effect for "model"). Override style via a
-#: MOD_MAP_MARKERS entry with "is_model_centre": True.
+#: is "utm"/"latlon" (no effect for "model"). Override style, panels and
+#: depth via the MOD_MAP_MARKERS entry with "is_model_centre": True (as
+#: above: black cross, maps and sections). False = no centre marker at all.
 MOD_SHOW_MODEL_CENTRE = True
 
 # --- Slice specification ----------------------------------------------------
@@ -569,6 +638,12 @@ MOD_SLICES = [
     #      panel=False),
     # dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
     # dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
+    #: Sections through the MOD_MAP_MARKERS examples (uncomment): the Epagny
+    #: epicentre (star, depth bar) and the model centre (black cross).
+    # dict(kind="ns", x0=(6.0883, "latlon")),    # N-S through the epicentre
+    # dict(kind="ew", y0=(45.9383, "latlon")),   # E-W through the epicentre
+    # dict(kind="ns", x0=0.0),                   # N-S through the model centre
+    # dict(kind="ew", y0=0.0),                   # E-W through the model centre
     dict(kind="profile",
      p1=([6.030869, 45.962166], "latlon"),
      p2=([6.115936, 45.910655], "latlon"),
@@ -579,7 +654,7 @@ MOD_SLICES = [
      fade_km=2.0,                        # ... to 25 % over 2 km (0 = abrupt)
      panel=False)
 ]
-#: Epagny (45.9383, 6.0883) 
+#: Epagny 1996 epicentre (45.9383, 6.0883) and the model centre: MOD_MAP_MARKERS.
 # --- Polylines (optional) -----------------------------------------------------
 #: Lines drawn on the slice panels of every figure ("best" and MOD_STATS):
 #: faults, profiles, borehole traces, licence boundaries, ... A dict
@@ -731,6 +806,17 @@ MOD_STATS_STYLE["simrc_coef"] = dict(
 )
 MOD_STATS_STYLE["simrc_corr"] = dict(
     cmap="viridis", clim=None, label="log10 sum|corr|"
+)
+#: Difference to the prior model (femtic_ens_post.py of 2026-11-15 (d)):
+#: log10(rho_ens) - log10(rho_prior), signed, so a diverging map centred on 0
+#: ("RdBu": red = ensemble more conductive than the prior, blue = more
+#: resistive, as for the resistivity maps); the absolute value is sequential.
+#: clim [-1, 1] = a factor of 10 either way.
+MOD_STATS_STYLE["diff_prior"] = dict(
+    cmap="RdBu", clim=[-1.0, 1.0], label="log10(rho_ens / rho_prior)"
+)
+MOD_STATS_STYLE["abs_diff_prior"] = dict(
+    cmap="viridis", clim=[0.0, 1.0], label="|log10(rho_ens / rho_prior)|"
 )
 # --- Blanking / fading (optional) ------------------------------------------
 #: One condition "<name> <op> <value>" selecting the cells to SHOW; cells
@@ -1009,7 +1095,7 @@ def _plot_slice(
             sites_in_slices=MOD_PLOT_SITES_SLICES,
             site_marker=MOD_SITE_MARKER,
             site_marker_slices=MOD_SITE_MARKER_SLICES,
-            map_markers=MOD_MAP_MARKERS,
+            map_markers=fem.markers_km_to_m(MOD_MAP_MARKERS),
             show_model_centre=MOD_SHOW_MODEL_CENTRE,
             polylines=fem.polylines_km_to_m(MOD_POLYLINES),
             projection_dist=fem.km_to_m(MOD_PROJECTION_DIST),

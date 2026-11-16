@@ -5,7 +5,8 @@ femtic_ens_post.py — Ensemble postprocessing for FEMTIC
 
 Collects all converged members of a FEMTIC ensemble (RTO, GST, or any
 directory-based ensemble), computes summary statistics (mean, variance,
-median, MAD, percentiles, inter-quantile spreads, bootstrap variance),
+median, MAD, percentiles, inter-quantile spreads, bootstrap variance, the
+difference to the prior model),
 optional ensemble sensitivity measures (per-member cumulative sensitivity,
 SimRC) and the empirical covariance, and writes
 
@@ -1044,6 +1045,25 @@ Provenance
             date (the plot side still reads files with the old keys).
             Tested on synthetic results only. AI-generated code -- review
             before production use.
+2026-11-15 (d)  Claude Sonnet 5.5 (Anthropic)
+            New statistic: the difference to the prior model,
+            <P>_diff_prior = model(ens) - model(prior) per free parameter in
+            log10(Ohm.m), SIGNED (positive = the ensemble is more resistive;
+            the absolute value is left to the plotting script). Settings:
+            COMPUTE_PRIOR_DIFF (default True), PRIOR_DIFF_STAT ("mean" or
+            "median" of the ensemble), PRIOR_DIFF_SOURCE ("reference": the
+            unperturbed block file PRIOR_DIFF_FILE, default
+            <ENSEMBLE_DIR>/templates/referencemodel.dat; "perturbed": the
+            same statistic of the members' perturbed references, needs
+            ENS_MODEL_SOURCE = "both"; "auto" (default): reference if usable,
+            else perturbed). Also stored: <P>_prior (the prior model, log10)
+            and <P>_diff_prior_info (stat, source kind, text). A prior that is
+            missing or has another free-parameter count gives a message and no
+            keys; nothing else changes (the other keys and the figures are as
+            before). The plotting side reads the keys with the femtic.py of
+            the same date ("diff_prior", "abs_diff_prior" in MOD_STATS_WHAT).
+            Tested on synthetic results only. AI-generated code -- review
+            before production use.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -1250,6 +1270,47 @@ PERCENTILES = [2.3, 15.9, 50.0, 84.1, 97.7]
 #: .npz as f"{P}_qdiff_<lo>_<hi>" and available for the statistics panels of
 #: femtic_ens_plot_slices.py (MOD_STATS_WHAT) under the same key.
 QDIFF_PAIRS = [(15.9, 84.1), (2.3, 97.7)]
+
+# ---------------------------------------------------------------------------
+# Difference to the prior model
+# ---------------------------------------------------------------------------
+#: Store <P>_diff_prior = model(ens) - model(prior): per free parameter, in
+#: log10(Ohm.m), SIGNED (> 0: the ensemble is more resistive than the prior;
+#: the size alone is abs() of it, taken in the plotting script, which offers
+#: it as "abs_diff_prior"). Also stored: <P>_prior (the prior model, log10)
+#: and <P>_diff_prior_info (the choices below, as text). A prior that cannot
+#: be used gives a message and no keys, never an error.
+COMPUTE_PRIOR_DIFF = True
+
+#: model(ens): the "mean" (default) or the "median" of the models of this run
+#: (the converged models, or the perturbed ones with ENS_MODEL_SOURCE =
+#: "perturbed").
+PRIOR_DIFF_STAT = "mean"
+
+#: model(prior):
+#:   "reference" -- the unperturbed prior (reference) model: the block file
+#:       PRIOR_DIFF_FILE, the base of the RTO draws. It must have the mesh
+#:       and free regions of the members, else a message and no difference.
+#:   "perturbed" -- the same statistic (PRIOR_DIFF_STAT) of the members'
+#:       perturbed references ENS_PERTURBED_FILE: the prior ENSEMBLE of the
+#:       same members. Needs ENS_MODEL_SOURCE = "both"; it differs from the
+#:       reference by the sampling noise of the draws.
+#:   "auto" (default) -- "reference" if PRIOR_DIFF_FILE can be used, else
+#:       "perturbed" if the run has the perturbed models, else no difference.
+#: What was used is printed and stored in <P>_diff_prior_info.
+PRIOR_DIFF_SOURCE = "auto"
+#: Block file of the unperturbed prior model ("reference" / "auto").
+PRIOR_DIFF_FILE = os.path.join(ENSEMBLE_DIR, "templates", "referencemodel.dat")
+
+if PRIOR_DIFF_STAT not in ("mean", "median"):
+    raise ValueError(
+        f"PRIOR_DIFF_STAT={PRIOR_DIFF_STAT!r}: use 'mean' or 'median'."
+    )
+if PRIOR_DIFF_SOURCE not in ("auto", "reference", "perturbed"):
+    raise ValueError(
+        f"PRIOR_DIFF_SOURCE={PRIOR_DIFF_SOURCE!r}: use 'auto', 'reference' "
+        f"or 'perturbed'."
+    )
 
 # ---------------------------------------------------------------------------
 # Sensitivity statistics
@@ -2332,6 +2393,81 @@ if BOOTSTRAP_VAR:
         f"(bootstrap SE of var_boot itself)"
     )
 
+# --- (2a) Difference to the prior model -------------------------------------
+# <P>_diff_prior = model(ens) - model(prior), log10(rho), signed. model(ens)
+# is the PRIOR_DIFF_STAT of this run's ensemble; model(prior) the reference
+# model file or the same statistic of the perturbed references (see
+# PRIOR_DIFF_SOURCE).
+ens_prior = None  # (n_free,) log10(rho) of the prior model
+ens_diff_prior = None  # (n_free,) model(ens) - model(prior), log10(rho)
+prior_diff_info = None  # [stat, source kind, text] -> .npz
+if COMPUTE_PRIOR_DIFF:
+    _m_ens = ens_avg if PRIOR_DIFF_STAT == "mean" else ens_med
+    _stat_fn = np.mean if PRIOR_DIFF_STAT == "mean" else np.median
+    _why = []  # why a source was not usable
+    _p_kind = _p_text = None
+    if PRIOR_DIFF_SOURCE in ("auto", "reference"):
+        if not PRIOR_DIFF_FILE:
+            _why.append("reference: PRIOR_DIFF_FILE is not set")
+        elif not os.path.isfile(PRIOR_DIFF_FILE):
+            _why.append(f"reference: {PRIOR_DIFF_FILE} not found")
+        else:
+            try:
+                _p_vec = fem.read_model(
+                    model_file=PRIOR_DIFF_FILE, model_trans="log10", out=False
+                )
+            except Exception as _exc:  # unreadable / other structure
+                _why.append(
+                    f"reference: cannot read {PRIOR_DIFF_FILE} ({_exc})"
+                )
+            else:
+                if _p_vec.shape != _m_ens.shape:
+                    _why.append(
+                        f"reference: {PRIOR_DIFF_FILE} has {_p_vec.shape[0]} "
+                        f"free parameters, the ensemble {_m_ens.shape[0]} - "
+                        f"not the same model structure"
+                    )
+                else:
+                    ens_prior = np.asarray(_p_vec, dtype=float)
+                    _p_kind = "reference"
+                    _p_text = f"reference model {PRIOR_DIFF_FILE}"
+    if ens_prior is None and PRIOR_DIFF_SOURCE in ("auto", "perturbed"):
+        if pert_matrix is not None and ENS_MODEL_SOURCE == "both":
+            ens_prior = _stat_fn(pert_matrix, axis=0)
+            _p_kind = "perturbed"
+            _p_text = (
+                f"{PRIOR_DIFF_STAT} of the perturbed references "
+                f"({ENS_PERTURBED_FILE}) of the same members"
+            )
+        else:
+            _why.append(
+                "perturbed: needs ENS_MODEL_SOURCE = 'both' (the perturbed "
+                "models of the members)"
+            )
+    if ens_prior is None:
+        print(
+            f"\nCOMPUTE_PRIOR_DIFF: no prior model (PRIOR_DIFF_SOURCE = "
+            f"'{PRIOR_DIFF_SOURCE}') - {'; '.join(_why)}. "
+            f"{P}_diff_prior is not written."
+        )
+    else:
+        ens_diff_prior = _m_ens - ens_prior
+        prior_diff_info = [PRIOR_DIFF_STAT, _p_kind, _p_text]
+        print(
+            f"\nDifference to the prior: {PRIOR_DIFF_STAT}(ens) - {_p_text}"
+            f"\n  diff_prior log10(rho): [{np.nanmin(ens_diff_prior):.3f}, "
+            f"{np.nanmax(ens_diff_prior):.3f}]  mean |diff| "
+            f"{np.nanmean(np.abs(ens_diff_prior)):.3f}  (positive = the "
+            f"ensemble is more resistive than the prior)"
+        )
+        if not np.all(np.isfinite(ens_diff_prior)):
+            print(
+                f"  WARNING: {int(np.sum(~np.isfinite(ens_diff_prior)))} "
+                f"non-finite value(s) in diff_prior."
+            )
+        if _why:  # "auto": the reference was not usable, the fallback was
+            print(f"  (not used: {'; '.join(_why)})")
+
 # --- (2b) Sensitivity statistics: (1) per-member Jacobian aggregation ------
 # The ensemble statistics are taken of the sensitivity as FEMTIC wrote it
 # (per kind, in its native units) and each one is divided by its own max
@@ -2582,6 +2718,12 @@ ens_dict[f"{P}_model_file_name"] = (
 if pert_matrix is not None:
     ens_dict[f"{P}_ens_perturbed"] = pert_matrix  # log10(rho), free blocks
     ens_dict[f"{P}_perturbed_file_name"] = str(ENS_PERTURBED_FILE)
+if ens_diff_prior is not None:
+    # model(ens) - model(prior), log10(rho), signed; <P>_prior = model(prior)
+    ens_dict[f"{P}_diff_prior"] = ens_diff_prior
+    ens_dict[f"{P}_prior"] = ens_prior
+    # [PRIOR_DIFF_STAT, "reference" | "perturbed", text]
+    ens_dict[f"{P}_diff_prior_info"] = np.array(prior_diff_info, dtype=str)
 if BOOTSTRAP_VAR:
     ens_dict[f"{P}_var_boot"] = ens_var_boot
     ens_dict[f"{P}_err_boot"] = ens_err_boot

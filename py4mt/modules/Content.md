@@ -274,7 +274,7 @@ in `ensembles.py` (they are no longer re-exported here: call `ens.get_roughness`
 | Convergence file (a name or a list of candidate names, default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`) | `read_cnv`, `read_cnv_last`, `get_nrms`, `find_cnv_file`, `resolve_cnv_path`, `cnv_names` |
 | Sites and positions | `read_site_dat`, `read_site_position`, `utm_to_model`, `latlon_to_model`, `estimate_utm_origin`, `resolve_slice_positions` |
 | Borehole sampling | `extract_borehole_log` |
-| Ensemble results file (`femtic_ens_post.py` `.npz`) | `read_ensemble_results`, `select_ensemble_source` (setting `ENS_MODEL_SOURCE`: `auto` / `converged` / `perturbed` / `both`), `ensemble_stat_map`, `resolve_sens_stat` (+ `normalise_sens_kind`, `strip_sens_suffix`), `resolve_results_template`, `write_nrms_table`, `read_nrms_table` |
+| Ensemble results file (`femtic_ens_post.py` `.npz`) | `read_ensemble_results`, `select_ensemble_source` (setting `ENS_MODEL_SOURCE`: `auto` / `converged` / `perturbed` / `both`), `ensemble_stat_map` (also `diff_prior` / `abs_diff_prior`, the difference to the prior model), `resolve_sens_stat` (+ `normalise_sens_kind`, `strip_sens_suffix`), `resolve_results_template`, `write_nrms_table`, `read_nrms_table` |
 | Ensemble plotting support | km/m helpers (`slices_km_to_m`, `plane_spec_km_to_m`, ...), alpha mask (`parse_alpha_source`, `alpha_from_condition`, `write_alpha_block`), `resolve_origin_and_sites`, `ReferenceModel`, `roi_free_mask` |
 | Ensemble borehole sampling | `BoreholeMesh`, `expand_site_templates`, `sample_boreholes`, `heat_scale_*` |
 | Directory scan report | `build_scan_report`, `append_scan_report` |
@@ -306,6 +306,7 @@ Visualisation for FEMTIC resistivity models operating directly on
 | RTO/GST ensemble model plots | `plot_model_ensemble` |
 | Model slice panels (map, curtains, oblique plane) | `plot_model_slices`; ensemble version `plot_ensemble_slices` |
 | Polylines on slice panels; intersection line of two slices | `plot_model_slices(polylines=...)`, `slice_intersection_polyline`, `slice_intersection_polylines` |
+| Point markers (epicentre, model centre, ...) on the maps and, with a depth and a `+-` depth bar, on the vertical sections | `plot_model_slices(map_markers=...)` (keys `depth`, `depth_err`, `kinds`, `max_dist`; `is_model_centre` entry), `femtic.markers_km_to_m` |
 | Fault plane from two surface points on all slices (`overlay`, `panel=False`); the part between the two points as given, the rest fading out (`limit_km`, `alpha_outside`, `fade_km`) | slice spec `kind="profile"` of `plot_model_slices` / `plot_ensemble_slices`; `slice_overlay_polylines` |
 | Titles and colour bar position of the plot scripts | `resolve_title`, `check_cbar_location`, `add_colorbar`; `figure_title` / `panel_titles` / `cbar_location` of `plot_ensemble_slices`, `plot_borehole_logs`, `BoreholeFigureOptions` |
 | Borehole ρ(z) logs | `plot_borehole_logs` |

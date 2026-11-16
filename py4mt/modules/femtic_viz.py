@@ -887,6 +887,31 @@ Provenance:
                         of a line with several pieces restart at every break,
                         as for a plain Line2D. AI-generated code -- review
                         before production use.
+    2026-11-15c Claude Sonnet 5.5 (Anthropic)
+                        plot_model_slices(map_markers=...): point markers (an
+                        epicentre, the model centre, ...) now also appear on
+                        the vertical sections (ns, ew, vertical and dipping
+                        planes). New entry keys `depth` (m, positive down),
+                        `depth_err` (+- depth bar, with `err_color`, `err_lw`,
+                        `err_cap`), `kinds` (panels; default "all" with a
+                        depth, else "map" as before) and `max_dist` (distance
+                        from the section, default projection_dist). The
+                        `is_model_centre` entry takes the same keys, so the
+                        model centre can be a black cross on maps and
+                        sections; its `name` is now used as legend label (it
+                        was ignored). Section markers are artists of the
+                        panel (no change of the axis limits); those whose
+                        position is inside the final view are un-clipped.
+                        The legend is drawn above the white veil of a limited
+                        fault panel (zorder 6.5; it was washed out there).
+                        Lat/lon entries without latlon_to_model_fn are
+                        skipped with a message (they were drawn at the model
+                        origin). New private helper _prepare_point_markers
+                        (validation: TypeError / ValueError). Entries with
+                        the old keys draw as before (figures byte-identical
+                        to the previous module). plot_ensemble_slices has no
+                        map_markers (unchanged). AI-generated code -- review
+                        before production use.
     """
 
 from __future__ import annotations
@@ -5164,6 +5189,113 @@ def _prepare_polylines(
 
 
 # =============================================================================
+# Point markers (plot_model_slices(map_markers=...)): epicentres, wells, the
+# model centre, ... on the maps and on the vertical sections (2026-11-15c)
+# =============================================================================
+#: Keys of a ``map_markers`` entry that steer the marker itself; all other
+#: keys are Line2D keywords (``marker``, ``color``, ``ms``, ``mew``,
+#: ``zorder``, ``markerfacecolor``, ...) and go to the line unchanged.
+_MARKER_META_KEYS = frozenset((
+    "latlon", "name", "is_model_centre", "kinds", "depth", "depth_err",
+    "max_dist", "err_color", "err_lw", "err_cap"))
+
+#: Names accepted in the ``kinds`` key of a marker -> panel kinds.
+_MARKER_KINDS = dict(_POLYLINE_KINDS, all=("map", "ns", "ew", "plane"))
+
+
+def _prepare_point_markers(entries, *, latlon_to_model_fn, utm_zone,
+                           utm_northern, utm_origin_e, utm_origin_n,
+                           projection_dist):
+    """Validate the ``map_markers`` entries; one normalised dict per marker.
+
+    Returns a list of dicts with ``name``, ``is_centre``, ``xy`` (model-local
+    metres, ``None`` if the entry cannot be placed), ``depth`` and
+    ``depth_err`` (m, positive down), ``kinds`` (frozenset of panel kinds),
+    ``max_dist`` (m or ``None``: distance from a section up to which the
+    marker is shown), ``style`` (Line2D keywords) and ``err`` (``color``,
+    ``lw``, ``cap`` of the depth bar), in the order of the entries.
+    """
+    out = []
+    for i, ent in enumerate(entries or []):
+        tag = f"map_markers[{i}]"
+        if not isinstance(ent, dict):
+            raise TypeError(f"{tag}: expected a dict, got "
+                            f"{type(ent).__name__}.")
+        centre = bool(ent.get("is_model_centre", False))
+        if centre:
+            xy = (0.0, 0.0)
+        else:
+            ll = ent.get("latlon")
+            if ll is None:
+                raise ValueError(f"{tag}: needs 'latlon': [lat, lon] (or "
+                                 "'is_model_centre': True).")
+            try:
+                lat, lon = (float(v) for v in ll)
+            except (TypeError, ValueError):
+                raise ValueError(f"{tag}: 'latlon' must be [lat, lon], got "
+                                 f"{ll!r}.") from None
+            if not (np.isfinite(lat) and np.isfinite(lon)
+                    and abs(lat) <= 90.0):
+                raise ValueError(f"{tag}: 'latlon' out of range: {ll!r}.")
+            if latlon_to_model_fn is None:
+                xy = None
+            else:
+                x_m, y_m = latlon_to_model_fn(
+                    lat, lon, utm_zone, utm_northern,
+                    utm_origin_e, utm_origin_n)
+                xy = (float(x_m), float(y_m))
+
+        has_depth = ent.get("depth") is not None
+        depth = float(ent["depth"]) if has_depth else 0.0
+        derr = ent.get("depth_err")
+        derr = 0.0 if derr is None else float(derr)
+        if not (np.isfinite(depth) and np.isfinite(derr) and derr >= 0.0):
+            raise ValueError(f"{tag}: depth must be finite and depth_err "
+                             ">= 0 (both metres, depth positive down).")
+        kinds = ent.get("kinds")
+        if kinds is None:
+            # a marker that has a depth belongs on the sections as well; one
+            # without keeps the behaviour of all earlier versions (maps only)
+            kinds = "all" if has_depth else "map"
+        ks = set()
+        for k in ((kinds,) if isinstance(kinds, str) else kinds):
+            key = str(k).strip().lower()
+            if key not in _MARKER_KINDS:
+                raise ValueError(
+                    f"{tag}: unknown kind {k!r}; choose from "
+                    f"{sorted(_MARKER_KINDS)}.")
+            ks.update(_MARKER_KINDS[key])
+        md = ent.get("max_dist")
+        md = projection_dist if md is None else float(md)
+        if md is not None and not md >= 0.0:
+            raise ValueError(f"{tag}: max_dist must be >= 0.")
+
+        if centre:
+            style = dict(marker="*", markerfacecolor="yellow",
+                         markeredgecolor="black", ms=14, mew=1.2, zorder=15)
+            if ent.get("name") is not None:
+                style["label"] = ent["name"]
+        else:
+            style = dict(marker=ent.get("marker", "+"),
+                         color=ent.get("color", "black"),
+                         ms=ent.get("ms", 8),
+                         zorder=ent.get("zorder", 11),
+                         label=ent.get("name", None))
+        style.update({k: v for k, v in ent.items()
+                      if k not in _MARKER_META_KEYS})
+        ecol = ent.get("err_color")
+        if ecol is None:
+            ecol = style.get("markeredgecolor", style.get("mec",
+                             style.get("color", "black")))
+        out.append(dict(
+            name=ent.get("name"), is_centre=centre, xy=xy, depth=depth,
+            depth_err=derr, kinds=frozenset(ks), max_dist=md, style=style,
+            err=dict(color=ecol, lw=float(ent.get("err_lw", 1.5)),
+                     cap=float(ent.get("err_cap", 6.0)))))
+    return out
+
+
+# =============================================================================
 # Shared helpers: figure titles ("auto" / none / text / per-figure dict) and
 # colour bars at any side of a plot
 # =============================================================================
@@ -5469,7 +5601,9 @@ def plot_model_slices(
         only); suppresses ``"utm"`` / ``"latlon"`` display for markers.
     projection_dist
         Maximum distance [m] from a curtain/plane for a site to appear on
-        that panel.  ``None`` = all sites on all panels.
+        that panel (also the default ``max_dist`` of the ``map_markers``
+        entries and the ``polylines``).  ``None`` = all sites on all
+        panels.
     sites_in_maps, sites_in_slices
         Enable site markers on map and curtain/plane panels respectively.
     site_marker
@@ -5479,14 +5613,51 @@ def plot_model_slices(
         Matplotlib ``plot`` kwargs for curtain/plane site markers.
         Default: ``dict(marker="o", color="black", ms=4, zorder=10)``.
     map_markers
-        List of extra point-marker dicts overlaid on map panels only.
-        Each dict: ``"latlon"`` ([lat, lon]), ``"marker"``, ``"color"``,
-        ``"ms"``, ``"name"`` (legend label or ``None``).
-        A dict with ``"is_model_centre": True`` instead of ``"latlon"``
-        is treated specially: it does not plot as a regular marker but
-        instead overrides the style of the model-centre marker (see
-        ``show_model_centre``); its own ``"name"`` (if any) is ignored,
-        since the model-centre marker never gets a legend entry.
+        List of point-marker dicts (an epicentre, a well, the model centre,
+        ...) drawn on the map panels and, with a depth, on the vertical
+        sections. Keys of an entry:
+
+        ``latlon``
+            ``[lat, lon]`` in degrees (placed with ``latlon_to_model_fn``;
+            without it the entry is skipped with a message).
+        ``marker``, ``color``, ``ms``, ``zorder``, ``name``
+            Marker symbol (default ``"+"``), colour (``"black"``), size
+            (8), drawing order (11) and legend label (``None`` = none).
+            Any other key (``markerfacecolor``, ``markeredgecolor``,
+            ``mew``, ...) is a Matplotlib ``Line2D`` keyword.
+        ``depth``
+            Depth in m, positive down (model z; default 0 when only
+            ``kinds`` asks for sections). Sections show the marker at this
+            depth; maps ignore it and show the marker on every map panel.
+        ``depth_err``
+            Half-length of a depth bar (m): the bar spans depth -
+            depth_err ... depth + depth_err (``2 +- 1 km`` = ``depth=2000,
+            depth_err=1000``). Sections only; in a dipping plane the bar is
+            the depth direction projected into the plane. Style:
+            ``err_color`` (default: the marker's edge colour, else its
+            colour), ``err_lw`` (1.5), ``err_cap`` (cap width in points, 6;
+            0 = no caps).
+        ``kinds``
+            Panels that show it: ``"map"``, ``"ns"``, ``"ew"``,
+            ``"plane"``, ``"vertical"`` (= ns, ew and plane), ``"all"``, or
+            a list of them. Default: ``"all"`` if the entry has a ``depth``,
+            else ``"map"`` (all earlier entries keep drawing on maps only).
+        ``max_dist``
+            A section shows the marker if its distance from the section
+            plane is at most this (m, default ``projection_dist``;
+            ``None`` there = on every section). The distance is measured
+            to the marker's own position (x, y, depth).
+
+        A dict with ``"is_model_centre": True`` instead of ``"latlon"`` is
+        the model-centre marker (model-local x = 0, y = 0): it does not
+        plot as a regular marker but sets the style, the panels (``kinds``,
+        default ``"map"``), the depth and the legend ``name`` (if any) of
+        the model-centre marker (see ``show_model_centre``); the last such
+        entry wins. Sections show the centre only if this entry asks for
+        them (``kinds`` or ``depth``).
+        Section markers are artists of the panel: they never change the axis
+        limits, a marker whose position is outside the view is clipped, one
+        inside it is drawn whole (also on the frame).
     show_model_centre
         When the axes are *not* in intrinsic model-local coordinates
         (``display_coords in ("utm", "latlon")``), mark the model origin
@@ -5497,10 +5668,13 @@ def plot_model_slices(
         every other map-panel artist, including site markers) so it reads
         clearly against any colormap or other black markers.  Override the
         style via a ``map_markers`` entry with ``"is_model_centre": True``
-        (see above).  Set ``False`` to force the marker off even in
-        UTM/latlon display.  Has no effect when ``display_coords ==
-        "model"`` (the origin is trivially the plotted (0, 0) point
-        already) or on non-``"map"`` panel kinds.
+        (see above), e.g. ``dict(is_model_centre=True, marker="+",
+        color="black", ms=16, mew=2.2, kinds="all", depth=0.0)`` for a
+        black cross on the maps and the sections.  Set ``False`` to force
+        the marker off everywhere (maps and sections).  On maps it has no
+        effect when ``display_coords == "model"`` (the origin is trivially
+        the plotted (0, 0) point already); the sections show it (if the
+        ``is_model_centre`` entry asks for them) in every display mode.
     polylines
         Optional dict ``{name: entry}`` of 3-D polylines (fault traces,
         boundaries, survey lines, the output of
@@ -5564,8 +5738,9 @@ def plot_model_slices(
         lat/lon tick formatting.  ``None`` -> no lat/lon formatter.
     latlon_to_model_fn
         Callable ``(lat, lon, zone, northern, origin_e, origin_n)
-        -> (x_m, y_m)`` used to place ``map_markers``.  ``None`` -> markers
-        skipped when ``display_coords != "model"``.
+        -> (x_m, y_m)`` used to place the lat/lon of ``map_markers``.
+        ``None`` -> those entries are skipped with a message (the model
+        centre does not need it).
     plot_file
         Save path; ``None`` = interactive ``show()`` (equivalent to
         ``show=True`` with no save). When ``plot_file`` is given *and*
@@ -6025,18 +6200,29 @@ def plot_model_slices(
     else:
         sc, sfx = 1.0, " [m]"
 
-    # -- model-centre marker (map panels only) ---------------------------
-    # An "is_model_centre" entry in map_markers overrides the marker style
-    # rather than plotting as a regular lat/lon marker -- pull it out of
-    # the list once here so the generic per-panel map_markers loop below
-    # never sees it (it has no "latlon" key and would otherwise KeyError).
-    _regular_map_markers = []
-    _model_centre_style: Optional[dict] = None
-    for _mm0 in (map_markers or []):
-        if _mm0.get("is_model_centre", False):
-            _model_centre_style = _mm0
-        else:
-            _regular_map_markers.append(_mm0)
+    # -- point markers and the model-centre marker ----------------------------
+    # Entries of map_markers: regular markers (lat/lon, optional depth) and
+    # at most one "is_model_centre" entry, which overrides the style / panel
+    # kinds / depth of the model-centre marker rather than plotting as a
+    # regular marker (the last such entry wins). Validated once here; drawn
+    # per panel below (maps: plot(), sections: _overlay_markers()).
+    _pm_all = _prepare_point_markers(
+        map_markers, latlon_to_model_fn=latlon_to_model_fn,
+        utm_zone=utm_zone, utm_northern=utm_northern,
+        utm_origin_e=utm_origin_e, utm_origin_n=utm_origin_n,
+        projection_dist=projection_dist)
+    _regular_map_markers = [m for m in _pm_all if not m["is_centre"]]
+    _centre_pm = None
+    for _m0 in _pm_all:
+        if _m0["is_centre"]:
+            _centre_pm = _m0
+    _n_unplaced = sum(1 for m in _regular_map_markers if m["xy"] is None)
+    if _n_unplaced:
+        print(f"  plot: {_n_unplaced} map_markers entr"
+              f"{'y' if _n_unplaced == 1 else 'ies'} skipped: no "
+              "latlon_to_model_fn to place the lat/lon.")
+    _regular_map_markers = [m for m in _regular_map_markers
+                            if m["xy"] is not None]
 
     _draw_model_centre = bool(show_model_centre) and _disp in ("utm", "latlon")
     if _draw_model_centre:
@@ -6047,11 +6233,22 @@ def plot_model_slices(
         # a large yellow star with a black edge at a zorder above every
         # other map-panel artist (site markers included) so it is always
         # unambiguous regardless of colormap or marker clutter underneath.
-        _mc_marker = dict(marker="*", markerfacecolor="yellow",
-                           markeredgecolor="black", ms=14, mew=1.2, zorder=15)
-        if _model_centre_style is not None:
-            _mc_marker.update({k: v for k, v in _model_centre_style.items()
-                                if k not in ("is_model_centre", "latlon", "name")})
+        _mc_marker = (dict(_centre_pm["style"]) if _centre_pm is not None
+                      else dict(marker="*", markerfacecolor="yellow",
+                                markeredgecolor="black", ms=14, mew=1.2,
+                                zorder=15))
+    # Panel kinds that show the model centre: maps only unless the
+    # is_model_centre entry says otherwise ("kinds" / "depth"); the sections
+    # need it to be present explicitly (and show_model_centre on), the
+    # display_coords condition above is about the map labels only.
+    _centre_kinds = (_centre_pm["kinds"] if _centre_pm is not None
+                     else frozenset(("map",)))
+    # Markers a vertical section can show (centre last = on top).
+    _pm_sections = [m for m in _regular_map_markers
+                    if m["kinds"] & {"ns", "ew", "plane"}]
+    if (_centre_pm is not None and bool(show_model_centre)
+            and _centre_pm["kinds"] & {"ns", "ew", "plane"}):
+        _pm_sections.append(_centre_pm)
 
     # -- polylines (2026-11-11): validated and brought to model-local metres
     # once; drawn per panel by _overlay_polylines() below.
@@ -6315,6 +6512,57 @@ def plot_model_slices(
         return True
 
     _cur_panel = [-1]        # index of the panel being drawn (polyline `panels`)
+    _mk_pts = []             # (artist, x, y) of the section markers of this panel
+
+    def _overlay_markers(ax, kind, section):
+        """Draw the point markers on one vertical section.
+
+        ``section = (point, normal, u_ax, v_ax, to_disp)`` as for
+        :func:`_overlay_polylines`. A marker (model x, y, depth) shows when
+        ``kind`` is in its ``kinds`` and its distance from the plane is at
+        most its ``max_dist``; a ``depth_err`` adds a bar from depth -
+        depth_err to depth + depth_err (vertical in the vertical sections,
+        the depth direction projected into a dipping plane). Artists are
+        added with ``add_artist``: neither the view nor the data limits
+        change, a marker outside the panel is simply not seen (the markers
+        inside it are un-clipped afterwards, see the panel loop). True if one
+        with a label shows (legend).
+        """
+        from matplotlib.lines import Line2D
+        point, normal, u_ax, v_ax, to_disp = section
+        labelled = False
+        for m in _pm_sections:
+            if kind not in m["kinds"]:
+                continue
+            p = np.array([m["xy"][0], m["xy"][1], m["depth"]], dtype=float)
+            if (m["max_dist"] is not None
+                    and abs(float((p - point) @ normal)) > m["max_dist"]):
+                continue
+            z = float(m["style"].get("zorder", 11))
+            X, Y = to_disp(float(p @ u_ax), float(p @ v_ax))
+            e = m["depth_err"]
+            if e > 0.0:
+                ends = []
+                for dz in (-e, e):
+                    q = p + np.array([0.0, 0.0, dz])
+                    ends.append(to_disp(float(q @ u_ax), float(q @ v_ax)))
+                ec = m["err"]
+                bx = [ends[0][0], ends[1][0]]
+                by = [ends[0][1], ends[1][1]]
+                ax.add_artist(Line2D(
+                    bx, by, color=ec["color"], lw=ec["lw"],
+                    solid_capstyle="butt", zorder=z - 0.1))
+                if ec["cap"] > 0.0:
+                    ax.add_artist(Line2D(
+                        bx, by, linestyle="none", marker="_",
+                        color=ec["color"], ms=ec["cap"], mew=ec["lw"],
+                        zorder=z - 0.1))
+            _art = Line2D([X], [Y], linestyle="none", **m["style"])
+            ax.add_artist(_art)
+            _mk_pts.append((_art, X, Y))
+            lab = m["style"].get("label")
+            labelled = labelled or bool(lab) and not str(lab).startswith("_")
+        return labelled
 
     def _overlay_polylines(ax, kind, *, z0=None, section=None):
         """Draw the ``polylines`` on one panel; True if a labelled one shows.
@@ -6573,6 +6821,8 @@ def plot_model_slices(
         mappable = None
         _ref_drawn = False
         _poly_drawn = False
+        _mk_drawn = False
+        _mk_pts.clear()
 
         # Normalise reversed-direction aliases before dispatch.
         if kind in ("sn", "we"):
@@ -6620,24 +6870,13 @@ def plot_model_slices(
                 mk = dict(_sm); mk.setdefault("label", f"Site {sn}")
                 ax.plot((sx_m + dE)*sc, (sy_m + dN)*sc, linestyle="none", **mk)
             for _mm in _regular_map_markers:
-                _lat, _lon = _mm["latlon"]
-                if latlon_to_model_fn is not None:
-                    _mx_m, _my_m = latlon_to_model_fn(
-                        _lat, _lon, utm_zone, utm_northern,
-                        utm_origin_e, utm_origin_n)
-                else:
-                    _mx_m, _my_m = 0.0, 0.0
-                _mk = dict(marker=_mm.get("marker", "+"),
-                           color=_mm.get("color", "black"),
-                           ms=_mm.get("ms", 8),
-                           zorder=_mm.get("zorder", 11),
-                           label=_mm.get("name", None))
-                _mk.update({k: v for k, v in _mm.items()
-                            if k not in ("latlon","marker","color","ms","zorder","name")})
-                ax.plot((_mx_m + dE)*sc, (_my_m + dN)*sc, linestyle="none", **_mk)
-            if _draw_model_centre:
+                if "map" not in _mm["kinds"]:
+                    continue
+                ax.plot((_mm["xy"][0] + dE)*sc, (_mm["xy"][1] + dN)*sc,
+                        linestyle="none", **_mm["style"])
+            if _draw_model_centre and "map" in _centre_kinds:
                 # Model origin (model-local 0, 0); never gets a legend
-                # label (no "label" key passed).
+                # label unless the is_model_centre entry has a "name".
                 ax.plot((0.0 + dE)*sc, (0.0 + dN)*sc,
                         linestyle="none", **_mc_marker)
 
@@ -6685,9 +6924,10 @@ def plot_model_slices(
                 ax.xaxis.set_major_formatter(_fmt_y)
             _apply_aspect(ax, "section", sc)
             _ref_drawn = _overlay_reference(ax, polys_d, eidx)
-            _poly_drawn = _overlay_polylines(
-                ax, "ns", section=(point, normal, u_ax, v_ax,
-                                   lambda pu, pv: ((pu + dN)*sc, pv*_dz_sc)))
+            _sec = (point, normal, u_ax, v_ax,
+                    lambda pu, pv: ((pu + dN)*sc, pv*_dz_sc))
+            _poly_drawn = _overlay_polylines(ax, "ns", section=_sec)
+            _mk_drawn = _overlay_markers(ax, "ns", _sec)
             if title is None:
                 title = f"N-S  easting = {(x0 + utm_origin_e)/1000:.1f} km"
             _lbl_l, _lbl_r = ("N", "S") if _invert_x else ("S", "N")
@@ -6746,9 +6986,10 @@ def plot_model_slices(
                 ax.xaxis.set_major_formatter(_fmt_x)
             _apply_aspect(ax, "section", sc)
             _ref_drawn = _overlay_reference(ax, polys_d, eidx)
-            _poly_drawn = _overlay_polylines(
-                ax, "ew", section=(point, normal, u_ax, v_ax,
-                                   lambda pu, pv: ((pu + dE)*sc, pv*_dz_sc)))
+            _sec = (point, normal, u_ax, v_ax,
+                    lambda pu, pv: ((pu + dE)*sc, pv*_dz_sc))
+            _poly_drawn = _overlay_polylines(ax, "ew", section=_sec)
+            _mk_drawn = _overlay_markers(ax, "ew", _sec)
             if title is None:
                 title = f"E-W  northing = {(y0 + utm_origin_n)/1000:.1f} km"
             _lbl_l, _lbl_r = ("E", "W") if _invert_x else ("W", "E")
@@ -6825,10 +7066,10 @@ def plot_model_slices(
                 _apply_aspect(ax, "section", _hsc)
                 _ref_drawn = _overlay_reference(ax, polys_d, eidx)
                 _fault_veil(ax, _fault_limit_range(spec), _hsc)
-                _poly_drawn = _overlay_polylines(
-                    ax, "plane",
-                    section=(_pt, normal, u_ax, v_ax,
-                             lambda pu, pv: ((pu - _u0)*_hsc, pv*_dz_sc)))
+                _sec = (_pt, normal, u_ax, v_ax,
+                        lambda pu, pv: ((pu - _u0)*_hsc, pv*_dz_sc))
+                _poly_drawn = _overlay_polylines(ax, "plane", section=_sec)
+                _mk_drawn = _overlay_markers(ax, "plane", _sec)
                 if title is None:
                     title = f"Section  azimuth N{_strike:.0f}E"
                 _c_l = _s_rad + math.pi if not _invert_x else _s_rad
@@ -6876,10 +7117,10 @@ def plot_model_slices(
                     ocean_value=ocean_value, invert_v=False, poly_alphas=_pa)
                 _ref_drawn = _overlay_reference(ax, polys_d, eidx)
                 _fault_veil(ax, _fault_limit_range(spec), _psc)
-                _poly_drawn = _overlay_polylines(
-                    ax, "plane",
-                    section=(_pt, normal, u_ax, v_ax,
-                             lambda pu, pv: ((pu - _u0)*_psc, (pv - _v0)*_psc)))
+                _sec = (_pt, normal, u_ax, v_ax,
+                        lambda pu, pv: ((pu - _u0)*_psc, (pv - _v0)*_psc))
+                _poly_drawn = _overlay_polylines(ax, "plane", section=_sec)
+                _mk_drawn = _overlay_markers(ax, "plane", _sec)
                 # Ranges [m] relative to `point`: per-spec xlim (along
                 # strike) / ylim (down dip), else the plane cut with the
                 # ROI box (figure-level xlim x ylim x zlim; mesh extent
@@ -6947,6 +7188,16 @@ def plot_model_slices(
                              else "log10(rho / Ohm*m)", fontsize=label_fontsize)
                 cb.ax.tick_params(labelsize=tick_fontsize)
 
+        # Section markers whose centre lies in the (now final) view are not
+        # clipped, so e.g. a cross at depth 0 on the top frame stays whole;
+        # those outside keep the clipping of the axes.
+        if _mk_pts:
+            _vx0, _vx1 = sorted(ax.get_xlim())
+            _vy0, _vy1 = sorted(ax.get_ylim())
+            for _art, _mx, _my in _mk_pts:
+                _art.set_clip_on(not (_vx0 <= _mx <= _vx1
+                                      and _vy0 <= _my <= _vy1))
+
         if panel_titles:
             ax.set_title(title, fontsize=label_fontsize + 1)
         ax.tick_params(labelsize=tick_fontsize)
@@ -6958,12 +7209,15 @@ def plot_model_slices(
             (map_markers and kind == "map" and
              any(m.get("name") for m in map_markers)) or
             bool(_ref_drawn and _ref_label) or
-            bool(_poly_drawn)
+            bool(_poly_drawn) or bool(_mk_drawn)
         )
         # Only if something actually carries a label (site_marker with
         # label=None, as in the calling scripts' defaults, produces none).
         if _show_legend and ax.get_legend_handles_labels()[0]:
-            ax.legend(fontsize=tick_fontsize, loc="lower right")
+            _leg = ax.legend(fontsize=tick_fontsize, loc="lower right")
+            # above the white veil of a limited fault panel (zorder 6), which
+            # would otherwise wash out the legend text
+            _leg.set_zorder(max(_leg.get_zorder(), 6.5))
 
     # -- nRMS annotation -------------------------------------------------------
     if nrms_annotation is not None:

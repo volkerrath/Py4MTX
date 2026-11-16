@@ -510,8 +510,8 @@ member directories except where a block file is named.
 
 | Function | Purpose |
 |---|---|
-| `read_ensemble_results(path, prefix=None, *, percentiles=None, out=True)` | Read the results `.npz` of `femtic_ens_post.py` into a dict: `ens`, `pert` (perturbed models of the same members or `None`), `model_source`, `avg`/`var`/`err`/`med`/`mad`, `prc`/`prc_levels`, `qdiff`, `var_boot`/`err_boot`/`var_boot_se`, `sens` (`{suffix: vector}`), `sens_kinds`/`sens_suffixes` (the kinds the `sens` keys hold and their key suffixes, or `None` for files from before 2026-11-15), `sens_ranges` (`{kind: {stat: (min, max)}}`, the native range of each stored statistic, or `None` for files from before 2026-11-15 (c)), `simrc_coef`/`simrc_corr`, `model_list`, `best_index`/`best_member`/`best_file`/`best_iter`/`best_nrms`, `nrms_table`, `nrms_max`, `perturbed_file`, `subsample` (`idx`, `n_accepted`, `seed`, or `None`). `prefix=None` detects the file's only ensemble. Statistics missing from the file are derived from the stored members. |
-| `ensemble_stat_map(res)` | `(stat_map, value_keys)`: every plottable statistic `key -> (vector, description)` (avg, var, err, med, mad, `p<level>`, `qdiff_*`, bootstrap, `sens_*`, `simrc_*`) and the keys on the resistivity scale (usable as borehole lines). |
+| `read_ensemble_results(path, prefix=None, *, percentiles=None, out=True)` | Read the results `.npz` of `femtic_ens_post.py` into a dict: `ens`, `pert` (perturbed models of the same members or `None`), `model_source`, `avg`/`var`/`err`/`med`/`mad`, `prc`/`prc_levels`, `qdiff`, `var_boot`/`err_boot`/`var_boot_se`, `sens` (`{suffix: vector}`), `sens_kinds`/`sens_suffixes` (the kinds the `sens` keys hold and their key suffixes, or `None` for files from before 2026-11-15), `sens_ranges` (`{kind: {stat: (min, max)}}`, the native range of each stored statistic, or `None` for files from before 2026-11-15 (c)), `simrc_coef`/`simrc_corr`, `diff_prior`/`prior`/`diff_prior_info` (the signed log10 difference model(ens) - model(prior), the prior itself and `[stat, source kind, text]`, or `None` for files from before 2026-11-15 (d) or when no prior could be used), `model_list`, `best_index`/`best_member`/`best_file`/`best_iter`/`best_nrms`, `nrms_table`, `nrms_max`, `perturbed_file`, `subsample` (`idx`, `n_accepted`, `seed`, or `None`). `prefix=None` detects the file's only ensemble. Statistics missing from the file are derived from the stored members. |
+| `ensemble_stat_map(res)` | `(stat_map, value_keys)`: every plottable statistic `key -> (vector, description)` (avg, var, err, med, mad, `p<level>`, `qdiff_*`, bootstrap, `sens_*`, `simrc_*`, `diff_prior` = signed difference to the prior model and `abs_diff_prior` = its absolute value, made here) and the keys on the resistivity scale (usable as borehole lines). |
 | `resolve_sens_stat(name, available, *, stored_kinds=None, stored_suffixes=None, kind="auto")` | `(key, note)`: the stored key that a `sens_*` panel / blanking name stands for, for the wanted sensitivity kind (`"auto"`, `"raw"`, `"volume_normalised"`; see `normalise_sens_kind`, `strip_sens_suffix`). `key` is `None` if nothing fits or the file holds only the other kind. Maps the dropped names `sens_<stat>_an` / `_na` too (see the 2026-11-15 (c) changelog). |
 | `resolve_results_template(res, template=None, *, ocean=None)` | Block file supplying header / region structure for the panels: the best member's own file, or `template`. Returns `(path, from_vector)`; `from_vector` is `True` when the "best" panel must be rebuilt from the stored best vector. |
 | `write_nrms_table(path, rows)` / `read_nrms_table(path)` | CSV of the per-member best nRMS (member, iteration, nRMS, status), sorted by nRMS. |
@@ -520,7 +520,7 @@ member directories except where a block file is named.
 
 | Function | Purpose |
 |---|---|
-| `km_to_m`, `lim_km_to_m`, `slices_km_to_m`, `plane_spec_km_to_m`, `plane_point_km_to_m`, `polylines_km_to_m` | `MOD_*` settings are in model-local km, `femtic_viz` wants metres; these convert scalars, limit pairs, `MOD_SLICES` lists and `kind="plane"` entries. The plane `point` may be model-local km (plain list or `([x, y, z], "model")`), `([E, N, z], "utm")` (E / N in UTM metres) or `([lon, lat, z], "latlon")` (degrees, longitude first); `z` is always km, depth positive down. The tagged UTM / latlon forms need the keyword arguments `zone`, `northern`, `origin_E`, `origin_N` of `plane_spec_km_to_m` (2026-11-09). `polylines_km_to_m(polylines)` converts the `MOD_POLYLINES` dict `{name: entry}` of `femtic_ens_plot_slices.py` for `fviz.plot_model_slices(polylines=...)`: `points` (model-local km, `z` = depth in km) are multiplied by 1000 (`x`, `y`, `z`), for `(pts, "utm")` only `z` (E / N stay UTM metres) and for `(pts, "latlon")` only `z` (degrees stay, longitude first); `max_dist` and `z_range` are km; `style` / `label` / `kinds` pass through; the input is not modified; `None` / `{}` -> `None`; `ValueError` / `TypeError` for malformed entries (2026-11-11). |
+| `km_to_m`, `lim_km_to_m`, `slices_km_to_m`, `plane_spec_km_to_m`, `plane_point_km_to_m`, `polylines_km_to_m`, `markers_km_to_m` | `MOD_*` settings are in model-local km, `femtic_viz` wants metres; these convert scalars, limit pairs, `MOD_SLICES` lists and `kind="plane"` entries. The plane `point` may be model-local km (plain list or `([x, y, z], "model")`), `([E, N, z], "utm")` (E / N in UTM metres) or `([lon, lat, z], "latlon")` (degrees, longitude first); `z` is always km, depth positive down. The tagged UTM / latlon forms need the keyword arguments `zone`, `northern`, `origin_E`, `origin_N` of `plane_spec_km_to_m` (2026-11-09). `polylines_km_to_m(polylines)` converts the `MOD_POLYLINES` dict `{name: entry}` of `femtic_ens_plot_slices.py` for `fviz.plot_model_slices(polylines=...)`: `points` (model-local km, `z` = depth in km) are multiplied by 1000 (`x`, `y`, `z`), for `(pts, "utm")` only `z` (E / N stay UTM metres) and for `(pts, "latlon")` only `z` (degrees stay, longitude first); `max_dist` and `z_range` are km; `style` / `label` / `kinds` pass through; the input is not modified; `None` / `{}` -> `None`; `ValueError` / `TypeError` for malformed entries (2026-11-11). `markers_km_to_m(markers)` converts the `MOD_MAP_MARKERS` list of `femtic_ens_plot_slices.py` for `fviz.plot_model_slices(map_markers=...)`: `depth`, `depth_err` and `max_dist` of an entry are km (-> m); `latlon`, `marker`, `color`, `ms`, `name`, `kinds`, `is_model_centre` and all other keys pass through; the input is not modified; `None` / `[]` -> `[]`; `TypeError` for a non-list or a non-dict entry (2026-11-15). |
 | `parse_alpha_source(expr)` | `"sens_median > -3."` -> `(name, op, value)`; regex, never `eval`. |
 | `alpha_from_condition(arr, op, thr, mode, width)` | Per-free-parameter alpha in [0, 1] (`"blank"` hard cut, `"fade"` linear over `width`). |
 | `write_alpha_block(alpha, template, path, ocean=None, out=True)` | Block file whose raw values are the alpha values (read by `plot_model_slices(alpha_mode="direct")`). |
@@ -714,6 +714,34 @@ Updated: 2026-11-15
   Tested on synthetic results only (old-format files written by the previous
   post script included). AI-generated (Claude Sonnet 5.5, Anthropic); review
   before production use.
+
+### Changelog (2026-11-15, g) --- difference to the prior model
+- `femtic_ens_post.py` of the same date (its changelog (d)) stores
+  `<P>_diff_prior` = model(ens) - model(prior) in log10(Ohm.m), **signed**,
+  with `<P>_prior` and `<P>_diff_prior_info`.
+  `read_ensemble_results()` returns them as `res["diff_prior"]`,
+  `res["prior"]`, `res["diff_prior_info"]` (`None` for older files, and for a
+  `diff_prior` whose length is not the number of free parameters, which is
+  ignored). `ensemble_stat_map()` offers two plot names: `"diff_prior"` (the
+  stored array) and `"abs_diff_prior"` (`abs()` of it: the post script stores
+  no absolute value). Neither is a resistivity-scale key. The description
+  names the statistic and the prior, e.g. "log10 mean(ens) - prior
+  (reference), signed". `select_ensemble_source()` drops all three when the
+  perturbed models alone are drawn (the difference belongs to the converged
+  ensemble). Nothing else changed; files without the keys read as before.
+- Needs `femtic_ens_post.py` and `femtic_ens_plot_slices.py` of the same date
+  for the keys and the styles. Tested on synthetic results (reader, stat map,
+  source swap, a file with a wrong-length key, a real drawing run);
+  not on your data. AI-generated (Claude Sonnet 5.5, Anthropic); review before
+  production use.
+
+### Changelog (2026-11-15, f) --- point markers in km
+- New `markers_km_to_m(markers)` (Section 6c, after `polylines_km_to_m`): the
+  km scripts keep the `depth`, `depth_err` and `max_dist` of a `MOD_MAP_MARKERS`
+  entry in km; `femtic_viz.plot_model_slices(map_markers=...)` wants metres
+  (it now draws markers with a depth on the vertical sections too, see its
+  readme, "Point markers"). The function multiplies those three keys by 1000
+  and passes everything else through; the input is not modified.
 
 ### Changelog (2026-11-15, e) --- `alpha_outside` fades
 - Documentation only. The `kind="profile"` entry takes one more key that passes
