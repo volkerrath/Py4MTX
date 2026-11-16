@@ -1285,7 +1285,7 @@ COMPUTE_PRIOR_DIFF = True
 #: model(ens): the "mean" (default) or the "median" of the models of this run
 #: (the converged models, or the perturbed ones with ENS_MODEL_SOURCE =
 #: "perturbed").
-PRIOR_DIFF_STAT = "mean"
+PRIOR_DIFF_STAT = "median"
 
 #: model(prior):
 #:   "reference" -- the unperturbed prior (reference) model: the block file

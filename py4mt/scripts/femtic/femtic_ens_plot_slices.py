@@ -648,9 +648,9 @@ MOD_SLICES = [
      p1=([6.030869, 45.962166], "latlon"),
      p2=([6.115936, 45.910655], "latlon"),
      dip=110.0, z_top=0.0, z_bot=20000.0,
-     overlay=dict(color="magenta", linestyle=":", linewidth=15.0, alpha=0.9),
+     overlay=dict(color="magenta", linestyle=":", linewidth=10.0, alpha=0.9),
      title="Vuache fault",
-     limit_km=0.0, alpha_outside=0.25,   # p1 ... p2 as given, then fading
+     limit_km=0.0, alpha_outside=0.1,   # p1 ... p2 as given, then fading
      fade_km=2.0,                        # ... to 25 % over 2 km (0 = abrupt)
      panel=False)
 ]
@@ -834,14 +834,19 @@ MOD_STATS_STYLE["abs_diff_prior"] = dict(
 # #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
 # #:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
 # MOD_ALPHA_MODE = "blank"
-MOD_ALPHA_SOURCE = "sens_median > -6."
-#: "blank" -- failing cells are removed (hard cut).
-#: "fade"  -- failing cells fade linearly from opaque at the threshold to
-#:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
-#:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
-MOD_ALPHA_MODE = "fade"
-MOD_ALPHA_FADE_WIDTH = 1.
-#: Apply the same mask to the MOD_QC (best-member) figure as well.
+MOD_ALPHA_SOURCE = "abs_diff_prior > 0.05"
+MOD_ALPHA_MODE = "blank"
+MOD_ALPHA_FADE_WIDTH = 0.05
+MOD_ALPHA_EXCLUDE = ("sens_", "simrc_", "diff_prior", "abs_diff_prior")
+
+# MOD_ALPHA_SOURCE = "sens_median > -6."
+# #: "blank" -- failing cells are removed (hard cut).
+# #: "fade"  -- failing cells fade linearly from opaque at the threshold to
+# #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
+# #:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
+# MOD_ALPHA_MODE = "fade"
+# MOD_ALPHA_FADE_WIDTH = 1.
+# #: Apply the same mask to the MOD_QC (best-member) figure as well.
 MOD_ALPHA_QC = True
 
 #: Statistic panels whose key starts with one of these prefixes are drawn
