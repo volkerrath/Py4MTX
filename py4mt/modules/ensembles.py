@@ -330,6 +330,34 @@ Provenance
             cache stays O(1) however many models are drawn.  Passing
             pp_cache without pp_regen_every raises ValueError (it would
             be silently ignored otherwise).
+2026-11-16  Claude Sonnet 5.5 (Anthropic)
+            Optional independent perturbation of the starting model
+            (resistivity_block_iter0.dat) in the RTO ensemble.
+            (1) generate_rto_model_ensemble: new argument perturb_iter0
+            (default False).  If True, every member gets a SECOND, independent
+            draw x0 ~ N(0, (alpha R^T R)^-1) -- same prior, same alpha, same
+            solver -- which is added to the shared iter0 model (method="add")
+            and written to a real iter0_file in the member directory (the
+            symlink is replaced; the template is never written through it);
+            the reference-model draw is unchanged.  Mutually exclusive with
+            start_from_perturbed (which copies the SAME draw to iter0); the
+            untouched iter0 model is kept as <iter0_file>_orig.dat.  The
+            printout gets a second line for the iter0 draws.
+            (2) sample_rto_prior: new argument n_sets (default 1).  n_sets > 1
+            returns an array (n_sets, n_samples, n) of statistically
+            independent sets from ONE factorisation of Q (instead of one LU per
+            call).  The random numbers are consumed set by set, so set 0 uses
+            exactly the random numbers of the single-set call with the same
+            generator state (results identical up to round-off of the solver;
+            bitwise in the tests): switching perturb_iter0 on or off does not
+            change the reference draws for a given seed.  n_sets = 1 behaves
+            exactly as before (bit-identical).
+            (3) put_files: a link target that already exists as a REAL file
+            (e.g. resistivity_block_iter0.dat after start_from_perturbed or
+            perturb_iter0 in an earlier run) is now replaced by the link; before,
+            os.symlink raised FileExistsError when generate_directories was
+            re-run on such a tree.
+            Not run on a real FEMTIC mesh (see tests/rto_iter0_test.py).
 
 AI-generated; please review before production use.
 """
@@ -1092,7 +1120,10 @@ def put_files(
             src_lnk = os.path.relpath(src_abs, start=os.path.abspath(directory))
         else:
             src_lnk = src_abs
-        if os.path.islink(dst):
+        # Remove whatever is there: a link, or a real file left by an earlier run
+        # (e.g. a perturbed resistivity_block_iter0.dat replacing the link).
+        # A directory is not touched (os.symlink then raises, as before).
+        if os.path.islink(dst) or os.path.isfile(dst):
             os.remove(dst)
         os.symlink(src_lnk, dst)
 
@@ -1115,6 +1146,7 @@ def generate_rto_model_ensemble(
     iter0_file: str = "resistivity_block_iter0.dat",
     rng: Optional[Generator] = None,
     out: bool = True,
+    perturb_iter0: bool = False,
     **legacy,
 ) -> list[str]:
     """
@@ -1176,8 +1208,11 @@ def generate_rto_model_ensemble(
         If True, also copy the perturbed model to ``iter0_file`` in each member
         directory (replacing a shared symlink by a real file; the template is
         never written through the link), so every inversion starts at its own
-        prior draw as in Blatter et al. (2022).  Default False (all members
-        start from the shared ``resistivity_block_iter0.dat``).
+        prior draw as in Blatter et al. (2022).  The starting model is then
+        IDENTICAL to the perturbed reference model of the same member.
+        Default False (all members start from the shared
+        ``resistivity_block_iter0.dat``).  Mutually exclusive with
+        ``perturb_iter0``.
     remove_mean : bool
         If True, subtract each draw's mean over the free regions.  R^T R is
         singular (constants), so the draws contain a global offset of the whole
@@ -1190,11 +1225,30 @@ def generate_rto_model_ensemble(
         Default False (exact sampler output); the energy ratio is unchanged
         by the removal if R annihilates constants (checked; warning otherwise).
     iter0_file : str
-        Name of the starting-model file used with ``start_from_perturbed``.
+        Name of the starting-model file used with ``start_from_perturbed`` and
+        ``perturb_iter0``.
     rng : numpy.random.Generator, optional
         Shared random generator.
     out : bool
         If True, print status messages and the prior-perturbation diagnostics.
+    perturb_iter0 : bool
+        If True, perturb the starting model ``iter0_file`` of every member as
+        well, with a SECOND draw that is statistically independent of the draw
+        used for the reference model: same procedure (x0 ~ N(0, (alpha R^T R)^-1),
+        same alpha, lam and solver), added to the iter0 model
+        (``method="add"``) or used as absolute log10 values (``"replace"``).
+        Both draws come from one factorisation of Q (``sample_rto_prior(...,
+        n_sets=2)``); the reference-model draws use the same random numbers as
+        a run with ``perturb_iter0=False`` and the same ``rng`` state (identical
+        up to solver round-off, far below the 6 digits written to the file).  The
+        member's ``iter0_file`` (normally a symlink to the shared template) is
+        replaced by a real file; the template is never written; the unperturbed
+        iter0 model is kept as ``<iter0_file>_orig.dat`` (stem + ``_orig``).
+        ``generate_directories`` must have been called first (it re-creates the
+        link, so a re-run does not perturb an already perturbed model).
+        Mutually exclusive with ``start_from_perturbed`` (which would copy the
+        SAME draw), and ``iter0_file`` must differ from ``refmod``.
+        Default False.
     **legacy
         Removed arguments of the earlier randomized-SVD implementation
         (``n_eig``, ``n_oversampling``, ``n_power_iter``, ``sigma2_residual``,
@@ -1224,6 +1278,16 @@ def generate_rto_model_ensemble(
     if not (np.isfinite(alpha) and alpha > 0.0):
         raise ValueError(f"generate_rto_model_ensemble: alpha must be positive and finite, got {alpha!r}.")
 
+    if perturb_iter0 and start_from_perturbed:
+        raise ValueError(
+            "generate_rto_model_ensemble: perturb_iter0 and start_from_perturbed are "
+            "mutually exclusive: start_from_perturbed copies the reference-model draw "
+            "to iter0 (identical), perturb_iter0 makes an independent second draw.")
+    if perturb_iter0 and os.path.basename(str(iter0_file)) == os.path.basename(str(refmod)):
+        raise ValueError(
+            "generate_rto_model_ensemble: perturb_iter0 needs iter0_file different from "
+            f"refmod (both are {refmod!r}).")
+
     if legacy:
         warnings.warn(
             "generate_rto_model_ensemble: ignoring legacy argument(s) "
@@ -1248,8 +1312,11 @@ def generate_rto_model_ensemble(
     fromto_arr = _resolve_fromto(fromto, n_samples)
 
     if out:
-        print(f"RTO prior sampling started (alpha={alpha:g}, solver={algo_l}).")
-    samples, info = sample_rto_prior(
+        print(f"RTO prior sampling started (alpha={alpha:g}, solver={algo_l}"
+              + ("; independent draws for the reference and the iter0 model" if perturb_iter0 else "")
+              + ").")
+    n_sets = 2 if perturb_iter0 else 1
+    samples_all, info = sample_rto_prior(
         q,
         n_samples=len(fromto_arr),
         alpha=float(alpha),
@@ -1259,7 +1326,12 @@ def generate_rto_model_ensemble(
         rtol=float(solver_rtol),
         rng=rng,
         return_info=True,
+        n_sets=n_sets,
     )
+    if perturb_iter0:
+        samples, samples0 = samples_all[0], samples_all[1]     # independent sets
+    else:
+        samples, samples0 = samples_all, None
     if remove_mean:
         Rq = q.tocsr() if issparse(q) else scipy.sparse.csr_array(np.asarray(q, dtype=np.float64))
         ones = np.ones(Rq.shape[1])
@@ -1271,26 +1343,33 @@ def generate_rto_model_ensemble(
                 f"(|R 1| / |abs(R) 1| = {r1 / max(r1_ref, 1e-300):.2e}); the mean removal then "
                 "changes the roughness energy of the draws.", RuntimeWarning, stacklevel=2)
         samples = samples - samples.mean(axis=1, keepdims=True)
+        if samples0 is not None:
+            samples0 = samples0 - samples0.mean(axis=1, keepdims=True)
 
     if out:
-        e_ratio = prior_energy_ratio(q, samples, alpha=float(alpha))
-        if len(samples) > 1:
-            rms_std = float(np.sqrt(np.mean(np.var(samples, axis=0, ddof=1))))
-            zm = samples - samples.mean(axis=1, keepdims=True)
-            rms_zm = float(np.sqrt(np.mean(np.var(zm, axis=0, ddof=1))))
-        else:
-            rms_std = rms_zm = float("nan")
-        print(f"RTO prior sampling done: n={samples.shape[1]}, lam={info['lam']:.3e}, "
-              f"solver={info['method']}, RMS std = {rms_std:.4f} (log10 units; "
-              f"{rms_zm:.4f} after removing each draw's global mean), "
-              f"energy ratio = {e_ratio:.3f} (expect ~1).")
-        if not (0.5 < e_ratio < 2.0):
-            warnings.warn(
-                f"generate_rto_model_ensemble: prior energy ratio {e_ratio:.3f} is far from 1; "
-                "check R, alpha and the solver tolerance.", RuntimeWarning, stacklevel=2)
+        for _S, _tag in ((samples, ""), (samples0, " (iter0 draws)")):
+            if _S is None:
+                continue
+            e_ratio = prior_energy_ratio(q, _S, alpha=float(alpha))
+            if len(_S) > 1:
+                rms_std = float(np.sqrt(np.mean(np.var(_S, axis=0, ddof=1))))
+                zm = _S - _S.mean(axis=1, keepdims=True)
+                rms_zm = float(np.sqrt(np.mean(np.var(zm, axis=0, ddof=1))))
+            else:
+                rms_std = rms_zm = float("nan")
+            print(f"RTO prior sampling done{_tag}: n={_S.shape[1]}, lam={info['lam']:.3e}, "
+                  f"solver={info['method']}, RMS std = {rms_std:.4f} (log10 units; "
+                  f"{rms_zm:.4f} after removing each draw's global mean), "
+                  f"energy ratio = {e_ratio:.3f} (expect ~1).")
+            if not (0.5 < e_ratio < 2.0):
+                warnings.warn(
+                    f"generate_rto_model_ensemble: prior energy ratio{_tag} {e_ratio:.3f} is far "
+                    "from 1; check R, alpha and the solver tolerance.", RuntimeWarning, stacklevel=2)
 
     mod_list: list[str] = []
-    for iens, sample in zip(fromto_arr, samples):
+    mod0_list: list[str] = []
+    for k, iens in enumerate(fromto_arr):
+        sample = samples[k]
         file = f"{dir_base}{iens}/{refmod}"
         orig_file = file.replace(".dat", "_orig.dat")
         shutil.copy(file, orig_file)
@@ -1311,11 +1390,49 @@ def generate_rto_model_ensemble(
         else:  # "replace"
             model_log10 = sample
 
+        # Starting model (independent second draw): validate and read it BEFORE anything
+        # is written for this member, so a failure leaves the member untouched.
+        if perturb_iter0:
+            sample0 = samples0[k]
+            iter0 = f"{dir_base}{iens}/{iter0_file}"
+            _stem, _ext = os.path.splitext(iter0)
+            iter0_orig = f"{_stem}_orig{_ext}"
+            if not os.path.exists(iter0):          # False for a broken link, too
+                raise FileNotFoundError(
+                    f"generate_rto_model_ensemble: perturb_iter0: {iter0} not found "
+                    "(is iter0_file in the copy/link list of generate_directories?).")
+            # shutil.copy follows a symlink: the backup is a real file holding the
+            # template content, and the template itself is only ever read.
+            shutil.copy(iter0, iter0_orig)
+            start_log10 = fem.read_model(iter0_orig, model_trans="log10", out=False)
+            if start_log10.size != sample0.size:
+                raise ValueError(
+                    f"generate_rto_model_ensemble: R has {sample0.size} columns but the free "
+                    f"region vector of {iter0_orig} has {start_log10.size} entries; R rows/"
+                    "columns must correspond to the free regions in region-index order."
+                )
+            if method.lower() == "add":
+                model0_log10 = start_log10 + sample0
+            else:  # "replace"
+                model0_log10 = sample0
+
         fem.insert_model(
             template=orig_file,
             model=model_log10,
             model_file=file,
             model_name=f"sample{iens}")
+
+        if perturb_iter0:
+            # Remove first: if iter0 is a symlink to the shared template, writing onto it
+            # would write through the link and modify the template.
+            if os.path.islink(iter0):
+                os.remove(iter0)
+            fem.insert_model(
+                template=iter0_orig,
+                model=model0_log10,
+                model_file=iter0,
+                model_name=f"sample{iens}_iter0")
+            mod0_list.append(iter0)
 
         if start_from_perturbed:
             iter0 = f"{dir_base}{iens}/{iter0_file}"
@@ -1331,6 +1448,9 @@ def generate_rto_model_ensemble(
     if out:
         print("\nlist of perturbed model files:")
         print(mod_list)
+        if perturb_iter0:
+            print("\nlist of perturbed starting-model files (independent draws):")
+            print(mod0_list)
 
     return mod_list
 
@@ -6326,6 +6446,7 @@ def sample_rto_prior(
     direct_max_n: int = 60000,
     rng: Optional[Generator] = None,
     return_info: bool = False,
+    n_sets: int = 1,
 ):
     """Exact samples from ``N(0, (alpha (R^T R + lam I))^-1)`` for RTO.
 
@@ -6370,10 +6491,17 @@ def sample_rto_prior(
     rng : numpy.random.Generator, optional
     return_info : bool
         If True return ``(samples, info)`` with ``info = {"lam", "method", "n"}``.
+    n_sets : int
+        Number of statistically independent sets of ``n_samples`` draws
+        (default 1).  Use ``n_sets = 2`` to perturb two files per member
+        independently (reference model and starting model).  All sets share
+        ONE factorisation of Q.  The random numbers are consumed set by set, so
+        set 0 uses exactly the random numbers of the ``n_sets = 1`` call with
+        the same generator state (identical results up to solver round-off).
 
     Returns
     -------
-    samples : ndarray, shape (n_samples, n)
+    samples : ndarray, shape (n_samples, n), or (n_sets, n_samples, n) if n_sets > 1
         Perturbations in the unit R acts on (log10 resistivity in FEMTIC workflows).
 
     Notes
@@ -6382,10 +6510,14 @@ def sample_rto_prior(
     workflow.  Check a result with :func:`prior_energy_ratio` (should be ~ 1).
 
     Author: Claude Sonnet 5.5 (Anthropic), 2026-10-21.
+    Modified 2026-11-16, Claude Sonnet 5.5 (Anthropic): n_sets.
     AI-generated; please review before production use.
     """
     if not (np.isfinite(alpha) and alpha > 0.0):
         raise ValueError(f"sample_rto_prior: alpha must be positive and finite, got {alpha!r}.")
+    n_sets = int(n_sets)
+    if n_sets < 1:
+        raise ValueError(f"sample_rto_prior: n_sets must be >= 1, got {n_sets!r}.")
     rng = default_rng() if rng is None else rng
     if issparse(R):
         Rm = R.tocsr()
@@ -6401,9 +6533,14 @@ def sample_rto_prior(
 
     Q = (Rm.T @ Rm + lam_eff * scipy.sparse.eye_array(n)).tocsc()
 
-    xi1 = rng.standard_normal(size=(m, n_samples))
-    xi2 = rng.standard_normal(size=(n, n_samples))
-    B = np.asarray(Rm.T @ xi1, dtype=np.float64) + np.sqrt(lam_eff) * xi2        # (n, n_samples)
+    # Right-hand sides, set by set (set 0 consumes the generator exactly as the
+    # former single-set code did); columns of all sets are solved together.
+    B_sets = []
+    for _ in range(n_sets):
+        xi1 = rng.standard_normal(size=(m, n_samples))
+        xi2 = rng.standard_normal(size=(n, n_samples))
+        B_sets.append(np.asarray(Rm.T @ xi1, dtype=np.float64) + np.sqrt(lam_eff) * xi2)   # (n, n_samples)
+    B = B_sets[0] if n_sets == 1 else np.concatenate(B_sets, axis=1)                  # (n, n_sets*n_samples)
 
     meth = str(method).strip().lower()
     if meth in {"auto"}:
@@ -6417,7 +6554,7 @@ def sample_rto_prior(
         M = LinearOperator(Q.shape, matvec=lambda v: v / dq, dtype=np.float64)   # Jacobi (SPD)
         mi = int(maxiter) if maxiter is not None else max(5000, 2 * n)
         X = np.empty_like(B)
-        for j in range(n_samples):
+        for j in range(B.shape[1]):
             x, info_cg = cg(Q, B[:, j], rtol=float(rtol), atol=0.0, M=M, maxiter=mi)
             if info_cg != 0:
                 warnings.warn(
@@ -6428,7 +6565,9 @@ def sample_rto_prior(
     else:
         raise ValueError("sample_rto_prior: method must be 'auto', 'splu' or 'cg'.")
 
-    samples = (X / np.sqrt(alpha)).T
+    samples = (X / np.sqrt(alpha)).T                     # (n_sets*n_samples, n)
+    if n_sets > 1:
+        samples = samples.reshape(n_sets, n_samples, n)  # sets are contiguous blocks
     if return_info:
         return samples, {"lam": lam_eff, "method": meth, "n": n}
     return samples

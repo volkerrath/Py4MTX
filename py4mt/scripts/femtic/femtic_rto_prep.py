@@ -380,6 +380,30 @@ Provenance:
                 femtic_viz.py of the same date. Not run here (syntax and a
                 synthetic-mesh test of the plot function only).
                 AI-generated; review before production use.
+    2026-11-16  Claude Sonnet 5.5 (Anthropic)
+                Optional independent perturbation of the starting model.
+                New MOD_PERTURB_ITER0 (default False) and MOD_ITER0_FILE
+                (default "resistivity_block_iter0.dat"), passed to
+                ens.generate_rto_model_ensemble(perturb_iter0=..., iter0_file=...).
+                With MOD_PERTURB_ITER0 = True every member's iter0 file gets
+                its own RTO prior draw x0 ~ N(0, (MOD_ALPHA R^T R)^-1) --
+                same procedure, alpha, lam and solver as the draw of
+                referencemodel.dat, but statistically INDEPENDENT of it --
+                added to the template iter0 model; the shared symlink is
+                replaced by a real file (template untouched), the
+                unperturbed model is kept as <iter0>_orig.dat.  Exclusive
+                with MOD_START_FROM_PERTURBED (which copies the SAME draw);
+                checked, with the file name and the template, before any
+                directory is touched.  The reference-model draws do not
+                depend on the option for a given RANDOM_SEED.  Needs
+                ensembles.py of the same date (also: put_files no longer
+                fails when it re-links an iter0 file that an earlier run had
+                replaced by a real file).  The QC / model plots still show
+                {MOD_REF_BASE}, not the perturbed iter0 file.
+                Fixed a SyntaxError in the file as uploaded:
+                "ENS_LIST = np.arange{50)" -> "np.arange(50)" (members 0-49
+                of N_SAMPLES = 128; check that this is what you want).
+                AI-generated; review before production use.
 """
 
 import os
@@ -582,7 +606,7 @@ ENS_LIST accepts two forms:
   None              — process all members 0 … N_SAMPLES-1 (default)
   [i, j, k, …]     — explicit list of member indices to process
 """
-ENS_LIST = np.arange{50)
+ENS_LIST = np.arange(50)
 
 
 """
@@ -624,6 +648,23 @@ if PERTURB_MOD:
     #        every inversion starts at its own prior draw as in Blatter et al. (2022).
     MOD_START_FROM_PERTURBED = False
 
+    # True: ALSO perturb the starting model MOD_ITER0_FILE of every member, with its OWN prior
+    #       draw x0 ~ N(0, (MOD_ALPHA R^T R)^-1): same procedure, alpha, lam and solver as the
+    #       draw for referencemodel.dat, but statistically INDEPENDENT of it (both come from one
+    #       factorisation of R^T R + lam I; the draws for referencemodel.dat are the same with
+    #       and without this option for a given RANDOM_SEED). The perturbation is added to the
+    #       template iter0 model; the member's symlink is replaced by a real file (the template
+    #       is never modified) and the unperturbed model is kept as <name>_orig.dat.
+    # False (default): iter0 is left as configured by MOD_START_FROM_PERTURBED above.
+    # Exclusive with MOD_START_FROM_PERTURBED = True (which would give the SAME draw).
+    # NOTE: unlike for referencemodel.dat, a global offset in the draw DOES matter for the
+    # starting model (it shifts the whole model that the inversion starts from). The offset
+    # comes from the arbitrary shift lam of the singular R^T R (see MOD_REMOVE_MEAN below;
+    # the printout gives the RMS std with and without it). MOD_REMOVE_MEAN = True is the
+    # sensible setting together with MOD_PERTURB_ITER0 = True.
+    MOD_PERTURB_ITER0 = False
+    MOD_ITER0_FILE = "resistivity_block_iter0.dat"   # must be in COPY_LIST or LINK_LIST
+
     # True: subtract each draw's global mean. The constant mode of R^T R carries a variance
     # set by the arbitrary shift lam (per-cell std ~ 1/sqrt(n*alpha*lam)); |R x|^2 and
     # hence the member inversion do not see it (if FEMTIC's objective depends on the
@@ -656,10 +697,28 @@ if PERTURB_MOD:
                  "of the member inversions (Alpha column of femtic.cnv).")
     MOD_ALPHA = float(MOD_ALPHA)
 
+    # --- starting-model perturbation: check now (fail before any directory is touched) --
+    if MOD_PERTURB_ITER0:
+        if MOD_START_FROM_PERTURBED:
+            sys.exit(" MOD_PERTURB_ITER0 and MOD_START_FROM_PERTURBED are mutually exclusive: "
+                     "the latter copies the draw for referencemodel.dat to iter0 (identical), "
+                     "the former makes a second, independent draw. Set one of them False.")
+        if os.path.basename(MOD_ITER0_FILE) == MOD_REF_BASE:
+            sys.exit(" MOD_ITER0_FILE must differ from the reference model file (%s)." % MOD_REF_BASE)
+        if MOD_ITER0_FILE not in COPY_LIST and MOD_ITER0_FILE not in LINK_LIST:
+            sys.exit(" MOD_ITER0_FILE = %s is in neither COPY_LIST nor LINK_LIST, so the member "
+                     "directories will not contain it." % MOD_ITER0_FILE)
+        if not os.path.isfile(TEMPLATES + MOD_ITER0_FILE):
+            sys.exit(" MOD_PERTURB_ITER0: %s does not exist." % (TEMPLATES + MOD_ITER0_FILE))
+        print(f"MOD_PERTURB_ITER0: {MOD_ITER0_FILE} of every member gets its own RTO prior draw, "
+              f"independent of the draw for {MOD_REF_BASE} (same alpha = {MOD_ALPHA:g}).")
+
 else:
     R_FILE = None
     MOD_REF = None
     MOD_REF_BASE = None
+    MOD_PERTURB_ITER0 = False
+    MOD_ITER0_FILE = "resistivity_block_iter0.dat"
 
 """
 Set up mode of data perturbations.
@@ -1087,6 +1146,8 @@ Draw perturbed model sets: m̃ ∼ N(m, Cm)
 
 R is passed directly — the sparse Q = R^T R + lam I is formed inside
 ens.sample_rto_prior (exact draws from N(0, (MOD_ALPHA R^T R)^-1), no rank truncation).
+With MOD_PERTURB_ITER0 a second, independent set of draws perturbs the starting model
+resistivity_block_iter0.dat (same procedure).
 """
 R = scs.load_npz(R_FILE + ".npz")
 print("roughness R loaded with shape:", np.shape(R))
@@ -1105,6 +1166,8 @@ model_ensemble = ens.generate_rto_model_ensemble(
     lam_alpha=MOD_LAM_ALPHA,
     solver_rtol=MOD_RTOL,
     start_from_perturbed=MOD_START_FROM_PERTURBED,
+    perturb_iter0=MOD_PERTURB_ITER0,   # independent second draw for the iter0 file
+    iter0_file=MOD_ITER0_FILE,
     remove_mean=MOD_REMOVE_MEAN,
     rng=rng,
     out=True,

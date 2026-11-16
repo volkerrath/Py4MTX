@@ -96,7 +96,7 @@ Convenience helper: `pick_lam_from_rtr_diag(R, alpha=..., statistic="median", mi
 | `make_rtr_preconditioner()`          | Jacobi / ILU / AMG preconditioner for CG.           |
 | `make_precision_solver()`            | Build a callable `solve_Q(b)` for `Q x = b`.        |
 | `make_sparse_cholesky_precision_solver()` | Direct Cholesky (CHOLMOD) or LU solver.        |
-| `sample_rto_prior()`                 | **Exact** samples from `N(0, (alpha (R^T R + lam I))^-1)` (sparse LU or Jacobi-CG). Used by `generate_rto_model_ensemble`. |
+| `sample_rto_prior()`                 | **Exact** samples from `N(0, (alpha (R^T R + lam I))^-1)` (sparse LU or Jacobi-CG); `n_sets > 1` gives independent sets from one factorisation. Used by `generate_rto_model_ensemble`. |
 | `prior_energy_ratio()`               | Diagnostic `mean(alpha*|R x|^2)/rank(R)`; ~1 for correct draws. |
 | `sample_rtr_full_rank()`             | Sample `N(0, Q^{-1})` with a user-supplied solver (fixed 2026-10-21: missing `sqrt(lam)*xi2` term added). |
 | `sample_rtr_low_rank()`              | **DEPRECATED** - randomized SVD of R keeps the roughest modes; warns when called. |
@@ -483,7 +483,9 @@ xi1 ~ N(0, I_m),  xi2 ~ N(0, I_n)    =>    Cov(x) = (alpha Q)^(-1)
 | `lam`, `lam_alpha` | `0`, `1e-4` | Diagonal shift (R^T R is singular for constants). `lam = 0` means `lam_alpha * median(diag(R^T R))`. |
 | `solver_rtol` | `1e-8` | CG only. Keep it tight: CG converges last on the smoothest modes, which carry most of the prior variance. |
 | `start_from_perturbed` | `False` | `True`: also write the perturbed model to `resistivity_block_iter0.dat` (a shared symlink is replaced by a real file; the template is never modified). |
-| `remove_mean` | `False` | `True`: subtract each draw's global mean (see "Constant mode" below). |
+| `perturb_iter0` | `False` | `True`: also perturb the starting model `iter0_file` of every member with a **second, independent** draw (see "Independent perturbation of the starting model" below). Exclusive with `start_from_perturbed`. |
+| `iter0_file` | `"resistivity_block_iter0.dat"` | Starting-model file used by `start_from_perturbed` and `perturb_iter0`; must differ from `refmod`. |
+| `remove_mean` | `False` | `True`: subtract each draw's global mean (see "Constant mode" below); applied to both sets. |
 | `rng` | `None` | Shared `numpy.random.Generator` for reproducibility. |
 
 Removed arguments of the former implementation (`n_eig`, `n_oversampling`,
@@ -504,12 +506,47 @@ mods = ens.generate_rto_model_ensemble(
     algo="auto", rng=np.random.default_rng(1234), out=True)
 ```
 
+### Independent perturbation of the starting model (`perturb_iter0`)
+
+By default only the reference model (`referencemodel.dat`, the regularisation prior)
+is perturbed and all members start from the shared, unperturbed
+`resistivity_block_iter0.dat`. Two options change the starting model:
+
+| | reference model | starting model `iter0_file` |
+|---|---|---|
+| default | `m_ref + x` | shared template (symlink) |
+| `start_from_perturbed=True` | `m_ref + x` | the **same** file, i.e. `m_ref + x` |
+| `perturb_iter0=True` | `m_ref + x` | `m_iter0 + x0`, `x0` an **independent** draw |
+
+With `perturb_iter0=True` each member gets a second draw `x0 ~ N(0, (alpha R^T R)^-1)`
+- same prior, alpha, `lam`, solver and `method` as `x` - added to the **iter0 template
+model** (not to the reference model). Both sets come from
+`sample_rto_prior(..., n_sets=2)`: one factorisation of `Q`, statistically independent
+columns. The random numbers are consumed set by set, so the reference draws use exactly
+the random numbers of a run with `perturb_iter0=False` and the same `rng` state (the
+file contents are identical, tested). In each member directory the iter0 symlink is
+replaced by a real file (the template is only read, never written); the unperturbed
+model is kept as `resistivity_block_iter0_orig.dat`. `generate_directories` has to be
+called first (the prep script does), otherwise a repeated call would perturb an
+already perturbed file. The member's iter0 file must have the same free-region
+vector as `R` (checked for every member before anything is written for it).
+
+A global offset in the draw (see "Constant mode") does not matter for the reference
+model if FEMTIC's objective sees it only through `R (m - m_ref)`, but it shifts the
+whole **starting** model. Use `remove_mean=True` together with `perturb_iter0=True`.
+
+`prior_energy_ratio(R, perturbed_iter0 - iter0_orig, alpha)` checks the written iter0
+perturbation in the same way as for the reference model.
+
 ### Diagnostics printed with `out=True`
 
 ```
 RTO prior sampling done: n=..., lam=..., solver=splu, RMS std = ... (log10 units;
 ... after removing each draw's global mean), energy ratio = 1.00 (expect ~1).
 ```
+
+With `perturb_iter0=True` a second line `RTO prior sampling done (iter0 draws): ...`
+is printed for the iter0 draws.
 
 The **energy ratio** `mean(alpha |R x|^2) / rank(R)` is the chi^2 per degree of
 freedom of the roughness term of the draws; it is ~1 for correct draws. The former
@@ -564,6 +601,8 @@ offset has not been checked against FEMTIC itself.
 | `solver_rtol` / `rtol` | `1e-8` (CG), never looser than `1e-6` | `generate_rto_model_ensemble`, `sample_rto_prior` |
 | `remove_mean` | `False`; `True` to drop the lam-driven global offset | `generate_rto_model_ensemble` |
 | `start_from_perturbed` | `False` (shared starting model) or `True` (each member starts at its own draw) | `generate_rto_model_ensemble` |
+| `perturb_iter0` | `False`; `True`: starting model gets its own, independent draw (use with `remove_mean=True`) | `generate_rto_model_ensemble` |
+| `n_sets` | `1`; `2` for two independent sets from one factorisation | `sample_rto_prior` |
 | `precond` | `"jacobi"` (ILU is not an SPD preconditioner) | `make_precision_solver` |
 | `maxiter` | default `max(5000, 2n)` | `sample_rto_prior` |
 
@@ -676,7 +715,26 @@ If CG does not converge (`RuntimeWarning` from `sample_rto_prior` or
 
 ## Version / provenance
 
-Updated: 2026-10-23 (`pp_cache` / `pp_pos_offset` for `generate_gst_model_ensemble`); 2026-10-21 (RTO prior perturbation corrected: `sample_rto_prior`, required `alpha`); 2026-10-17 (streaming skewness/kurtosis); 2026-10-16 (streaming mean/variance, histogram quantiles); 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
+Updated: 2026-11-16 (`perturb_iter0`, `sample_rto_prior(n_sets)`, `put_files` re-link fix); 2026-10-23 (`pp_cache` / `pp_pos_offset` for `generate_gst_model_ensemble`); 2026-10-21 (RTO prior perturbation corrected: `sample_rto_prior`, required `alpha`); 2026-10-17 (streaming skewness/kurtosis); 2026-10-16 (streaming mean/variance, histogram quantiles); 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
+
+### Changelog (2026-11-16) -- independent perturbation of the starting model
+Claude Sonnet 5.5 (Anthropic). AI-generated; review before production use.
+- `generate_rto_model_ensemble`: new `perturb_iter0` (default `False`): second,
+  independent prior draw added to the iter0 model and written to a real
+  `iter0_file` per member (symlink replaced, template untouched, backup
+  `<iter0_file>_orig.dat`). Exclusive with `start_from_perturbed`; `iter0_file` must
+  differ from `refmod`; iter0 is validated before anything is written for a member.
+  Second diagnostics line for the iter0 draws; `remove_mean` applies to both sets.
+- `sample_rto_prior`: new `n_sets` (default 1). `n_sets=1` unchanged (bit-identical to
+  the 2026-10-21 version); `n_sets>1` returns `(n_sets, n_samples, n)`, one
+  factorisation, random numbers consumed set by set (set 0 = the single-set draw).
+- `put_files`: a link target that exists as a real file (iter0 after
+  `start_from_perturbed` / `perturb_iter0` in an earlier run) is replaced by the link;
+  before, re-running `generate_directories` on such a tree raised `FileExistsError`.
+- Tests: `rto_iter0_test.py` (59 checks: sampler independence and statistics, end-to-end on
+  mock block files, re-run, validation, prep-script block) and `rto_prep_smoke.py`
+  (whole `femtic_rto_prep.py` on a mock ensemble, option on/off).
+  Not run on a real FEMTIC mesh.
 
 ### Changelog (2026-10-23) -- pilot-point reset interval across single-member calls
 Claude Sonnet 5.5 (Anthropic). AI-generated; review before production use.

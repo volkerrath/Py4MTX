@@ -80,7 +80,9 @@ makes the *entire* ensemble (data + model perturbation, plus the
 | `MOD_LAM_ALPHA` | Scale of the automatic shift (default `1e-4`). |
 | `MOD_RTOL` | CG relative tolerance (default `1e-8`; keep tight). |
 | `MOD_START_FROM_PERTURBED` | `False` (default): members share the unperturbed `resistivity_block_iter0.dat`. `True`: each member also gets its perturbed model as starting model (real file replaces the symlink; the template is not modified). |
-| `MOD_REMOVE_MEAN` | `False` (default). `True`: subtract each draw's global mean (offset set by the arbitrary shift `lam`, invisible to `R`). |
+| `MOD_PERTURB_ITER0` | `False` (default). `True`: also perturb the starting model `MOD_ITER0_FILE` of every member with its **own** prior draw `x0 ~ N(0, (MOD_ALPHA R^T R)^-1)`: same procedure, alpha, `lam` and solver as the draw for `referencemodel.dat`, but **statistically independent** of it (both from one factorisation). Added to the iter0 template model; the member's symlink becomes a real file (template untouched), the unperturbed model is kept as `<name>_orig.dat`. The reference draws are unchanged by this option for a given `RANDOM_SEED`. Exclusive with `MOD_START_FROM_PERTURBED = True` (which copies the SAME draw); the script exits before touching any directory if both are set, if `MOD_ITER0_FILE` equals the reference file, is in neither `COPY_LIST` nor `LINK_LIST`, or is missing in `TEMPLATES`. The QC / model plots still show `MOD_REF_BASE`. |
+| `MOD_ITER0_FILE` | `"resistivity_block_iter0.dat"`. File perturbed by `MOD_PERTURB_ITER0`. |
+| `MOD_REMOVE_MEAN` | `False` (default). `True`: subtract each draw's global mean (offset set by the arbitrary shift `lam`, invisible to `R`). **Recommended together with `MOD_PERTURB_ITER0`**: the offset does not matter for the reference model but shifts the whole starting model. |
 
 Removed (2026-10-21): `MOD_MU`, `MOD_PDF` (never passed on; implied alpha = 1),
 `MOD_N_EIG`, `MOD_N_OVERSAMPLING`, `MOD_N_POWER_ITER`, `MOD_SIGMA2_RESIDUAL`,
@@ -202,6 +204,16 @@ The same rule applies to `p1` / `p2` of `kind="profile"` (z optional).
   `femtic_rto_prep.py` itself could not be run end to end here (`femtic_viz`
   was not available); the alpha block and `ens.generate_rto_model_ensemble`
   were tested separately (`rto_integration_test.py`).
+- 2026-11-16 (Claude Sonnet 5.5, Anthropic): optional independent perturbation of
+  the starting model. New `MOD_PERTURB_ITER0` (default `False`) and `MOD_ITER0_FILE`,
+  passed to `ens.generate_rto_model_ensemble(perturb_iter0=..., iter0_file=...)`; see
+  the table above and `ensembles_readme.md`, changelog 2026-11-16. Checks of the
+  option combination run before any directory is created. Fixed a `SyntaxError` in the
+  uploaded copy: `ENS_LIST = np.arange{50)` -> `np.arange(50)`. Needs the
+  `ensembles.py` of the same date. Tested: `rto_iter0_test.py` (59 checks, mock
+  lattice) and `rto_prep_smoke.py` (whole script on a mock ensemble, data
+  perturbation and plots switched off, option on and off). Not run with real
+  data / mesh. AI-generated; review before production use.
 - 2026-10-28 (Claude Sonnet 5.5, Anthropic): `femtic_rto_prep_summary.md`
   is now written to `ENSEMBLE_DIR` (the working directory set in the
   script) instead of next to the script: `utl.write_param_summary(fname,
