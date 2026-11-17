@@ -495,7 +495,12 @@ MOD_ORIGIN_METHOD = "box"
 #: "model"  — axis ticks in model-local metres (default)
 #: "utm"    — axis ticks in absolute UTM metres
 #: "latlon" — axis ticks in decimal degrees
-MOD_DISPLAY_COORDS = "latlon"
+MOD_DISPLAY_COORDS = "utm"
+#: Decimal digits shown on axis tick labels (depth, map/curtain
+#: easting-northing, and lat/lon all share this one setting). None (default)
+#: keeps plot_model_slices' own per-axis-type formatting unchanged.
+MOD_TICK_DECIMALS = 0
+
 
 # --- Site overlay ------------------------------------------------------------
 #: Primary source: mt_make_sitelist.py CSV (name,lat,lon,elev,sitenum,E,N).
@@ -537,7 +542,7 @@ MOD_MAP_MARKERS = [
     # depth with a bar from 1 to 3 km. The Vuache fault plane (panel=True
     # below) passes ~0.2 km from it at 2 km depth, so it shows on that panel.
     dict(latlon=[45.9383, 6.0883], marker="*", color="black",
-         markerfacecolor="yellow", markeredgecolor="black", ms=18, mew=1.0,
+         markerfacecolor="yellow", markeredgecolor="black", ms=30, mew=1.0,
          zorder=14, depth=2.0, depth_err=1.0, name="Epagny 1996 (2 +- 1 km)"),
     # Model centre (model-local x = y = 0): a black cross on the maps and, at
     # depth 0, on the sections that pass within max_dist of it. Without this
@@ -683,7 +688,10 @@ MOD_SLICES = [
 #:   _p = fviz.slice_intersection_polyline(
 #:       dict(kind="map", z0=2000.0), dict(kind="ns", x0=0.0),
 #:       xlim=[-20e3, 20e3], ylim=[-20e3, 20e3], zlim=[-1e3, 10e3])
-#:   MOD_POLYLINES["map 2 km x ns 0"] = dict(
+#:   MOD_POLYLINES["map 2 km x ns 0"] = dict(#: Decimal digits shown on axis tick labels (depth, map/curtain
+#: easting-northing, and lat/lon all share this one setting). None (default)
+#: keeps plot_model_slices' own per-axis-type formatting unchanged.
+MOD_TICK_DECIMALS = 2
 #:       points=_p / 1000.0, max_dist=0.0, z_range=[2.0, 2.0])
 MOD_POLYLINES = {}
 # MOD_POLYLINES = {
@@ -834,19 +842,19 @@ MOD_STATS_STYLE["abs_diff_prior"] = dict(
 # #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
 # #:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
 # MOD_ALPHA_MODE = "blank"
-MOD_ALPHA_SOURCE = "abs_diff_prior > 0.05"
-MOD_ALPHA_MODE = "blank"
-MOD_ALPHA_FADE_WIDTH = 0.05
-MOD_ALPHA_EXCLUDE = ("sens_", "simrc_", "diff_prior", "abs_diff_prior")
+# MOD_ALPHA_SOURCE = "abs_diff_prior > 0.01"
+# MOD_ALPHA_MODE = "blank"
+# MOD_ALPHA_FADE_WIDTH = 0.05
+# MOD_ALPHA_EXCLUDE = ("sens_", "simrc_", "diff_prior", "abs_diff_prior")
 
-# MOD_ALPHA_SOURCE = "sens_median > -6."
-# #: "blank" -- failing cells are removed (hard cut).
-# #: "fade"  -- failing cells fade linearly from opaque at the threshold to
-# #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
-# #:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
-# MOD_ALPHA_MODE = "fade"
-# MOD_ALPHA_FADE_WIDTH = 1.
-# #: Apply the same mask to the MOD_QC (best-member) figure as well.
+MOD_ALPHA_SOURCE = "sens_median > -6."
+#: "blank" -- failing cells are removed (hard cut).
+#: "fade"  -- failing cells fade linearly from opaque at the threshold to
+#:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
+#:            as <value>, e.g. 1.0 = one decade for log10 sensitivities).
+MOD_ALPHA_MODE = "fade"
+MOD_ALPHA_FADE_WIDTH = 1.
+#: Apply the same mask to the MOD_QC (best-member) figure as well.
 MOD_ALPHA_QC = True
 
 #: Statistic panels whose key starts with one of these prefixes are drawn
@@ -863,7 +871,10 @@ MOD_EQUAL_ASPECT = True
 #: None = as set by MOD_EQUAL_ASPECT (unchanged). A number fixes the aspect of
 #: every section from the real axis units: 1.0 = true equal axes, 2.0 = the
 #: vertical scale twice the horizontal one. Works for every
-#: MOD_DISPLAY_COORDS, also "latlon", where MOD_EQUAL_ASPECT alone does not
+#: MOD_DISPLAY_COORDS, also "latlon", where MOD_#: Decimal digits shown on axis tick labels (depth, map/curtain
+#: easting-northing, and lat/lon all share this one setting). None (default)
+#: keeps plot_model_slices' own per-axis-type formatting unchanged.
+MOD_TICK_DECIMALS = 2EQUAL_ASPECT alone does not
 #: act (its test needs model/utm display); map panels stay 1:1 while
 #: MOD_EQUAL_ASPECT is True.
 MOD_VERT_EXAG = None
@@ -928,10 +939,7 @@ MOD_CBAR_LOCATION = "bottom"
 MOD_CBAR_SHRINK = 0.6
 MOD_CBAR_THICKNESS = None  # cm
 
-#: Decimal digits shown on axis tick labels (depth, map/curtain
-#: easting-northing, and lat/lon all share this one setting). None (default)
-#: keeps plot_model_slices' own per-axis-type formatting unchanged.
-MOD_TICK_DECIMALS = 2
+
 
 #: When True (default) and this script is running inside Spyder, every
 #: saved figure is also displayed inline (Spyder's Plots pane) via

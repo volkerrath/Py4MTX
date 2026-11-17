@@ -358,6 +358,20 @@ Provenance
             os.symlink raised FileExistsError when generate_directories was
             re-run on such a tree.
             Not run on a real FEMTIC mesh (see tests/rto_iter0_test.py).
+2026-11-16  Claude Sonnet 5.5 (Anthropic)
+            generate_rto_model_ensemble: new argument iter0_const_range =
+            (lo, hi) [log10 Ohm.m] (default None = off).  Every member's iter0
+            file is filled with ONE homogeneous constant (all free regions),
+            drawn independently per member, uniformly in log10(rho) in
+            [lo, hi]; fixed regions (air, ocean, flag == 1) are kept by
+            fem.insert_model.  Same file handling as perturb_iter0 (symlink
+            replaced by a real file, template untouched, backup
+            <iter0_file>_orig.dat).  The constants are drawn from rng AFTER the
+            prior draws, so the reference-model draws do not depend on the
+            option for a given seed.  Exclusive with perturb_iter0 and
+            start_from_perturbed; lo <= hi (lo == hi gives the same constant
+            for all members); method does not apply (the constant is an
+            absolute log10 value).
 
 AI-generated; please review before production use.
 """
@@ -1147,6 +1161,7 @@ def generate_rto_model_ensemble(
     rng: Optional[Generator] = None,
     out: bool = True,
     perturb_iter0: bool = False,
+    iter0_const_range: Optional[Sequence[float]] = None,
     **legacy,
 ) -> list[str]:
     """
@@ -1212,7 +1227,7 @@ def generate_rto_model_ensemble(
         IDENTICAL to the perturbed reference model of the same member.
         Default False (all members start from the shared
         ``resistivity_block_iter0.dat``).  Mutually exclusive with
-        ``perturb_iter0``.
+        ``perturb_iter0`` and ``iter0_const_range``.
     remove_mean : bool
         If True, subtract each draw's mean over the free regions.  R^T R is
         singular (constants), so the draws contain a global offset of the whole
@@ -1225,8 +1240,8 @@ def generate_rto_model_ensemble(
         Default False (exact sampler output); the energy ratio is unchanged
         by the removal if R annihilates constants (checked; warning otherwise).
     iter0_file : str
-        Name of the starting-model file used with ``start_from_perturbed`` and
-        ``perturb_iter0``.
+        Name of the starting-model file used with ``start_from_perturbed``,
+        ``perturb_iter0`` and ``iter0_const_range``.
     rng : numpy.random.Generator, optional
         Shared random generator.
     out : bool
@@ -1247,8 +1262,24 @@ def generate_rto_model_ensemble(
         ``generate_directories`` must have been called first (it re-creates the
         link, so a re-run does not perturb an already perturbed model).
         Mutually exclusive with ``start_from_perturbed`` (which would copy the
-        SAME draw), and ``iter0_file`` must differ from ``refmod``.
-        Default False.
+        SAME draw) and ``iter0_const_range``, and ``iter0_file`` must differ
+        from ``refmod``.  Default False.
+    iter0_const_range : (float, float) or None
+        ``(lo, hi)`` in log10(Ohm.m).  If given, the starting model
+        ``iter0_file`` of every member is replaced by a HOMOGENEOUS model: all
+        free regions get one constant, drawn independently for each member,
+        uniformly in log10(rho) in ``[lo, hi]`` (``rng.uniform``).  Fixed
+        regions (air, ocean, ``flag == 1``) are kept as in the template.  The
+        constants are drawn after the prior draws, so the reference-model
+        draws do not depend on this option for a given ``rng`` state.
+        ``lo == hi`` gives the same constant for all members; ``lo > hi`` or
+        non-finite values raise ``ValueError``.  ``method`` does not apply (the
+        constant is an absolute log10 value) and ``remove_mean`` does not
+        touch it.  File handling as for ``perturb_iter0`` (symlink replaced by
+        a real file, template never written, unperturbed model kept as
+        ``<iter0_file>_orig.dat``; call ``generate_directories`` first).
+        Mutually exclusive with ``perturb_iter0`` and ``start_from_perturbed``;
+        ``iter0_file`` must differ from ``refmod``.  Default None (off).
     **legacy
         Removed arguments of the earlier randomized-SVD implementation
         (``n_eig``, ``n_oversampling``, ``n_power_iter``, ``sigma2_residual``,
@@ -1283,10 +1314,27 @@ def generate_rto_model_ensemble(
             "generate_rto_model_ensemble: perturb_iter0 and start_from_perturbed are "
             "mutually exclusive: start_from_perturbed copies the reference-model draw "
             "to iter0 (identical), perturb_iter0 makes an independent second draw.")
-    if perturb_iter0 and os.path.basename(str(iter0_file)) == os.path.basename(str(refmod)):
+    const_iter0 = iter0_const_range is not None
+    if const_iter0:
+        if perturb_iter0 or start_from_perturbed:
+            raise ValueError(
+                "generate_rto_model_ensemble: iter0_const_range (homogeneous random starting "
+                "model) is mutually exclusive with perturb_iter0 and start_from_perturbed.")
+        try:
+            c_lo, c_hi = [float(v) for v in iter0_const_range]
+        except (TypeError, ValueError):
+            raise ValueError(
+                "generate_rto_model_ensemble: iter0_const_range must be (lo, hi), two numbers "
+                f"in log10(Ohm.m); got {iter0_const_range!r}.") from None
+        if not (np.isfinite(c_lo) and np.isfinite(c_hi) and c_lo <= c_hi):
+            raise ValueError(
+                "generate_rto_model_ensemble: iter0_const_range = (lo, hi) needs finite "
+                f"lo <= hi; got ({c_lo!r}, {c_hi!r}).")
+    if (perturb_iter0 or const_iter0) and (
+            os.path.basename(str(iter0_file)) == os.path.basename(str(refmod))):
         raise ValueError(
-            "generate_rto_model_ensemble: perturb_iter0 needs iter0_file different from "
-            f"refmod (both are {refmod!r}).")
+            "generate_rto_model_ensemble: perturb_iter0 / iter0_const_range need iter0_file "
+            f"different from refmod (both are {refmod!r}).")
 
     if legacy:
         warnings.warn(
@@ -1314,6 +1362,7 @@ def generate_rto_model_ensemble(
     if out:
         print(f"RTO prior sampling started (alpha={alpha:g}, solver={algo_l}"
               + ("; independent draws for the reference and the iter0 model" if perturb_iter0 else "")
+              + ("; homogeneous random iter0" if const_iter0 else "")
               + ").")
     n_sets = 2 if perturb_iter0 else 1
     samples_all, info = sample_rto_prior(
@@ -1366,6 +1415,15 @@ def generate_rto_model_ensemble(
                     f"generate_rto_model_ensemble: prior energy ratio{_tag} {e_ratio:.3f} is far "
                     "from 1; check R, alpha and the solver tolerance.", RuntimeWarning, stacklevel=2)
 
+    iter0_consts = None
+    if const_iter0:
+        # Drawn after the prior draws: the reference-model draws are unaffected.
+        iter0_consts = rng.uniform(c_lo, c_hi, size=len(fromto_arr))
+        if out:
+            print(f"iter0 homogeneous start: one constant per member, uniform in log10(rho) in "
+                  f"[{c_lo:g}, {c_hi:g}]: drawn min {iter0_consts.min():.3f}, "
+                  f"mean {iter0_consts.mean():.3f}, max {iter0_consts.max():.3f} (n={iter0_consts.size}).")
+
     mod_list: list[str] = []
     mod0_list: list[str] = []
     for k, iens in enumerate(fromto_arr):
@@ -1392,8 +1450,7 @@ def generate_rto_model_ensemble(
 
         # Starting model (independent second draw): validate and read it BEFORE anything
         # is written for this member, so a failure leaves the member untouched.
-        if perturb_iter0:
-            sample0 = samples0[k]
+        if perturb_iter0 or const_iter0:
             iter0 = f"{dir_base}{iens}/{iter0_file}"
             _stem, _ext = os.path.splitext(iter0)
             iter0_orig = f"{_stem}_orig{_ext}"
@@ -1405,16 +1462,21 @@ def generate_rto_model_ensemble(
             # template content, and the template itself is only ever read.
             shutil.copy(iter0, iter0_orig)
             start_log10 = fem.read_model(iter0_orig, model_trans="log10", out=False)
-            if start_log10.size != sample0.size:
-                raise ValueError(
-                    f"generate_rto_model_ensemble: R has {sample0.size} columns but the free "
-                    f"region vector of {iter0_orig} has {start_log10.size} entries; R rows/"
-                    "columns must correspond to the free regions in region-index order."
-                )
-            if method.lower() == "add":
-                model0_log10 = start_log10 + sample0
-            else:  # "replace"
-                model0_log10 = sample0
+            if const_iter0:
+                # homogeneous start: one absolute log10 value for all free regions
+                model0_log10 = np.full(start_log10.size, float(iter0_consts[k]))
+            else:
+                sample0 = samples0[k]
+                if start_log10.size != sample0.size:
+                    raise ValueError(
+                        f"generate_rto_model_ensemble: R has {sample0.size} columns but the free "
+                        f"region vector of {iter0_orig} has {start_log10.size} entries; R rows/"
+                        "columns must correspond to the free regions in region-index order."
+                    )
+                if method.lower() == "add":
+                    model0_log10 = start_log10 + sample0
+                else:  # "replace"
+                    model0_log10 = sample0
 
         fem.insert_model(
             template=orig_file,
@@ -1422,7 +1484,7 @@ def generate_rto_model_ensemble(
             model_file=file,
             model_name=f"sample{iens}")
 
-        if perturb_iter0:
+        if perturb_iter0 or const_iter0:
             # Remove first: if iter0 is a symlink to the shared template, writing onto it
             # would write through the link and modify the template.
             if os.path.islink(iter0):
@@ -1431,7 +1493,7 @@ def generate_rto_model_ensemble(
                 template=iter0_orig,
                 model=model0_log10,
                 model_file=iter0,
-                model_name=f"sample{iens}_iter0")
+                model_name=f"{'const' if const_iter0 else 'sample'}{iens}_iter0")
             mod0_list.append(iter0)
 
         if start_from_perturbed:
@@ -1448,8 +1510,9 @@ def generate_rto_model_ensemble(
     if out:
         print("\nlist of perturbed model files:")
         print(mod_list)
-        if perturb_iter0:
-            print("\nlist of perturbed starting-model files (independent draws):")
+        if perturb_iter0 or const_iter0:
+            print("\nlist of " + ("perturbed starting-model files (independent draws):" if perturb_iter0
+                                  else "homogeneous starting-model files:"))
             print(mod0_list)
 
     return mod_list

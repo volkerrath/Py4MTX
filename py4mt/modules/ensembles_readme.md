@@ -483,8 +483,9 @@ xi1 ~ N(0, I_m),  xi2 ~ N(0, I_n)    =>    Cov(x) = (alpha Q)^(-1)
 | `lam`, `lam_alpha` | `0`, `1e-4` | Diagonal shift (R^T R is singular for constants). `lam = 0` means `lam_alpha * median(diag(R^T R))`. |
 | `solver_rtol` | `1e-8` | CG only. Keep it tight: CG converges last on the smoothest modes, which carry most of the prior variance. |
 | `start_from_perturbed` | `False` | `True`: also write the perturbed model to `resistivity_block_iter0.dat` (a shared symlink is replaced by a real file; the template is never modified). |
-| `perturb_iter0` | `False` | `True`: also perturb the starting model `iter0_file` of every member with a **second, independent** draw (see "Independent perturbation of the starting model" below). Exclusive with `start_from_perturbed`. |
-| `iter0_file` | `"resistivity_block_iter0.dat"` | Starting-model file used by `start_from_perturbed` and `perturb_iter0`; must differ from `refmod`. |
+| `perturb_iter0` | `False` | `True`: also perturb the starting model `iter0_file` of every member with a **second, independent** draw (see "Independent perturbation of the starting model" below). Exclusive with `start_from_perturbed` and `iter0_const_range`. |
+| `iter0_const_range` | `None` | `(lo, hi)` in log10(Ohm.m): fill `iter0_file` of every member with **one homogeneous constant**, drawn per member, uniformly in log10(rho) in `[lo, hi]` (see "Homogeneous random starting model" below). Exclusive with `perturb_iter0` and `start_from_perturbed`. |
+| `iter0_file` | `"resistivity_block_iter0.dat"` | Starting-model file used by `start_from_perturbed`, `perturb_iter0` and `iter0_const_range`; must differ from `refmod`. |
 | `remove_mean` | `False` | `True`: subtract each draw's global mean (see "Constant mode" below); applied to both sets. |
 | `rng` | `None` | Shared `numpy.random.Generator` for reproducibility. |
 
@@ -510,13 +511,15 @@ mods = ens.generate_rto_model_ensemble(
 
 By default only the reference model (`referencemodel.dat`, the regularisation prior)
 is perturbed and all members start from the shared, unperturbed
-`resistivity_block_iter0.dat`. Two options change the starting model:
+`resistivity_block_iter0.dat`. Three options change the starting model (mutually
+exclusive):
 
 | | reference model | starting model `iter0_file` |
 |---|---|---|
 | default | `m_ref + x` | shared template (symlink) |
 | `start_from_perturbed=True` | `m_ref + x` | the **same** file, i.e. `m_ref + x` |
 | `perturb_iter0=True` | `m_ref + x` | `m_iter0 + x0`, `x0` an **independent** draw |
+| `iter0_const_range=(lo, hi)` | `m_ref + x` | one constant `c ~ U(lo, hi)` (log10) for all free regions, drawn per member |
 
 With `perturb_iter0=True` each member gets a second draw `x0 ~ N(0, (alpha R^T R)^-1)`
 - same prior, alpha, `lam`, solver and `method` as `x` - added to the **iter0 template
@@ -537,6 +540,25 @@ whole **starting** model. Use `remove_mean=True` together with `perturb_iter0=Tr
 
 `prior_energy_ratio(R, perturbed_iter0 - iter0_orig, alpha)` checks the written iter0
 perturbation in the same way as for the reference model.
+
+### Homogeneous random starting model (`iter0_const_range`)
+
+`iter0_const_range=(lo, hi)` [log10 Ohm.m] replaces the starting model of every member
+by a **homogeneous** model: all free regions get the same value `c`, drawn for each
+member independently and uniformly in log10(rho) in `[lo, hi]`
+(`rng.uniform(lo, hi)`; e.g. `(1.0, 3.0)` = 10 ... 1000 Ohm.m). Fixed regions (air,
+ocean, anything with `flag == 1`) are kept as in the template (`fem.insert_model`). The
+constant is an absolute value, so `method` does not apply and `remove_mean` does not
+touch it; `lo == hi` gives the same constant for every member, `lo > hi`, a range that
+is not two finite numbers, or a combination with `perturb_iter0` /
+`start_from_perturbed` raises `ValueError` (nothing is written). File handling as for
+`perturb_iter0`: the iter0 symlink becomes a real file, the template is only read, the
+unperturbed model is kept as `<iter0_file>_orig.dat`, `generate_directories` has to be
+called first. The constants are drawn from `rng` after the prior draws, so the
+reference-model draws are the same with and without this option for a given seed (and
+the same seed gives the same constants). With `out=True` the drawn min / mean / max is
+printed. The range is the user's choice: it sets how far from the data the inversions
+start.
 
 ### Diagnostics printed with `out=True`
 
@@ -602,6 +624,7 @@ offset has not been checked against FEMTIC itself.
 | `remove_mean` | `False`; `True` to drop the lam-driven global offset | `generate_rto_model_ensemble` |
 | `start_from_perturbed` | `False` (shared starting model) or `True` (each member starts at its own draw) | `generate_rto_model_ensemble` |
 | `perturb_iter0` | `False`; `True`: starting model gets its own, independent draw (use with `remove_mean=True`) | `generate_rto_model_ensemble` |
+| `iter0_const_range` | `None`; `(lo, hi)` log10 Ohm.m: homogeneous starting model, constant drawn uniformly per member | `generate_rto_model_ensemble` |
 | `n_sets` | `1`; `2` for two independent sets from one factorisation | `sample_rto_prior` |
 | `precond` | `"jacobi"` (ILU is not an SPD preconditioner) | `make_precision_solver` |
 | `maxiter` | default `max(5000, 2n)` | `sample_rto_prior` |
@@ -717,6 +740,20 @@ If CG does not converge (`RuntimeWarning` from `sample_rto_prior` or
 
 Updated: 2026-11-16 (`perturb_iter0`, `sample_rto_prior(n_sets)`, `put_files` re-link fix); 2026-10-23 (`pp_cache` / `pp_pos_offset` for `generate_gst_model_ensemble`); 2026-10-21 (RTO prior perturbation corrected: `sample_rto_prior`, required `alpha`); 2026-10-17 (streaming skewness/kurtosis); 2026-10-16 (streaming mean/variance, histogram quantiles); 2026-04-27 (GST); 2026-04-11 (consolidation); 2026-04-02 (cleanup)
 
+### Changelog (2026-11-16, second change) -- homogeneous random starting model
+Claude Sonnet 5.5 (Anthropic). AI-generated; review before production use.
+- `generate_rto_model_ensemble`: new `iter0_const_range=(lo, hi)` (default `None`):
+  the iter0 file of every member is filled with one constant per member, uniform in
+  log10(rho) in `[lo, hi]`, fixed regions kept. Exclusive with `perturb_iter0` and
+  `start_from_perturbed`; `lo <= hi` and finite, else `ValueError`. Constants are drawn
+  after the prior draws (reference draws unchanged for a given seed). Same file
+  handling as `perturb_iter0`.
+- Tests: `rto_iter0_test.py` now 94 checks (adds: constants inside the range, KS test
+  against uniform, distinct per member, same / different seed, `lo == hi`, fixed
+  region kept, `method="replace"` / `remove_mean`, subset + re-run, validation, range
+  check in the prep-script block); `rto_prep_smoke.py` runs the whole script with
+  `MOD_PERTURB_ITER0`, `MOD_ITER0_HOMOGENEOUS` and neither. Mock lattice only.
+
 ### Changelog (2026-11-16) -- independent perturbation of the starting model
 Claude Sonnet 5.5 (Anthropic). AI-generated; review before production use.
 - `generate_rto_model_ensemble`: new `perturb_iter0` (default `False`): second,
@@ -731,10 +768,10 @@ Claude Sonnet 5.5 (Anthropic). AI-generated; review before production use.
 - `put_files`: a link target that exists as a real file (iter0 after
   `start_from_perturbed` / `perturb_iter0` in an earlier run) is replaced by the link;
   before, re-running `generate_directories` on such a tree raised `FileExistsError`.
-- Tests: `rto_iter0_test.py` (59 checks: sampler independence and statistics, end-to-end on
-  mock block files, re-run, validation, prep-script block) and `rto_prep_smoke.py`
-  (whole `femtic_rto_prep.py` on a mock ensemble, option on/off).
-  Not run on a real FEMTIC mesh.
+- Tests: `rto_iter0_test.py` (59 checks for this change: sampler independence and
+  statistics, end-to-end on mock block files, re-run, validation, prep-script block)
+  and `rto_prep_smoke.py` (whole `femtic_rto_prep.py` on a mock ensemble, option
+  on/off). Not run on a real FEMTIC mesh.
 
 ### Changelog (2026-10-23) -- pilot-point reset interval across single-member calls
 Claude Sonnet 5.5 (Anthropic). AI-generated; review before production use.

@@ -62,6 +62,8 @@ makes the *entire* ensemble (data + model perturbation, plus the
 
 
 ### Data perturbation (`PERTURB_DAT`)
+`PERTURB_DAT = False`: no data ensemble is generated (`data_ensemble = None`); the `DAT_*` variables are then only needed for the data plot (which, with `PLOT_DATA = True`, shows the original against identical member data).
+
 | Variable | Description |
 |---|---|
 | `DAT_METHOD` | `"add"` (additive noise) |
@@ -70,6 +72,8 @@ makes the *entire* ensemble (data + model perturbation, plus the
 | `ERRORS` | Error floors per data type |
 
 ### Model perturbation (`PERTURB_MOD`)
+`PERTURB_MOD = False`: no model ensemble is generated and no `R` is loaded (`model_ensemble = None`); the `MOD_PERTURB_ITER0` / `MOD_ITER0_HOMOGENEOUS` options are switched off, and `MOD_REF` / `MOD_REF_BASE` are `<TEMPLATES>/referencemodel.dat` for the plots.
+
 | Variable | Description |
 |---|---|
 | `MOD_REF` | Reference model file |
@@ -80,8 +84,10 @@ makes the *entire* ensemble (data + model perturbation, plus the
 | `MOD_LAM_ALPHA` | Scale of the automatic shift (default `1e-4`). |
 | `MOD_RTOL` | CG relative tolerance (default `1e-8`; keep tight). |
 | `MOD_START_FROM_PERTURBED` | `False` (default): members share the unperturbed `resistivity_block_iter0.dat`. `True`: each member also gets its perturbed model as starting model (real file replaces the symlink; the template is not modified). |
-| `MOD_PERTURB_ITER0` | `False` (default). `True`: also perturb the starting model `MOD_ITER0_FILE` of every member with its **own** prior draw `x0 ~ N(0, (MOD_ALPHA R^T R)^-1)`: same procedure, alpha, `lam` and solver as the draw for `referencemodel.dat`, but **statistically independent** of it (both from one factorisation). Added to the iter0 template model; the member's symlink becomes a real file (template untouched), the unperturbed model is kept as `<name>_orig.dat`. The reference draws are unchanged by this option for a given `RANDOM_SEED`. Exclusive with `MOD_START_FROM_PERTURBED = True` (which copies the SAME draw); the script exits before touching any directory if both are set, if `MOD_ITER0_FILE` equals the reference file, is in neither `COPY_LIST` nor `LINK_LIST`, or is missing in `TEMPLATES`. The QC / model plots still show `MOD_REF_BASE`. |
-| `MOD_ITER0_FILE` | `"resistivity_block_iter0.dat"`. File perturbed by `MOD_PERTURB_ITER0`. |
+| `MOD_PERTURB_ITER0` | `False` (default). `True`: also perturb the starting model `MOD_ITER0_FILE` of every member with its **own** prior draw `x0 ~ N(0, (MOD_ALPHA R^T R)^-1)`: same procedure, alpha, `lam` and solver as the draw for `referencemodel.dat`, but **statistically independent** of it (both from one factorisation). Added to the iter0 template model; the member's symlink becomes a real file (template untouched), the unperturbed model is kept as `<name>_orig.dat`. The reference draws are unchanged by this option for a given `RANDOM_SEED`. Exclusive with `MOD_START_FROM_PERTURBED = True` (which copies the SAME draw) and with `MOD_ITER0_HOMOGENEOUS`; the script exits before touching any directory if both are set, if `MOD_ITER0_FILE` equals the reference file, is in neither `COPY_LIST` nor `LINK_LIST`, or is missing in `TEMPLATES`. The QC / model plots still show `MOD_REF_BASE`. |
+| `MOD_ITER0_FILE` | `"resistivity_block_iter0.dat"`. File changed by `MOD_PERTURB_ITER0` / `MOD_ITER0_HOMOGENEOUS`. |
+| `MOD_ITER0_HOMOGENEOUS` | `False` (default). `True`: fill `MOD_ITER0_FILE` of every member with **one homogeneous constant** (all free regions; air / ocean / fixed regions kept), drawn independently for each member, uniformly in log10(rho) in `MOD_ITER0_RANGE`. File handling as for `MOD_PERTURB_ITER0` (real file replaces the symlink, template untouched, backup `<name>_orig.dat`); the draws for `referencemodel.dat` do not depend on it for a given `RANDOM_SEED`. Exclusive with `MOD_PERTURB_ITER0` and `MOD_START_FROM_PERTURBED = True`; the script exits before touching any directory if both are set, if `MOD_ITER0_RANGE` is not two finite numbers with `lo <= hi`, or for the file checks listed under `MOD_PERTURB_ITER0`. |
+| `MOD_ITER0_RANGE` | `[1.0, 3.0]`. `[lo, hi]` in log10(Ohm.m) for `MOD_ITER0_HOMOGENEOUS` (10 ... 1000 Ohm.m); `lo == hi` gives the same constant for all members. Choose it yourself: it sets how far from the data the inversions start. |
 | `MOD_REMOVE_MEAN` | `False` (default). `True`: subtract each draw's global mean (offset set by the arbitrary shift `lam`, invisible to `R`). **Recommended together with `MOD_PERTURB_ITER0`**: the offset does not matter for the reference model but shifts the whole starting model. |
 
 Removed (2026-10-21): `MOD_MU`, `MOD_PDF` (never passed on; implied alpha = 1),
@@ -95,6 +101,7 @@ Removed (2026-10-21): `MOD_MU`, `MOD_PDF` (never passed on; implied alpha = 1),
 | `PLOT_MODEL` | Enable model ensemble plot |
 | `PLOT_SLICES_QC` | Enable per-member QC slice plot |
 | `PLOT_SLICES_ENS` | Enable joint ensemble slice figure |
+| `VIZ_N_SAMPLES` | Number of random members for the plots (default `N_SAMPLES`; capped at the number of members). Defined whatever the plot switches are; the draw of the members consumes the random generator in all cases, so the perturbed files do not depend on the plot switches. All five switches may be `False`: nothing is plotted and no plot variable is needed. |
 | `MOD_SLICES` | Slice dicts for QC/model plots (model-local **km**, `kind` key; converted to metres by `_slices_km_to_m`). As of 2026-06-07 the QC plot uses the full shared `MOD_*` plotting config block (`MOD_CMAP`, `MOD_CLIM`, `MOD_XLIM`/`YLIM`/`ZLIM`, `MOD_OCEAN_COLOR`, `MOD_DPI`, site overlay, UTM origin, etc. — same as `femtic_gst_prep.py`/`femtic_ens_post.py`), not the older `QC_SLICES`/`QC_CMAP`/etc. variables. |
 | `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE` | Axis tick/label font sizes for the QC/model slice plot. Defaults `7`/`8`, matching `fviz.plot_model_slices`' own defaults. |
 | `MOD_XLIM` / `MOD_YLIM` / `MOD_ZLIM` | Literal plot extent, model-local **km**; `None` = auto. Overridden by `MOD_ROI_AUTO` (below) when site positions are available. |
@@ -204,13 +211,41 @@ The same rule applies to `p1` / `p2` of `kind="profile"` (z optional).
   `femtic_rto_prep.py` itself could not be run end to end here (`femtic_viz`
   was not available); the alpha block and `ens.generate_rto_model_ensemble`
   were tested separately (`rto_integration_test.py`).
+- 2026-11-17 (Claude Sonnet 5.5, Anthropic): **fixed `NameError` when plots are
+  switched off** (first `VIZ_N_SAMPLES` in `_n_viz = min(VIZ_N_SAMPLES, ...)`, behind
+  it `PLOT_STR`, `DAT_*`, `MOD_*`, `PLOT_SLICES_QC/ENS`, which were all only defined
+  inside blocks that run when a plot is requested). `PLOT_DATA`, `PLOT_MODEL`,
+  `PLOT_SLICES_QC`, `PLOT_SLICES_ENS` and `VIZ_N_SAMPLES` are now set once at the top
+  of the plot section; the model-plot block runs if `PLOT_MODEL`, `PLOT_SLICES_QC` or
+  `PLOT_SLICES_ENS` is set (so the two slice figures no longer need `PLOT_DATA` or
+  `PLOT_MODEL` to be on, as they did before). The `VIZ_SAMPLES` draw stays unconditional: it uses the
+  same random generator, so for a given `RANDOM_SEED` the perturbed files do not
+  depend on the plot switches. Also guarded: `PERTURB_DAT = False` and
+  `PERTURB_MOD = False` (no ensemble is generated; with `PERTURB_MOD = False` the
+  plots use `<TEMPLATES>/referencemodel.dat`; before, `MOD_REF_BASE` was `None`).
+  Tested: `rto_prep_flagmatrix.py` (11 switch combinations, each a fresh run of
+  the whole script on a mock ensemble, with the `femtic_viz` plot functions
+  replaced by no-ops; identical `referencemodel.dat` for all plot settings with the
+  same seed; the old script fails the plots-off cases), `rto_prep_smoke.py` (now five
+  cases, no plot names pre-defined) and `rto_iter0_test.py` (94 checks). The real
+  plot functions were not run. AI-generated; review before production use.
+- 2026-11-16, second change (Claude Sonnet 5.5, Anthropic): homogeneous random
+  starting model. New `MOD_ITER0_HOMOGENEOUS` (default `False`) and
+  `MOD_ITER0_RANGE = [lo, hi]` (log10 Ohm.m), passed to
+  `ens.generate_rto_model_ensemble(iter0_const_range=...)`: the iter0 file of every
+  member is filled with one constant, drawn per member, uniform in log10(rho) in the
+  range. Exclusive with `MOD_PERTURB_ITER0` and `MOD_START_FROM_PERTURBED`; checks
+  before any directory is created. Needs the `ensembles.py` of the same date.
+  Tested with `rto_iter0_test.py` (94 checks in total, mock lattice) and
+  `rto_prep_smoke.py` (whole script, three modes). Not run with real data / mesh.
+  AI-generated; review before production use.
 - 2026-11-16 (Claude Sonnet 5.5, Anthropic): optional independent perturbation of
   the starting model. New `MOD_PERTURB_ITER0` (default `False`) and `MOD_ITER0_FILE`,
   passed to `ens.generate_rto_model_ensemble(perturb_iter0=..., iter0_file=...)`; see
   the table above and `ensembles_readme.md`, changelog 2026-11-16. Checks of the
   option combination run before any directory is created. Fixed a `SyntaxError` in the
   uploaded copy: `ENS_LIST = np.arange{50)` -> `np.arange(50)`. Needs the
-  `ensembles.py` of the same date. Tested: `rto_iter0_test.py` (59 checks, mock
+  `ensembles.py` of the same date. Tested: `rto_iter0_test.py` (59 checks at the time, mock
   lattice) and `rto_prep_smoke.py` (whole script on a mock ensemble, data
   perturbation and plots switched off, option on and off). Not run with real
   data / mesh. AI-generated; review before production use.

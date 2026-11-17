@@ -404,6 +404,40 @@ Provenance:
                 "ENS_LIST = np.arange{50)" -> "np.arange(50)" (members 0-49
                 of N_SAMPLES = 128; check that this is what you want).
                 AI-generated; review before production use.
+    2026-11-16  Claude Sonnet 5.5 (Anthropic)
+                Second starting-model option: homogeneous random iter0.
+                New MOD_ITER0_HOMOGENEOUS (default False) and MOD_ITER0_RANGE
+                = [lo, hi] (log10 Ohm.m), passed to
+                ens.generate_rto_model_ensemble(iter0_const_range=...).  With
+                MOD_ITER0_HOMOGENEOUS = True the iter0 file of every member is
+                filled with ONE constant (all free regions; air / ocean / fixed
+                regions kept), drawn independently per member, uniformly in
+                log10(rho) in [lo, hi].  Same file handling as
+                MOD_PERTURB_ITER0.  Exclusive with MOD_PERTURB_ITER0 and
+                MOD_START_FROM_PERTURBED; range, file and template checked
+                before any directory is touched.  The constants are drawn
+                after the prior draws, so the draws for referencemodel.dat do
+                not depend on the option for a given RANDOM_SEED.  Needs the
+                ensembles.py of the same date.
+                AI-generated; review before production use.
+    2026-11-17  Claude Sonnet 5.5 (Anthropic)
+                Fixed NameError (VIZ_N_SAMPLES, then PLOT_STR, DAT_*, MOD_*, ...)
+                when plots are switched off.  The switches PLOT_DATA, PLOT_MODEL,
+                PLOT_SLICES_QC, PLOT_SLICES_ENS and VIZ_N_SAMPLES (default
+                N_SAMPLES) are now defined once, at the top of the plot section,
+                before anything reads them (PLOT_SLICES_QC / PLOT_SLICES_ENS had
+                been defined only inside the PLOT_DATA/PLOT_MODEL block).  The
+                model-plot block runs if PLOT_MODEL or PLOT_SLICES_QC or
+                PLOT_SLICES_ENS is set; the ensemble slice figure only if
+                PLOT_SLICES_ENS.  The draw of VIZ_SAMPLES stays unconditional, so
+                the random-number stream, and with it every perturbed file for a
+                given RANDOM_SEED, does not depend on the plot switches.
+                Also guarded: PERTURB_DAT = False and PERTURB_MOD = False now
+                run through (no data / model ensemble is generated; data_ensemble
+                and model_ensemble are None); with PERTURB_MOD = False MOD_REF /
+                MOD_REF_BASE point to <TEMPLATES>/referencemodel.dat (they were
+                None) so the slice plots can find the model.
+                AI-generated; review before production use.
 """
 
 import os
@@ -656,7 +690,8 @@ if PERTURB_MOD:
     #       template iter0 model; the member's symlink is replaced by a real file (the template
     #       is never modified) and the unperturbed model is kept as <name>_orig.dat.
     # False (default): iter0 is left as configured by MOD_START_FROM_PERTURBED above.
-    # Exclusive with MOD_START_FROM_PERTURBED = True (which would give the SAME draw).
+    # Exclusive with MOD_START_FROM_PERTURBED = True (which would give the SAME draw) and
+    # with MOD_ITER0_HOMOGENEOUS.
     # NOTE: unlike for referencemodel.dat, a global offset in the draw DOES matter for the
     # starting model (it shifts the whole model that the inversion starts from). The offset
     # comes from the arbitrary shift lam of the singular R^T R (see MOD_REMOVE_MEAN below;
@@ -664,6 +699,19 @@ if PERTURB_MOD:
     # sensible setting together with MOD_PERTURB_ITER0 = True.
     MOD_PERTURB_ITER0 = False
     MOD_ITER0_FILE = "resistivity_block_iter0.dat"   # must be in COPY_LIST or LINK_LIST
+
+    # True: fill MOD_ITER0_FILE of every member with ONE homogeneous constant (all free regions;
+    #       air / ocean / fixed regions are kept), drawn independently for each member,
+    #       uniformly in log10(rho) in MOD_ITER0_RANGE = [lo, hi] [log10 Ohm.m], e.g. [1.0, 3.0]
+    #       = 10 ... 1000 Ohm.m (lo == hi: the same constant for all members). The file handling
+    #       is as for MOD_PERTURB_ITER0 (symlink replaced by a real file, template untouched,
+    #       unperturbed model kept as <name>_orig.dat); the draws for referencemodel.dat do not
+    #       depend on this option for a given RANDOM_SEED. Choose the range yourself: it
+    #       sets how far from the data the inversions start.
+    # False (default): iter0 as configured by MOD_START_FROM_PERTURBED / MOD_PERTURB_ITER0.
+    # Exclusive with MOD_PERTURB_ITER0 and MOD_START_FROM_PERTURBED.
+    MOD_ITER0_HOMOGENEOUS = False
+    MOD_ITER0_RANGE = [1.0, 3.0]
 
     # True: subtract each draw's global mean. The constant mode of R^T R carries a variance
     # set by the arbitrary shift lam (per-cell std ~ 1/sqrt(n*alpha*lam)); |R x|^2 and
@@ -697,28 +745,49 @@ if PERTURB_MOD:
                  "of the member inversions (Alpha column of femtic.cnv).")
     MOD_ALPHA = float(MOD_ALPHA)
 
-    # --- starting-model perturbation: check now (fail before any directory is touched) --
-    if MOD_PERTURB_ITER0:
+    # --- starting-model options: check now (fail before any directory is touched) --
+    if MOD_PERTURB_ITER0 and MOD_ITER0_HOMOGENEOUS:
+        sys.exit(" MOD_PERTURB_ITER0 and MOD_ITER0_HOMOGENEOUS are mutually exclusive: the first "
+                 "adds an independent prior draw to the iter0 model, the second replaces the "
+                 "iter0 model by a homogeneous constant. Set one of them False.")
+    if MOD_PERTURB_ITER0 or MOD_ITER0_HOMOGENEOUS:
+        _opt = "MOD_PERTURB_ITER0" if MOD_PERTURB_ITER0 else "MOD_ITER0_HOMOGENEOUS"
         if MOD_START_FROM_PERTURBED:
-            sys.exit(" MOD_PERTURB_ITER0 and MOD_START_FROM_PERTURBED are mutually exclusive: "
+            sys.exit(" %s and MOD_START_FROM_PERTURBED are mutually exclusive: "
                      "the latter copies the draw for referencemodel.dat to iter0 (identical), "
-                     "the former makes a second, independent draw. Set one of them False.")
+                     "the former makes iter0 differ from it. Set one of them False." % _opt)
         if os.path.basename(MOD_ITER0_FILE) == MOD_REF_BASE:
             sys.exit(" MOD_ITER0_FILE must differ from the reference model file (%s)." % MOD_REF_BASE)
         if MOD_ITER0_FILE not in COPY_LIST and MOD_ITER0_FILE not in LINK_LIST:
             sys.exit(" MOD_ITER0_FILE = %s is in neither COPY_LIST nor LINK_LIST, so the member "
                      "directories will not contain it." % MOD_ITER0_FILE)
         if not os.path.isfile(TEMPLATES + MOD_ITER0_FILE):
-            sys.exit(" MOD_PERTURB_ITER0: %s does not exist." % (TEMPLATES + MOD_ITER0_FILE))
+            sys.exit(" %s: %s does not exist." % (_opt, TEMPLATES + MOD_ITER0_FILE))
+    if MOD_PERTURB_ITER0:
         print(f"MOD_PERTURB_ITER0: {MOD_ITER0_FILE} of every member gets its own RTO prior draw, "
               f"independent of the draw for {MOD_REF_BASE} (same alpha = {MOD_ALPHA:g}).")
+    if MOD_ITER0_HOMOGENEOUS:
+        try:
+            _c_lo, _c_hi = [float(_v) for _v in MOD_ITER0_RANGE]
+        except (TypeError, ValueError):
+            sys.exit(" MOD_ITER0_RANGE must be [lo, hi], two numbers in log10(Ohm.m); got %r."
+                     % (MOD_ITER0_RANGE,))
+        if not (np.isfinite(_c_lo) and np.isfinite(_c_hi) and _c_lo <= _c_hi):
+            sys.exit(" MOD_ITER0_RANGE = [lo, hi] needs finite lo <= hi; got [%r, %r]." % (_c_lo, _c_hi))
+        print(f"MOD_ITER0_HOMOGENEOUS: {MOD_ITER0_FILE} of every member is filled with one constant, "
+              f"uniform in log10(rho) in [{_c_lo:g}, {_c_hi:g}] (rho {10.0**_c_lo:.3g} ... {10.0**_c_hi:.3g} Ohm.m).")
 
 else:
     R_FILE = None
-    MOD_REF = None
-    MOD_REF_BASE = None
+    # No perturbation: the members keep the unperturbed copy of the template; the names
+    # are still set so that the slice plots (PLOT_MODEL / PLOT_SLICES_QC / PLOT_SLICES_ENS)
+    # find it.
+    MOD_REF = TEMPLATES + "referencemodel.dat"
+    MOD_REF_BASE = os.path.basename(MOD_REF)
     MOD_PERTURB_ITER0 = False
     MOD_ITER0_FILE = "resistivity_block_iter0.dat"
+    MOD_ITER0_HOMOGENEOUS = False
+    MOD_ITER0_RANGE = None
 
 """
 Set up mode of data perturbations.
@@ -772,10 +841,27 @@ plot_model_ensemble use the same randomly drawn set of ensemble members
 (VIZ_N_SAMPLES).  plot_data_ensemble additionally sub-samples a fixed number
 of MT sites per row (VIZ_N_SITES); set to None to show all sites.
 """
+# Plot switches. All of them (and VIZ_N_SAMPLES) are defined here, outside the
+# conditional config block below, so that the rest of the script runs with any
+# combination, including all four False.
 PLOT_DATA = True #True
 PLOT_MODEL = True #True
+#: Slice figures, configured in the block below: PLOT_SLICES_QC = one figure per
+#: selected member (QC of the perturbed initial models); PLOT_SLICES_ENS = one
+#: joint member x slice figure.
+PLOT_SLICES_QC = False
+PLOT_SLICES_ENS = False
 
-if PLOT_DATA or PLOT_MODEL:
+# Number of ensemble members to include in the diagnostic plots (drawn without
+# replacement from the active members). The draw of VIZ_SAMPLES below is made
+# also when all plots are off: it consumes the random generator, and skipping it
+# would change the perturbed data / models for a given RANDOM_SEED depending on
+# the plot switches.
+VIZ_N_SAMPLES = N_SAMPLES
+
+PLOT_ANY = PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC or PLOT_SLICES_ENS
+
+if PLOT_ANY:
     PLOT_STR = ""
     PLOT_DIR = ENSEMBLE_DIR + "/results/"
     if PLOT_DIR is not None:
@@ -785,10 +871,9 @@ if PLOT_DATA or PLOT_MODEL:
             os.makedirs(PLOT_DIR, exist_ok=True)
     
     
-    # Number of ensemble members to include in both diagnostic plots.
-    # Members are drawn without replacement from 0 … N_SAMPLES-1.
-    VIZ_N_SAMPLES = N_SAMPLES
-    
+    # VIZ_N_SAMPLES (number of members in the diagnostic plots) is set above, with
+    # the plot switches.
+
     # Number of MT sites to include in each data-plot row.
     # Sites are drawn without replacement from the full site list.
     # Set to None to show all available sites.
@@ -1000,8 +1085,8 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_CBAR_THICKNESS = None   # joint bar: thickness in cm; None = automatic
 
     # --- Ensemble slice plot (femtic_viz.plot_ensemble_slices) ---------------
-    #: Set True to produce a joint member × slice figure after generation.
-    PLOT_SLICES_ENS = False
+    #: PLOT_SLICES_ENS (True = joint member x slice figure after generation) is set
+    #: above, with the other plot switches.
     ENS_SLICES      = MOD_SLICES   # reuse same slice specs; override if needed
     ENS_CMAP        = MOD_CMAP
     ENS_CLIM        = MOD_CLIM
@@ -1034,8 +1119,8 @@ if PLOT_DATA or PLOT_MODEL:
     ENS_CBAR_THICKNESS = None   # cm; None = automatic
 
     # --- QC slice plot of perturbed initial models ---------------------------
-    #: Set True to produce one slice figure per selected member.
-    PLOT_SLICES_QC = False
+    #: PLOT_SLICES_QC (True = one slice figure per selected member) is set above,
+    #: with the other plot switches.
 
 
 """
@@ -1074,18 +1159,22 @@ print(f"Visualization members: {VIZ_SAMPLES}\n")
 """
 Draw perturbed data sets: d̃ ∼ N(d, Cd)
 """
-data_ensemble = ens.generate_data_ensemble(alg="rto",
-                                           dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
-                                           n_samples=N_SAMPLES,
-                                           fromto=ENS_LIST,
-                                           file_in="observe.dat",
-                                           draw_from=DAT_PDF,
-                                           method=DAT_METHOD,
-                                           errors=ERRORS,
-                                           rng=rng,
-                                           out=True,
-                                           derive_pt_from_z=DERIVE_PT_FROM_Z)
-print("data ensemble ready!")
+if PERTURB_DAT:
+    data_ensemble = ens.generate_data_ensemble(alg="rto",
+                                               dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
+                                               n_samples=N_SAMPLES,
+                                               fromto=ENS_LIST,
+                                               file_in="observe.dat",
+                                               draw_from=DAT_PDF,
+                                               method=DAT_METHOD,
+                                               errors=ERRORS,
+                                               rng=rng,
+                                               out=True,
+                                               derive_pt_from_z=DERIVE_PT_FROM_Z)
+    print("data ensemble ready!")
+else:
+    print("PERTURB_DAT = False: observe.dat of the members is not perturbed (copy of the template).")
+    data_ensemble = None
 print("\n")
 
 """
@@ -1147,33 +1236,39 @@ Draw perturbed model sets: m̃ ∼ N(m, Cm)
 R is passed directly — the sparse Q = R^T R + lam I is formed inside
 ens.sample_rto_prior (exact draws from N(0, (MOD_ALPHA R^T R)^-1), no rank truncation).
 With MOD_PERTURB_ITER0 a second, independent set of draws perturbs the starting model
-resistivity_block_iter0.dat (same procedure).
+resistivity_block_iter0.dat (same procedure); with MOD_ITER0_HOMOGENEOUS the starting
+model is instead replaced by a homogeneous constant, uniform in log10(rho) in MOD_ITER0_RANGE.
 """
-R = scs.load_npz(R_FILE + ".npz")
-print("roughness R loaded with shape:", np.shape(R))
+if PERTURB_MOD:
+    R = scs.load_npz(R_FILE + ".npz")
+    print("roughness R loaded with shape:", np.shape(R))
 
-model_ensemble = ens.generate_rto_model_ensemble(
-    alg="rto",
-    dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
-    n_samples=N_SAMPLES,
-    fromto=ENS_LIST,
-    refmod=MOD_REF_BASE,
-    method=MOD_METHOD,
-    algo=MOD_ALGO,
-    q=R,                          # roughness matrix R (not R^T R)
-    alpha=MOD_ALPHA,              # regularisation weight of the member inversions
-    lam=MOD_LAM,
-    lam_alpha=MOD_LAM_ALPHA,
-    solver_rtol=MOD_RTOL,
-    start_from_perturbed=MOD_START_FROM_PERTURBED,
-    perturb_iter0=MOD_PERTURB_ITER0,   # independent second draw for the iter0 file
-    iter0_file=MOD_ITER0_FILE,
-    remove_mean=MOD_REMOVE_MEAN,
-    rng=rng,
-    out=True,
-)
-print("\n")
-print("model ensemble ready!")
+    model_ensemble = ens.generate_rto_model_ensemble(
+        alg="rto",
+        dir_base=ENSEMBLE_DIR + ENSEMBLE_NAME,
+        n_samples=N_SAMPLES,
+        fromto=ENS_LIST,
+        refmod=MOD_REF_BASE,
+        method=MOD_METHOD,
+        algo=MOD_ALGO,
+        q=R,                          # roughness matrix R (not R^T R)
+        alpha=MOD_ALPHA,              # regularisation weight of the member inversions
+        lam=MOD_LAM,
+        lam_alpha=MOD_LAM_ALPHA,
+        solver_rtol=MOD_RTOL,
+        start_from_perturbed=MOD_START_FROM_PERTURBED,
+        perturb_iter0=MOD_PERTURB_ITER0,   # independent second draw for the iter0 file
+        iter0_const_range=(MOD_ITER0_RANGE if MOD_ITER0_HOMOGENEOUS else None),  # homogeneous random iter0
+        iter0_file=MOD_ITER0_FILE,
+        remove_mean=MOD_REMOVE_MEAN,
+        rng=rng,
+        out=True,
+    )
+    print("\n")
+    print("model ensemble ready!")
+else:
+    print("PERTURB_MOD = False: the reference models of the members are not perturbed (copies of the template).")
+    model_ensemble = None
 
 """
 QC and model slice plots of perturbed initial models
@@ -1188,7 +1283,7 @@ PLOT_MODEL:     same call but for the ensemble member's final-iterate model
                 (or iter0 before inversion).  Saved as rto_model<PLOT_STR>.pdf.
 Both flags are independent; set either or both to True.
 """
-if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC or PLOT_SLICES_ENS):
+if PLOT_MODEL or PLOT_SLICES_QC or PLOT_SLICES_ENS:
 
     # --- resolve UTM origin --------------------------------------------------
     _mod_utm_origin_lat = MOD_UTM_ORIGIN_LAT
@@ -1399,59 +1494,58 @@ Optional stat rows (mean, std, median of log10(ρ)) are appended at the bottom.
 
 Helper: femtic_viz.plot_ensemble_slices
 """
-if PLOT_DATA or PLOT_MODEL:   # only runs when the viz block was entered
-    if PLOT_SLICES_ENS:
-        # Build the list of perturbed model files for all active members.
-        _ens_block_files = [
-            ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_REF_BASE}"
-            for i in ENS_MEMBERS
-        ]
-        _ens_labels = [f"{ENSEMBLE_NAME}{i}" for i in ENS_MEMBERS]
+if PLOT_SLICES_ENS:
+    # Build the list of perturbed model files for all active members.
+    _ens_block_files = [
+        ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i}/{MOD_REF_BASE}"
+        for i in ENS_MEMBERS
+    ]
+    _ens_labels = [f"{ENSEMBLE_NAME}{i}" for i in ENS_MEMBERS]
 
-        # ENS_SLICES go to plot_ensemble_slices as km -> m converted specs, as
-        # before. A fault from two surface points (kind="profile", dip) or an
-        # `overlay` / `panel=False` entry needs resolved positions, so the
-        # list is resolved like MOD_SLICES in that case only (2026-11-12).
-        _ens_slices = _slices_km_to_m(ENS_SLICES)
-        if _ens_slices and any(
-                sp.get("kind") == "profile" or sp.get("overlay")
-                or sp.get("panel") is False for sp in _ens_slices):
-            _ens_slices = fem.resolve_slice_positions(
-                _ens_slices,
-                _mod_utm_zone, _mod_utm_northern,
-                _mod_utm_origin_e, _mod_utm_origin_n,
-                _mod_utm_origin_lat, _mod_utm_origin_lon,
-                verbose=False,
-            )
-
-        fviz.plot_ensemble_slices(
-            member_files    = _ens_block_files,
-            mesh_file       = MOD_MESH,
-            slices          = _ens_slices,
-            labels          = _ens_labels,
-            stat_rows       = ENS_STAT_ROWS,
-            cmap            = ENS_CMAP,
-            clim            = ENS_CLIM,
-            xlim            = _lim_km_to_m(ENS_XLIM),
-            ylim            = _lim_km_to_m(ENS_YLIM),
-            zlim            = _lim_km_to_m(ENS_ZLIM),
-            ocean_color     = ENS_OCEAN_COLOR,
-            ocean_value     = 0.25,
-            tick_fontsize   = ENS_TICK_FONTSIZE,
-            label_fontsize  = ENS_LABEL_FONTSIZE,
-            figure_title    = False if ENS_TITLE is None else ENS_TITLE,   # None = no title here
-            panel_titles    = bool(ENS_PANEL_TITLES),
-            cbar_location   = ENS_CBAR_LOCATION,
-            cbar_shrink     = ENS_CBAR_SHRINK,
-            cbar_thickness  = (ENS_CBAR_THICKNESS / 2.54
-                               if ENS_CBAR_THICKNESS is not None else None),
-            per_member_file = ENS_PER_MEMBER,
-            plot_file       = ENS_PLOT_FILE,
-            dpi             = ENS_PLOT_DPI,
-            show            = _SHOW_PLOTS,
-            out             = True,
+    # ENS_SLICES go to plot_ensemble_slices as km -> m converted specs, as
+    # before. A fault from two surface points (kind="profile", dip) or an
+    # `overlay` / `panel=False` entry needs resolved positions, so the
+    # list is resolved like MOD_SLICES in that case only (2026-11-12).
+    _ens_slices = _slices_km_to_m(ENS_SLICES)
+    if _ens_slices and any(
+            sp.get("kind") == "profile" or sp.get("overlay")
+            or sp.get("panel") is False for sp in _ens_slices):
+        _ens_slices = fem.resolve_slice_positions(
+            _ens_slices,
+            _mod_utm_zone, _mod_utm_northern,
+            _mod_utm_origin_e, _mod_utm_origin_n,
+            _mod_utm_origin_lat, _mod_utm_origin_lon,
+            verbose=False,
         )
-        print("ensemble slice plot saved.")
+
+    fviz.plot_ensemble_slices(
+        member_files    = _ens_block_files,
+        mesh_file       = MOD_MESH,
+        slices          = _ens_slices,
+        labels          = _ens_labels,
+        stat_rows       = ENS_STAT_ROWS,
+        cmap            = ENS_CMAP,
+        clim            = ENS_CLIM,
+        xlim            = _lim_km_to_m(ENS_XLIM),
+        ylim            = _lim_km_to_m(ENS_YLIM),
+        zlim            = _lim_km_to_m(ENS_ZLIM),
+        ocean_color     = ENS_OCEAN_COLOR,
+        ocean_value     = 0.25,
+        tick_fontsize   = ENS_TICK_FONTSIZE,
+        label_fontsize  = ENS_LABEL_FONTSIZE,
+        figure_title    = False if ENS_TITLE is None else ENS_TITLE,   # None = no title here
+        panel_titles    = bool(ENS_PANEL_TITLES),
+        cbar_location   = ENS_CBAR_LOCATION,
+        cbar_shrink     = ENS_CBAR_SHRINK,
+        cbar_thickness  = (ENS_CBAR_THICKNESS / 2.54
+                           if ENS_CBAR_THICKNESS is not None else None),
+        per_member_file = ENS_PER_MEMBER,
+        plot_file       = ENS_PLOT_FILE,
+        dpi             = ENS_PLOT_DPI,
+        show            = _SHOW_PLOTS,
+        out             = True,
+    )
+    print("ensemble slice plot saved.")
 
 
 # ---------------------------------------------------------------------------
