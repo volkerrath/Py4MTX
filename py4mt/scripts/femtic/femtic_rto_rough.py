@@ -82,7 +82,7 @@ print(titstrng+"\n\n")
 
 # WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas/"
 # WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/misti/"
-WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/ann_reference/"
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_ens_fine/templates/"
 ROUGH_FILE = WORK_DIR + "roughening_matrix.out"
 
 

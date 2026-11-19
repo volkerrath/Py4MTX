@@ -52,8 +52,8 @@ UTM_ZONE_OVERRIDE = None
 
 #WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas//"
 # WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/misti//"
-WORK_DIR = "/home/vrath/MT_Data/Peru/Tacna/NEW/"
-EDI_DIR = WORK_DIR + "/edis_26b/"
+WORK_DIR = "/media/vrath/LargeBack/Ensembles/krafla2026/krafla_ens_fine/"
+EDI_DIR = WORK_DIR + "/edi_files/"
 
 print(" Edifiles read from: %s" % EDI_DIR)
 

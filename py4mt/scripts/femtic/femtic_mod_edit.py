@@ -222,17 +222,19 @@ print(titstrng + "\n\n")
 # Paths
 # ---------------------------------------------------------------------------
 # WORK_DIR = r"/home/vrath/Py4MTX/py4mt/data/rto/misti/ensemble/templates/"
-WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/templates/"
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_ens_fine/templates/"
 #: Template / source resistivity block (also used as format template by
 #: insert_model to preserve header, bounds and flag columns).
 # MODEL_IN  = WORK_DIR + "resistivity_block_iter0.dat"
-MODEL_IN  =WORK_DIR + "resistivity_block_iter18_best.dat"
-#: Mesh file — required for "smooth" and "ellipsoid"; ignored otherwise.
-MESH_FILE = WORK_DIR + "mesh.dat"
+MODEL_IN  =WORK_DIR + "resistivity_block_iter24.dat"
 
 #: Output file.  Set to MODEL_IN to overwrite in-place (be careful!).
 # MODEL_OUT = WORK_DIR + "reference_i15_smooth3000.dat"
-MODEL_OUT = WORK_DIR + "resistivity_block_iter0_nn500.dat"
+MODEL_OUT = WORK_DIR + "resistivity_block_iter0_fill_60_Ohmm.dat"
+
+#: Mesh file — required for "smooth" and "ellipsoid"; ignored otherwise.
+MESH_FILE = WORK_DIR + "mesh.dat"
+
 # ---------------------------------------------------------------------------
 # Ocean / fixed-region handling
 # ---------------------------------------------------------------------------
@@ -261,8 +263,8 @@ PLOT_ONLY = False
 #: One of: "fill" | "mean" | "wmean" | "median" | "clip" | "shift"
 #:         | "standardise" | "smooth" | "ellipsoid" | "brick" | "null"
 #: Ignored entirely when PLOT_ONLY = True.
-# OPERATION = "fill"
-OPERATION = "smooth"
+OPERATION = "fill"
+# OPERATION = "smooth"
 # OPERATION = "wmean"
 # OPERATION = "median"
 # OPERATION = "mean"
@@ -273,6 +275,7 @@ if OPERATION != "null":
 print(MODEL_OUT)
 
 # Parameters used by specific operations (ignored when not applicable):
+val = np.log10(60.)
 OP_FILL_VALUE   = 1.   # log10(100 Ω·m) — used by "fill"
 OP_CLIP_MIN     = 0.0    # log10(1 Ω·m)   — used by "clip"
 OP_CLIP_MAX     = 4.0    # log10(10 kΩ·m) — used by "clip"
@@ -318,7 +321,7 @@ OP_SMOOTH_SIGMA   = 3.0   # km
 #:   "knn_gauss"   : exactly K neighbours enter the per-region Gaussian.
 #: Memory scales as n_free × K × 8 bytes (predictable, no variable-length
 #: lists).
-OP_SMOOTH_K       = 500     # nearest neighbours
+OP_SMOOTH_K       = 128     # nearest neighbours
 
 #: Per-region σ fraction — used by mode "knn_gauss" only.
 #: σ_i = OP_SMOOTH_KNN_SIGMA_FRAC × d_{i,K}  (distance to the K-th neighbour).
@@ -397,7 +400,7 @@ PLOT_INPUT = False
 PLOT_OUTPUT = True
 
 #: Output-model figure path — None → interactive show().
-PLOT_FILE = WORK_DIR + "resistivity_block_edited_nn500.pdf"
+PLOT_FILE = WORK_DIR + "resistivity_block_edited.pdf"
 if OPERATION != "null":
     PLOT_FILE = PLOT_FILE.replace("edited", OPERATION)
 print(PLOT_FILE)
