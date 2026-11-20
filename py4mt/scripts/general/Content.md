@@ -11,7 +11,7 @@ data pre/post-processing.  All scripts live in `scripts/general/`.
 |--------|---------|
 | `mt_data_processor.py` | Batch-process `.edi` files: compute phase tensor, impedance invariants, apparent resistivity/phase; set or estimate errors; optionally interpolate or rotate; export to EDI, NPZ, HDF, or MAT. |
 | `mt_get_averages.py` | Compute scalar impedance averages (Z_ssq, Z_det, Z_avg = √(Z_xy·Z_yx)) across a site collection from NPZ files; form frequency-wise and global log-averages with inter-site spread (std or bootstrap); write two-panel ρ_a / phase plots per quantity and NPZ per quantity. Supports `FREQ_RANGE` masking, shaded error bands, and site-overlay legend. |
-| `mt_make_sitelist.py` | Read all `.edi` files in a directory and write a site list (name, lat, lon, elev) in WALDIM, FEMTIC, or general CSV format. |
+| `mt_make_sitelist.py` | Read all `.edi` files in a directory and write a site list (name, lat, lon, elev, and for FEMTIC/CSV site number, easting, northing) in WALDIM, FEMTIC, or general CSV format. One common UTM zone for all sites, also if the survey crosses a zone boundary (2026-11-20). |
 | `mt_calc_ptdim.py` | Use phase-tensor analysis to classify each MT station / frequency as 1-D, 2-D, or 3-D; writes per-site dimensionality tables and a combined summary. |
 | `mt_kmz_waldim.py` | Export WALDIM dimensionality classification results as a KMZ file for Google Earth, with colour-coded site markers (3-class or 10-class scheme). |
 

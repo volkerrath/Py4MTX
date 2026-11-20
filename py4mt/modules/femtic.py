@@ -341,6 +341,27 @@ Modified: 2026-11-15 (g) by Claude Sonnet 5.5 (Anthropic) -- the difference
     and "abs_diff_prior" (its absolute value), select_ensemble_source() drops
     it when the perturbed models alone are drawn. Nothing else changed.
     AI-generated code -- review before production use.
+Modified: 2026-11-20 by Claude Sonnet 5.5 (Anthropic) -- two BUG FIXES in
+    edi_list_to_observe_dat() (errors in observe.dat): (1) for site dicts with
+    err_kind="var" (the default of data_proc.load_edi) the impedance
+    variances were scaled to SI with the unit factor c = mu0*1e3 instead of
+    c**2, so the standard deviations were too large by 1/sqrt(c) = 28.2 (the
+    "std" case was correct); (2) real-valued Z_err was cast to complex, so the
+    errors of Im(Z) were written as 0 (now the same std is used for Re and Im,
+    as _edi_Z_to_observe_row documents). Files written by earlier versions
+    from real-valued errors have zero Im errors, and var-kind ones errors 28.2
+    times too large: rewrite them. Nothing else changed. AI-generated code --
+    review before production use.
+Modified: 2026-11-20 (b) by Claude Sonnet 5.5 (Anthropic) -- edi_list_to_observe_dat():
+    new keywords invalid ("drop" = as before, a frequency with a non-finite
+    value or error is left out; "mark" = the bad component stays with a
+    negative error, invalid_se = -1.0, which FEMTIC treats as "not used", so
+    the valid components of that frequency are kept) and invalid_se; non-finite
+    errors now also drop the frequency (nan cannot be read by FEMTIC); the
+    returned dicts have n_dropped and n_marked; invalid_sentinel (default 1e30): values of Z / Z_err above it (the 1e32 marker of data_proc.save_edi, kept by load_edi with drop_invalid_periods=False) count as invalid - before they were written as huge valid data; summarise_observe_dat() reports n_data_used (errors > 0). _bootstrap_mt_derived() and
+    _mt_rhoa_phase_from_Z() no longer pass a negative or non-finite error as
+    scale to numpy (read_observe_dat / observe_to_site_viz_list raised on files
+    with negative errors). AI-generated code -- review before production use.
 """
 from __future__ import annotations
 
@@ -5767,6 +5788,9 @@ def _bootstrap_mt_derived(
     zssq_boot = np.full((n_boot, nfreq), np.nan, dtype=np.complex128)
 
     sigma = np.asarray(error, dtype=float)
+    # a component marked "not used" (error <= 0, FEMTIC convention) or without a
+    # finite error is not perturbed (a negative scale would raise in numpy)
+    sigma = np.where(np.isfinite(sigma) & (sigma > 0.0), sigma, 0.0)
     base = np.asarray(data, dtype=float)
 
     for b in range(n_boot):
@@ -6320,6 +6344,9 @@ def _mt_rhoa_phase_from_Z(
         rng = default_rng(int(seed))
         sig_re = np.asarray(Zerr.real, dtype=float)
         sig_im = np.asarray(Zerr.imag, dtype=float)
+        # components marked "not used" (error <= 0) are not perturbed
+        sig_re = np.where(np.isfinite(sig_re) & (sig_re > 0.0), sig_re, 0.0)
+        sig_im = np.where(np.isfinite(sig_im) & (sig_im > 0.0), sig_im, 0.0)
 
         rhoa_samp = np.empty((n_mc, f.size, 2, 2), dtype=float)
         ph_samp = np.empty((n_mc, f.size, 2, 2), dtype=float)
@@ -6593,11 +6620,14 @@ def summarise_observe_dat(
         ``dat_length`` (int)  — number of data values per frequency per site,
         ``n_freq_per_site`` (list[int])  — nfreq for each site,
         ``n_freq_total`` (int)  — sum of nfreq across all sites,
-        ``n_data_total`` (int)  — n_freq_total × dat_length
+        ``n_data_total`` (int)  - n_freq_total x dat_length,
+        ``n_data_used`` (int)   - number of those values with an error > 0
+        (FEMTIC does not use a datum whose error is <= 0)
 
     ``n_sites_total`` (int),
     ``n_freq_total`` (int),
-    ``n_data_total`` (int)   — total length of the data vector
+    ``n_data_total`` (int)   - total length of the data vector,
+    ``n_data_used`` (int)    - of which used by FEMTIC (error > 0)
     """
     if isinstance(path_or_parsed, dict):
         parsed = path_or_parsed
@@ -6620,6 +6650,10 @@ def summarise_observe_dat(
         dat_len   = _OBS_DATALEN.get(obs_type, 0)
         nfreqs    = [s["nfreq"] for s in sites]
         n_freq_total = sum(nfreqs)
+        n_used = 0
+        for _s in sites:
+            _e = np.asarray(_s.get("error", []), dtype=float)
+            n_used += int(np.sum(_e > 0.0)) if _e.size else 0
         block_summaries.append({
             "obs_type":       obs_type,
             "n_sites":        len(sites),
@@ -6628,11 +6662,13 @@ def summarise_observe_dat(
             "n_freq_per_site": nfreqs,
             "n_freq_total":   n_freq_total,
             "n_data_total":   n_freq_total * dat_len,
+            "n_data_used":    n_used,
         })
 
     n_sites_total = sum(b["n_sites"]      for b in block_summaries)
     n_freq_total  = sum(b["n_freq_total"] for b in block_summaries)
     n_data_total  = sum(b["n_data_total"] for b in block_summaries)
+    n_data_used   = sum(b["n_data_used"] for b in block_summaries)
 
     summary = {
         "path":          src_path,
@@ -6640,6 +6676,7 @@ def summarise_observe_dat(
         "n_sites_total": n_sites_total,
         "n_freq_total":  n_freq_total,
         "n_data_total":  n_data_total,
+        "n_data_used":   n_data_used,
     }
 
     if out:
@@ -6675,6 +6712,9 @@ def _print_observe_summary(s: dict) -> None:
     print(f"  │ Total                      │ {s['n_freq_total']:>8d} │ {s['n_data_total']:>8d} │")
     print(f"  └────────────────────────────┴──────────┴──────────┘")
     print(f"  Sites total   : {s['n_sites_total']:>8d}")
+    if s.get("n_data_used", s["n_data_total"]) != s["n_data_total"]:
+        print(f"  Data used     : {s['n_data_used']:>8d} of {s['n_data_total']} "
+              f"(the others have an error <= 0: not used by FEMTIC)")
     empty = [(b["obs_type"], b.get("n_sites_empty", 0)) for b in s["blocks"] if b.get("n_sites_empty", 0)]
     if empty:
         txt = ", ".join(f"{t} {n}" for t, n in empty)
@@ -6890,6 +6930,9 @@ def edi_list_to_observe_dat(
     owner_type: int | None = None,
     elec_type: int | None = None,
     id_map_file: str | Path | None = None,
+    invalid: str = "drop",
+    invalid_se: float = -1.0,
+    invalid_sentinel: float | None = 1.0e30,
 ) -> list[dict[str, Any]]:
     """Write a list of EDI site dicts to a FEMTIC-style ``observe.dat`` file.
 
@@ -6976,19 +7019,40 @@ def edi_list_to_observe_dat(
     id_map_file : str, Path or None
         If given, write a CSV ``id,name,x_m,y_m,elev_m`` linking the station
         IDs to the EDI station names (the FEMTIC file keeps only the IDs).
+    invalid : {"drop", "mark"}
+        How invalid data are written (see Notes, "Invalid data").
+        ``"drop"`` (default; the behaviour before 2026-11-20): a frequency
+        with a non-finite value or error in any impedance component is left
+        out of the file.  ``"mark"``: such a component (and one with an error
+        <= 0) stays in the file with ``invalid_se`` as its error, so that
+        FEMTIC does not use it, and the valid components of that frequency
+        are kept.
+    invalid_se : float
+        Error written for a marked component (``invalid="mark"``); must be
+        negative (FEMTIC manual: "If SE is negative, the corresponding
+        component is not used in the inversion").  Default -1.0.
+    invalid_sentinel : float or None
+        Values of Z or Z_err with an absolute value above this are invalid
+        data markers (``data_proc.save_edi`` writes 1.0E32; ``load_edi`` keeps
+        them if called with ``drop_invalid_periods=False``) and are handled
+        like non-finite numbers.  Default 1e30, as in ``load_edi``; None
+        switches the test off.
 
     Returns
     -------
     list of dict
         One dict per site written: ``id``, ``hid``, ``name``, ``x_m``,
-        ``y_m``, ``elev_m`` (None if absent), ``nfreq``.  Before 2026-10-22
-        the function returned None.
+        ``y_m``, ``elev_m`` (None if absent), ``nfreq``, and (since
+        2026-11-20) ``n_dropped`` (frequencies left out for invalid data) and
+        ``n_marked`` (real numbers written with ``invalid_se``).  Before
+        2026-10-22 the function returned None.
 
     Raises
     ------
     ValueError
-        If ``obs_type`` is not ``"MT"`` or if any site has no valid
-        frequencies after dropping NaN/sentinel values.
+        If ``obs_type`` is not ``"MT"``, ``invalid`` is not ``"drop"`` or
+        ``"mark"``, or ``invalid_se`` is not negative.  A site without any
+        usable frequency is skipped with a warning.
     NotImplementedError
         If ``obs_type`` other than ``"MT"`` is requested (VTF/PT not yet
         implemented).
@@ -7004,6 +7068,24 @@ def edi_list_to_observe_dat(
 
         i.e. ``Z_SI ≈ Z_MT × 1.2566 × 10⁻³``.
 
+    **Invalid data**
+        FEMTIC has no marker value for invalid data: it uses a datum (each of
+        the 8 real numbers Re/Im Zxx..Zyy of a frequency) only if its error
+        is > 0, and the manual says that a negative error means "not used".
+        The value itself is not tested, and C++ stream input does not read
+        ``nan``/``inf`` text, so non-finite numbers must never be written.
+        Strategy ``invalid="drop"`` leaves out every frequency in which a
+        value or an error is non-finite; errors that are exactly 0 (e.g. a
+        component that was invalid at all frequencies and zeroed by
+        ``data_proc.load_edi``) are written as 0, which FEMTIC also skips.
+        Strategy ``invalid="mark"`` keeps the frequency: a component with a
+        non-finite value or error is written as value 0.0 with
+        ``invalid_se``, a component with an error <= 0 keeps its value and
+        gets ``invalid_se`` too.  A frequency in which nothing is usable is
+        left out in both cases.  Use ``"mark"`` to keep the valid components
+        of a partly invalid frequency (e.g. only Zxy missing); ``"drop"``
+        gives the smaller, simpler file.
+
     **z-convention (legacy layout only)**
         EDI elevation ``elev_m`` is geodetic (positive upward).  FEMTIC uses
         z positive downward, so the site header z is written as ``-elev_m``.
@@ -7011,7 +7093,7 @@ def edi_list_to_observe_dat(
         The FEMTIC layout has no z: FEMTIC places the stations itself.
 
     **IDs**
-        Sites skipped for lack of finite Z get no ID; the IDs of the written
+        Sites skipped for lack of usable data get no ID; the IDs of the written
         sites are consecutive from 1 (as expected by the results readers,
         e.g. :func:`get_femtic_data`).  The block header now counts the sites
         actually written (before 2026-10-22 it counted all input sites).
@@ -7065,6 +7147,17 @@ def edi_list_to_observe_dat(
     if site_type not in ("land", "seafloor"):
         raise ValueError(
             f"edi_list_to_observe_dat: site_type must be 'land' or 'seafloor', got {site_type!r}."
+        )
+    invalid = str(invalid).lower()
+    if invalid not in ("drop", "mark"):
+        raise ValueError(
+            f"edi_list_to_observe_dat: invalid must be 'drop' or 'mark', got {invalid!r}."
+        )
+    invalid_se = float(invalid_se)
+    if not invalid_se < 0.0:
+        raise ValueError(
+            f"edi_list_to_observe_dat: invalid_se must be negative (FEMTIC: negative error = "
+            f"datum not used), got {invalid_se!r}."
         )
     for _nm, _val in (("owner_type", owner_type), ("elec_type", elec_type)):
         if _val is not None and _val not in (0, 1):
@@ -7143,42 +7236,84 @@ def edi_list_to_observe_dat(
         Z_mt = np.asarray(edi["Z"], dtype=np.complex128)   # (nfreq, 2, 2), mV/km/nT
         Z_err_raw = edi.get("Z_err")
         err_kind = str(edi.get("err_kind", "var"))
+        if invalid_sentinel is not None:
+            # 1e32 markers (load_edi with drop_invalid_periods=False) are finite
+            # numbers: make them NaN so that they are treated as invalid data
+            _sent = (np.abs(Z_mt.real) > invalid_sentinel) | (np.abs(Z_mt.imag) > invalid_sentinel)
+            if _sent.any():
+                Z_mt = np.where(_sent, complex(np.nan, np.nan), Z_mt)
 
         # Convert Z from MT field units to SI Ohm
+        # (a variance scales with the square of the unit factor, a standard
+        # deviation with the factor itself; _edi_Z_to_observe_row takes the
+        # square root of variances)
         Z_si = Z_mt * _Z_MT_TO_SI
-        Z_err_si = (np.asarray(Z_err_raw, dtype=complex) * _Z_MT_TO_SI
-                    if Z_err_raw is not None else None)
+        _err_scale = _Z_MT_TO_SI ** 2 if err_kind == "var" else _Z_MT_TO_SI
+        # Real-valued errors (what load_edi / set_errors give) must stay real:
+        # _edi_Z_to_observe_row then uses the same value for Re and Im.  A cast
+        # to complex made it read Im = 0, i.e. zero errors for Im(Z).
+        if Z_err_raw is None:
+            Z_err_si = None
+        else:
+            _ze = np.asarray(Z_err_raw)
+            if not np.iscomplexobj(_ze):
+                _ze = _ze.astype(float)
+            if invalid_sentinel is not None:
+                if np.iscomplexobj(_ze):
+                    _ze = (np.where(np.abs(_ze.real) > invalid_sentinel, np.nan, _ze.real)
+                           + 1j * np.where(np.abs(_ze.imag) > invalid_sentinel, np.nan, _ze.imag))
+                else:
+                    _ze = np.where(np.abs(_ze) > invalid_sentinel, np.nan, _ze)
+            Z_err_si = _ze * _err_scale
 
-        # Guard: drop any frequency rows where Z is non-finite
-        finite_mask = np.all(
-            np.isfinite(Z_si.real) & np.isfinite(Z_si.imag),
-            axis=(1, 2),
-        )
-        if not np.any(finite_mask):
+        # ---- invalid data -------------------------------------------------
+        # One row of 8 data and 8 errors per frequency; a complex component
+        # (Re/Im pair) is bad if the value or the error of either part is
+        # not finite (FEMTIC reads neither nan nor inf).
+        nf_all = freq.size
+        data_all = np.empty((nf_all, 8), dtype=float)
+        err_all = np.empty((nf_all, 8), dtype=float)
+        for fi in range(nf_all):
+            Z_err_f = Z_err_si[fi] if Z_err_si is not None else None
+            data_all[fi], err_all[fi] = _edi_Z_to_observe_row(Z_si[fi], Z_err_f, err_kind)
+        bad_pair = ~(np.isfinite(data_all[:, 0::2]) & np.isfinite(data_all[:, 1::2])
+                     & np.isfinite(err_all[:, 0::2]) & np.isfinite(err_all[:, 1::2]))   # (nf, 4)
+        bad_num = np.repeat(bad_pair, 2, axis=1)                                      # (nf, 8)
+        n_marked = 0
+        if invalid == "drop":
+            keep = ~bad_pair.any(axis=1)
+            unused = np.zeros_like(bad_num)
+        else:
+            # not used by FEMTIC: non-finite, or an error that is not > 0
+            unused = bad_num | ~(err_all > 0.0)
+            keep = ~unused.all(axis=1)
+            data_all[bad_num] = 0.0
+            err_all[unused] = invalid_se
+            n_marked = int(unused[keep].sum())
+        if not np.any(keep):
             warnings.warn(
-                f"edi_list_to_observe_dat: site '{name}' has no finite Z values; "
-                f"skipping.",
+                f"edi_list_to_observe_dat: site '{name}' has no usable frequency "
+                f"(invalid={invalid!r}); skipping.",
                 UserWarning,
                 stacklevel=2,
             )
             continue
-        freq = freq[finite_mask]
-        Z_si = Z_si[finite_mask]
-        if Z_err_si is not None:
-            Z_err_si = Z_err_si[finite_mask]
+        n_dropped = int(nf_all - keep.sum())
+        freq = freq[keep]
+        data_all = data_all[keep]
+        err_all = err_all[keep]
 
         nfreq = len(freq)
         rows: list[str] = []
         for fi in range(nfreq):
-            Z_err_f = Z_err_si[fi] if Z_err_si is not None else None
-            data_row, err_row = _edi_Z_to_observe_row(Z_si[fi], Z_err_f, err_kind)
-            row_vals: list[float] = [float(freq[fi])] + data_row.tolist() + err_row.tolist()
+            row_vals: list[float] = [float(freq[fi])] + data_all[fi].tolist() + err_all[fi].tolist()
             rows.append(_format_row(row_vals))
 
         recs.append({
             "name": name, "x_m": x_m, "y_m": y_m,
             "elev_m": None if elev_m is None else float(elev_m),
             "z_femtic": z_femtic, "nfreq": nfreq, "rows": rows,
+            "n_dropped": n_dropped, "n_marked": n_marked,
         })
 
     n_sites = len(recs)
@@ -7219,6 +7354,7 @@ def edi_list_to_observe_dat(
         result.append({
             "id": sid, "hid": hid, "name": rec["name"], "x_m": rec["x_m"],
             "y_m": rec["y_m"], "elev_m": rec["elev_m"], "nfreq": rec["nfreq"],
+            "n_dropped": rec["n_dropped"], "n_marked": rec["n_marked"],
         })
 
     # ---- dummy VTF block -----------------------------------------------------

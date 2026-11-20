@@ -28,6 +28,7 @@ Modified: 2026-05-25 — moved KL divergence, L-curve, DCT wrappers, fractional 
 Modified: 2026-08-13 — added write_param_summary() (writes a per-script Markdown summary of UPPERCASE user-set parameters, script path, and run date/time); Claude Sonnet 5 (Anthropic)
 Modified: 2026-10-28 -- write_param_summary(): new out_dir argument, so the summary can be written to the working directory set in the calling script instead of next to it (falls back to the script directory if out_dir cannot be used); Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
 Modified: 2026-11-11 -- new section "Plot title and colour bar settings": resolve_title() and check_cbar_location(), the title and colour bar location settings shared by the plot scripts (same logic as femtic_viz.resolve_title / check_cbar_location, repeated here so that scripts need no femtic_viz); Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
+Modified: 2026-11-20 -- new utm_common_zone(), utm_central_meridian() and utm_scale_factor() (one UTM zone for a whole survey, so that sites on both sides of a zone boundary share one grid; used by mt_make_sitelist.py); Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
 """
 
 from __future__ import annotations
@@ -828,6 +829,102 @@ def utm_to_latlon_zn(E_m: float, N_m: float,
            + 8 * e2 / (1 - e2) + 24 * T1**2) * D**5 / 120
     ) / np.cos(lat1)
     return float(np.degrees(lat)), float(np.degrees(lon))
+
+
+def _wrap_lon_deg(lon):
+    """Wrap longitude(s) in degrees to the interval [-180, 180)."""
+    return (np.asarray(lon, dtype=float) + 180.0) % 360.0 - 180.0
+
+
+def utm_central_meridian(zone: int) -> float:
+    """Central meridian [deg E] of a UTM zone (zone 1 -> -177, zone 60 -> 177)."""
+    zone = int(zone)
+    if not 1 <= zone <= 60:
+        raise ValueError(f"utm_central_meridian: zone={zone} out of range 1-60.")
+    return float((zone - 1) * 6 - 180 + 3)
+
+
+def utm_common_zone(lats, lons, *, override: int | None = None
+                    ) -> tuple[int, bool]:
+    """One UTM zone and hemisphere for a whole set of sites.
+
+    A survey that crosses a zone boundary must be projected into ONE zone,
+    otherwise the easting/northing of the two parts lie in different grids
+    and cannot be used together (mesh origin, site positions in a FEMTIC
+    model).  Sites outside the chosen zone are simply projected with the
+    central meridian of that zone ("extended" UTM).
+
+    The zone is that of the mean position: the mean latitude and the mean
+    longitude, the latter taken relative to the first site and wrapped, so
+    that a survey across the antimeridian is handled.  This is the rule the
+    FEMTIC plot scripts use to get the zone from a site list, so both agree
+    for any survey which does not lie almost on a zone boundary.
+
+    Parameters
+    ----------
+    lats, lons : sequences of decimal degrees (N / E positive); non-finite
+                 entries are ignored
+    override   : int or None
+        Force this zone (1-60); the hemisphere still follows the mean
+        latitude.
+
+    Returns
+    -------
+    zone     : int   UTM zone number (1-60)
+    northern : bool  True if the mean latitude is >= 0
+
+    Notes
+    -----
+    pyproj (PROJ "utm", default Poder/Engsager algorithm) is accurate far
+    from the central meridian.  The series fall-back of latlon_to_utm_zn()
+    (used only if the pyproj call fails) is good to about 1 cm up to 6 deg
+    and about 0.2 m up to 9 deg from the central meridian, at 0-47 deg
+    latitude.
+
+    Claude Sonnet 5.5 (Anthropic), 2026-11-20; AI-generated, review before
+    production use.
+    """
+    la = np.atleast_1d(np.asarray(lats, dtype=float))
+    lo = np.atleast_1d(np.asarray(lons, dtype=float))
+    if la.shape != lo.shape:
+        raise ValueError(
+            f"utm_common_zone: lats and lons differ in shape "
+            f"({la.shape} vs {lo.shape}).")
+    ok = np.isfinite(la) & np.isfinite(lo)
+    if not ok.any():
+        raise ValueError("utm_common_zone: no site with finite lat/lon.")
+    la, lo = la[ok], lo[ok]
+    lon_ref = float(lo[0])
+    lon_mean = float(_wrap_lon_deg(lon_ref + _wrap_lon_deg(lo - lon_ref).mean()))
+    return utm_zone_from_latlon(float(la.mean()), lon_mean, override=override)
+
+
+def utm_scale_factor(lat, lon, zone: int):
+    """Approximate UTM grid scale factor k at (lat, lon) in a given zone.
+
+    k = 0.9996 / sqrt(1 - (cos(lat) * sin(dlon))**2), dlon = lon - central
+    meridian of the zone (spherical formula; the ellipsoid changes it by
+    parts in 1e-3 of the departure from 0.9996 only).  A distance on the
+    grid is k times the distance on the ground.  Meant for judging how
+    much a site outside its own zone is distorted, not for survey work.
+
+    Parameters
+    ----------
+    lat, lon : decimal degrees (scalars or arrays)
+    zone     : UTM zone number 1-60
+
+    Returns
+    -------
+    k : float or ndarray of floats
+
+    Claude Sonnet 5.5 (Anthropic), 2026-11-20; AI-generated, review before
+    production use.
+    """
+    dlon = np.radians(_wrap_lon_deg(np.asarray(lon, dtype=float)
+                                    - utm_central_meridian(zone)))
+    s = np.cos(np.radians(np.asarray(lat, dtype=float))) * np.sin(dlon)
+    k = 0.9996 / np.sqrt(np.clip(1.0 - s * s, 1.0e-12, None))
+    return float(k) if k.ndim == 0 else k
 
 
 def proj_latlon_to_itm(longitude, latitude):

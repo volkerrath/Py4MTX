@@ -306,7 +306,41 @@ z_femtic = -elev_m        # EDI z-up (positive = above datum) → FEMTIC z-down
 ```
 
 Sites with `elev_m = None` are placed at `z = 0.0` with a `UserWarning`.
-Sites with no finite Z values are skipped with a `UserWarning`.
+Sites without any usable frequency are skipped with a `UserWarning`.
+
+### Invalid data (`invalid="drop"` / `"mark"`)
+
+FEMTIC has **no marker value** for invalid data.  It uses a datum (each of the 8
+real numbers Re/Im Zxx..Zyy of a frequency; likewise for VTF, PT, ...) only if its
+error is `> 0`; the manual says "If SE is negative, the corresponding component is
+not used in the inversion" (slides of the data formats).  The value itself is not
+tested, and C++ stream input does not read `nan`/`inf` text, so non-finite numbers
+must never be written.  (Checked in the public FEMTIC source, `src/ObservedDataStationMT.cpp`,
+commit d858036 of 2026-10-08: residual, data ID and sensitivity row exist only for
+`SD > 0`; check this in your own tree.)
+
+`edi_list_to_observe_dat(..., invalid=..., invalid_se=-1.0, invalid_sentinel=1e30)`
+offers two strategies:
+
+| `invalid` | What is written |
+|-----------|-----------------|
+| `"drop"` (default; as before) | A frequency in which a value or an error of any component is not finite is **left out**.  Errors that are exactly 0 (a component that was invalid at all frequencies and zeroed by `load_edi`) are written as 0, which FEMTIC does not use either. |
+| `"mark"` | The frequency **stays**.  A component with a non-finite value or error is written as value `0.0` with error `invalid_se`; a component with an error `<= 0` keeps its value and gets `invalid_se`.  The valid components of that frequency are kept. |
+
+A frequency in which nothing is usable is left out in both cases, and a site without
+any usable frequency is skipped.  Z or Z_err above `invalid_sentinel` (the 1e32 marker
+of `save_edi`, kept as a finite number by `load_edi(drop_invalid_periods=False)`) count
+as non-finite.  The returned dicts have `n_dropped` and `n_marked`.
+
+With `load_edi(drop_invalid_periods=True)` (default) invalid periods are removed when
+the EDI is read, so the strategies only matter for data that still contain invalid
+values at this stage, or for zeroed components.
+
+`mark` keeps more data; `drop` gives the smaller, simpler file.  The readers accept
+negative errors: `read_observe_dat` / `observe_to_site_viz_list` do not perturb a
+component with error `<= 0` in their bootstrap / Monte Carlo (numpy raises for a
+negative scale; fixed 2026-11-20), `modify_data` leaves such a component alone, and
+`summarise_observe_dat` reports `n_data_used` (errors `> 0`).
 
 ### CLI usage
 
@@ -624,7 +658,46 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-11-15
+Updated: 2026-11-20
+
+### Changelog (2026-11-20, b) --- invalid data in `observe.dat`: `drop` or `mark`
+- `edi_list_to_observe_dat(..., invalid="drop"|"mark", invalid_se=-1.0,
+  invalid_sentinel=1e30)`.  FEMTIC uses a datum only if its error is `> 0` (negative
+  error = "not used", manual), so a component can be switched off without leaving out
+  the frequency: `"mark"` writes it with `invalid_se` (value 0.0 if it was not
+  finite); `"drop"` (default, as before) leaves the frequency out.  Non-finite
+  *errors* now also drop the frequency (before, `nan` could be written, which FEMTIC
+  cannot read).  Z / Z_err above `invalid_sentinel` (1e32 markers) are invalid; before,
+  they were written as huge valid numbers.  The returned dicts have `n_dropped` and
+  `n_marked`.
+- `_bootstrap_mt_derived` and `_mt_rhoa_phase_from_Z` (used by `read_observe_dat` and
+  `observe_to_site_viz_list`) passed the error as `scale` to numpy, which raises for a
+  negative value: they now do not perturb a component with an error `<= 0` or
+  non-finite.
+- `summarise_observe_dat` reports `n_data_used` (errors `> 0`) next to `n_data_total`.
+- `mt_data_processor.py`: `OBS_INVALID`, `OBS_INVALID_SE`.
+- Tests: `test_data_proc_freq_ft.py`, class `TestObserveInvalid` (drop, mark, zero and
+  negative errors, 1e32 markers, custom marker, validation, readers, `modify_data`);
+  also run end to end through the script with injected invalid data.  AI-generated
+  (Claude Sonnet 5.5, Anthropic); review before production use.
+
+### Changelog (2026-11-20) --- two errors in `edi_list_to_observe_dat()` fixed
+- **Error scale**: for site dicts with `err_kind="var"` (the default of
+  `data_proc.load_edi`) the impedance variances were converted to SI with the unit
+  factor `c = mu0 * 1e3 = 1.2566e-3` instead of `c**2`, so the standard deviations
+  written to `observe.dat` were too large by `1/sqrt(c)` = 28.2.  The `"std"` case
+  was correct.  Now variances are scaled with `c**2`, standard deviations with `c`.
+- **Imaginary errors**: real-valued `Z_err` was cast to complex, so the errors of
+  Im(Z) were written as 0.  Real errors stay real; the same value is used for the
+  real and the imaginary part.
+- Checked against the processed data: maximal relative deviation of the data and the
+  errors in `observe.dat` about 5e-9 (tests in `test_data_proc_freq_ft.py`, class
+  `TestObserve`: var and std, Im error not 0, dummy-VTF layout).
+- **`observe.dat` files made earlier with this function have wrong errors (28.2 times
+  too large for var-kind dicts, Im errors 0 for real-valued errors); write them again.**
+- `mt_data_processor.py` now writes `observe.dat` directly (token `observe` in
+  `OUT_FILES`, optionally with the dummy VTF stations).  AI-generated (Claude
+  Sonnet 5.5, Anthropic); review before production use.
 
 ### Changelog (2026-11-15) --- block volumes from `results_iterX.h5`
 - New `read_h5_block_volumes(h5_path, *, check_sensitivity=True, rtol=1e-4,

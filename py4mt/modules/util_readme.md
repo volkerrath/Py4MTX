@@ -45,6 +45,23 @@ All projection functions use the modern `pyproj.Transformer` API.
 | `project_utm_to_geoid` | UTM + ellipsoid → geoid |
 | `project_gk_to_latlon` | Gauss-Krüger → WGS84 |
 
+UTM with an explicit zone number and hemisphere (pyproj, with a series
+fall-back):
+
+| Function | Description |
+|----------|-------------|
+| `utm_zone_from_latlon(lat, lon, override=None)` | `(zone, northern)` of one point |
+| `latlon_to_utm_zn(lat, lon, zone, northern)` | WGS84 → easting, northing [m] in the given zone (any longitude; outside the zone it is "extended" UTM) |
+| `utm_to_latlon_zn(E, N, zone, northern)` | the inverse |
+| `utm_common_zone(lats, lons, override=None)` | One `(zone, northern)` for a whole survey: zone of the mean position (longitudes unwrapped, so the antimeridian is handled). Use it when sites lie on both sides of a zone boundary (2026-11-20) |
+| `utm_central_meridian(zone)` | Central meridian of a zone [deg E] (2026-11-20) |
+| `utm_scale_factor(lat, lon, zone)` | Approximate grid scale factor k, to judge how much a site far from the central meridian is distorted (2026-11-20) |
+
+PROJ's `utm` (default Poder/Engsager algorithm) stays accurate far from the
+central meridian.  The series fall-back used when the pyproj call fails is good
+to about 1 cm up to 6 deg and about 0.2 m up to 9 deg from the central
+meridian (0-47 deg latitude).
+
 ---
 
 ## File and string utilities
@@ -344,3 +361,4 @@ Modified: 2026-04-02 — added petrophysical models section (merged from resisti
 Modified: 2026-05-25 — moved numerical utilities (KL divergence, L-curve, DCT, residual norms) to `inverse.py`; removed shims; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-07-27 — `utm_zone_from_latlon`: raises a clear, actionable `ValueError` when `lat`/`lon` are `None` (or non-numeric) instead of an opaque `TypeError` from `float(None)`; also validates that a real `lat` is still supplied when `override` is given (needed for the hemisphere sign). No change to normal-case behavior. Claude Sonnet 5 (Anthropic)
 Modified: 2026-10-28 -- `write_param_summary(fname, namespace=None, out_path=None, out_dir=None)`: new `out_dir` argument. The per-script `<script>_summary.md` is written to `out_dir` (created if missing) -- the scripts pass their own working directory (`WORK_DIR`, `ENSEMBLE_DIR`, ...) -- instead of next to the script; without `out_dir`, or if it cannot be written, the old location (script directory) is used; `out_path` still overrides both. Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
+Modified: 2026-11-20 -- new `utm_common_zone()`, `utm_central_meridian()`, `utm_scale_factor()` (one UTM zone for a survey that crosses a zone boundary; used by `mt_make_sitelist.py`); tests in `scripts/general/test_utm_common_zone.py`. Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use

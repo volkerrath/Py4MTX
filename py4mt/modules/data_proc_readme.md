@@ -19,6 +19,11 @@ magnetotelluric (MT) transfer functions.
 - **Processing helpers** — error estimation, interpolation, rotation, and
   manual error setting (`estimate_errors`, `interpolate_data`, `rotate_data`,
   `set_errors`)
+- **One preset frequency grid for a whole survey** — `make_freq_grid`,
+  `common_freq_grid`, `freq_grid_coverage`; each site gets the part of the grid
+  that its band covers, optional extrapolation just outside the band
+- **FT-convention detection** — `detect_ft_convention`,
+  `scan_edi_header_convention`, `load_edi(manufacturer="auto")`
 - **1-D forward modelling** — `mt1dfwd` and `wait1d` for layered-Earth
   impedance calculations
 - **Site-list I/O** — parse FEMTIC sitelist CSV produced by
@@ -49,8 +54,9 @@ Common keys:
 | `err_kind` | `str` | `"var"` or `"std"` |
 | `freq_order` | `str` | `"inc"`, `"dec"`, or `"keep"` — order used when loading |
 | `Z_units` | `str` | Always `"mV/km/nT"` (MT field units); `ρ_a = \|Z\|²×10⁶/(μ₀ω)` |
-| `manufacturer` | `str` | `"metronix"`, `"phoenix"`, or `"delta"` |
+| `manufacturer` | `str` | `"metronix"`, `"phoenix"`, `"delta"`, or `"auto"` |
 | `ft_convention` | `str` | `"e-iwt"` (standard) or `"e+iwt_corrected"` (Phoenix, after fix) |
+| `ft_detected`, `ft_detect_fraction`, `ft_detect_nvotes`, `ft_detect_source` | `str`, `float`, `int`, `str` | only with `manufacturer="auto"`: detected convention (`"e-iwt"`, `"e+iwt"`, `"undetermined"`), share of the votes, number of votes, and source (`"data"`, `"header"`, `"fallback:<manufacturer>"`) |
 
 Metadata (if present): `station`, `lat_deg`, `lon_deg`, `elev_m`, and
 convenience aliases `lat`, `lon`, `elev`.
@@ -61,7 +67,7 @@ All downstream modules treat this dict as the **site container**.
 
 ## Reading / writing EDI
 
-### `load_edi(path, prefer_spectra=True, freq_order='inc', manufacturer='metronix', ...)`
+### `load_edi(path, prefer_spectra=True, freq_order='inc', manufacturer='metronix', auto_fallback='metronix', ft_detect_pars=None, ...)`
 
 Supports Phoenix/SPECTRA EDIs (reconstructed Z/T from `>SPECTRA` blocks) and
 classical table EDIs (`>ZXXR`, `>ZXYI`, …).
@@ -83,6 +89,7 @@ controls the FT sign-convention correction applied on load:
 | `'metronix'` | e⁻ⁱωᵗ (standard) | None |
 | `'delta'` | e⁻ⁱωᵗ (standard) | None |
 | `'phoenix'` | e⁺ⁱωᵗ | `Im(Z)` and `Im(T)` negated (conjugation) |
+| `'auto'` | detected per file | negated only if the file is found to be e⁺ⁱωᵗ (see below) |
 
 After loading, **all returned dicts are in the standard e⁻ⁱωᵗ convention**
 regardless of manufacturer.  The keys `"manufacturer"` and `"ft_convention"`
@@ -96,6 +103,11 @@ site = data_proc.load_edi("SITE.edi")
 site = data_proc.load_edi("SITE_PHX.edi", manufacturer="phoenix")
 print(site["ft_convention"])   # "e+iwt_corrected"
 
+# Writer unknown (many processing codes do not put the manufacturer into
+# the EDI): detect the convention from the data
+site = data_proc.load_edi("SITE_UNKNOWN.edi", manufacturer="auto")
+print(site["ft_detected"], site["ft_detect_fraction"], site["ft_detect_source"])
+
 # Descending frequency (ascending period)
 site = data_proc.load_edi("SITE.edi", freq_order="dec")
 
@@ -103,9 +115,63 @@ site = data_proc.load_edi("SITE.edi", freq_order="dec")
 site = data_proc.load_edi("SITE.edi", freq_order="keep")
 ```
 
-### `save_edi(edi, path, ...)`
+### FT-convention detection (`detect_ft_convention`, `scan_edi_header_convention`)
 
-Writes a classical table-style EDI from an in-memory dict.  The `>FREQ` line
+An EDI does not say whether its Z and T are e⁻ⁱωᵗ or e⁺ⁱωᵗ, and not every
+processing code writes its manufacturer into the file.  The two conventions
+are complex conjugates, and they can be told apart from the data (x = north,
+y = east, z = down): for a layered, 2-D or 3-D Earth the phase of the
+off-diagonal impedances lies in the 1st/3rd quadrant for e⁺ⁱωᵗ
+(`Zxy` = +45° over a half-space) and in the 4th/2nd quadrant for e⁻ⁱωᵗ
+(`Zxy` = −45°).
+
+`detect_ft_convention(data, *, header=None, margin_deg=5, min_votes=6,
+decisive=0.75)` counts, per frequency, the sign of `sin(arg Zdet)`
+(rotation-invariant), `sin(2 arg Zxy)` and `sin(2 arg Zyx)`.  A reversed
+sensor polarity (phase + 180°) or exchanged x/y axes do not change these signs.
+Points within `margin_deg` of a quadrant boundary are ignored.  The decision
+is taken from the Zdet votes (≥ `min_votes` and a share of ≥ `decisive`),
+else from the pooled Zxy/Zyx votes (twice as many needed), else from an
+explicit `exp(±iwt)` tag in the header, else the result is `None`
+(inconclusive).  If the data and a header tag disagree the data win
+(`agree=False`).
+
+`scan_edi_header_convention(text)` looks for such an explicit tag
+(`exp(-iwt)`, `exp(+i*omega*t)`, `e^{-iwt}`, `e-iwt`, …), a manufacturer
+fingerprint (informative only) and the `PROGVERS` string.  Files written by
+`save_edi` carry such a tag (below).
+
+```python
+r = data_proc.detect_ft_convention(site)         # site["Z"] as read, before any correction
+print(r["convention"], r["fraction"], r["n_votes"], r["reason"])
+```
+
+Limits: not reliable if most phases are outside 0–90° (strong current
+channelling, wrong polarity of one channel only) or with very few
+frequencies — check `fraction`; inconclusive results fall back to
+`auto_fallback` in `load_edi` with a `UserWarning`.  Tested on synthetic data
+(layered Earth, rotated 0–137°, noise up to 20 %): never wrong, inconclusive
+only above ~40 % noise.
+
+### `save_edi(edi, path, ..., write_convention=True)`
+
+Writes a classical table-style EDI from an in-memory dict.
+
+**Invalid data** — every NaN, ±inf or |value| ≥ 1e32 is written as
+`1.000000E+32`; the `>HEAD` block says `EMPTY=1.0E32`; `load_edi` treats
+everything above `invalid_sentinel` (1e30) as invalid.  Two cases to know:
+with `drop_invalid_periods=True` (the default) a frequency with an invalid
+value in a component that is otherwise valid is dropped on loading, so it never
+reaches the output file; a component that is invalid at *all* frequencies
+(e.g. both diagonals) is set to 0 on loading, so it is written as `0.0` with
+variance `0.0`, not as 1e32.  With `drop_invalid_periods=False` the 1e32
+markers are kept.
+
+**FT convention** — with `write_convention=True` (default) an `>INFO` line
+`Fourier convention of Z and T: exp(-iwt); Z in mV/km/nT; invalid values: 1.0E32`
+is written when `edi["ft_convention"]` is known (`"e-iwt"` and
+`"e+iwt_corrected"` give `exp(-iwt)`, `"e+iwt"` gives `exp(+iwt)`), so that the
+file can be recognised later by `scan_edi_header_convention`.  The `>FREQ` line
 includes `NFREQ=`, `ORDER=`, and a count comment matching the format of the
 input EDI, e.g.:
 
@@ -393,27 +459,92 @@ site = data_proc.set_errors(site, mode="floor",
 
 ---
 
-## Interpolation
+## Interpolation and common frequency grids
 
-### `interpolate_data(edi_dict, *, newfreqs, freq_per_dec, interp_method)`
+Inversions that are parallelised per frequency need the sites on **the same
+frequencies**.  Preset one grid for the survey and give it to every site; each
+site is written on the part of the grid that its own band covers:
 
-Resamples all arrays (Z, T, P, errors, rot) onto a new frequency grid using
-spline interpolation in log-frequency space.
+```python
+grid = data_proc.common_freq_grid(sites, freq_per_dec=6)          # band of the whole survey
+sites = [data_proc.interpolate_data(d, newfreqs=grid) for d in sites]
+# with a margin of 1/6 decade for extrapolation just outside a site's band:
+sites = [data_proc.interpolate_data(d, newfreqs=grid, extrap_decades=1/6) for d in sites]
+```
+
+Every frequency of every site is then a member of the grid, sites with the same
+band get the same frequencies, and a site with a short band has fewer
+frequencies (no data are made up outside its band, except within
+`extrap_decades`).  FEMTIC's `observe.dat` keeps its own frequency list per
+station, so this is what `edi_list_to_observe_dat` writes.
+
+### `make_freq_grid(freq_per_dec, fmin, fmax, *, anchor=1.0, rtol=1e-3, order="inc")`
+
+Grid points `f_k = anchor * 10**(k / freq_per_dec)` with **integer k**, those in
+`[fmin, fmax]` (a point within `rtol` outside is kept).  A grid point does not
+depend on the band, so grids of different sites are subsets of one grid, and
+with `anchor = 1` the decades (..., 0.1, 1, 10, ...) are always members.
+
+### `common_freq_grid(freqs, freq_per_dec, *, freq_range="survey", anchor=1.0, rtol=1e-3, order="inc", extrap_decades=0.0, names=None, verbose=True)`
+
+`freqs`: one frequency array (or site dict) per site.
+
+| `freq_range` | Grid band |
+|--------------|-----------|
+| `"survey"` (default) | lowest minimum to highest maximum of all sites: no site limits the grid, sites with a shorter band get a subset |
+| `"common"` | only the band that **all** sites cover (highest minimum to lowest maximum): every site has every frequency; `ValueError` if there is none |
+| `(fmin, fmax)` | explicit band [Hz]: the preset grid |
+
+With `verbose=True` it prints the grid, the band of the survey, how many sites
+cover the whole grid, and the sites that get only part of it (number of points,
+band, number extrapolated); a site without any grid frequency is flagged.
+`extrap_decades` only changes this report.
+
+### `freq_grid_coverage(grid, freqs, *, extrap_decades=0.0, rtol=1e-3, names=None)`
+
+Which grid frequencies does each site get?  Returns a dict with the boolean
+arrays `keep` and `extrapolated` (nsite, ngrid), the counts `n_keep`,
+`n_extrap`, and the bands `fmin`, `fmax`.  The selection is the one made by
+`interpolate_data`, so it can be used to plan or check an inversion (which
+frequency has how many sites).
+
+### `interpolate_data(edi_dict, *, newfreqs, freq_per_dec, interp_method, anchor, rtol, extrap_decades, outside)`
+
+Resamples Z, T, P, errors and rot onto the new frequencies in log-frequency.
 
 | Parameter | Description |
 |-----------|-------------|
-| `newfreqs` | Explicit target frequency array [Hz]; takes priority |
-| `freq_per_dec` | Frequencies per decade for a log-spaced grid over the data range |
-| `interp_method` | `"gcvspline"` or `"linear"` (default); passed to `make_spline` |
+| `newfreqs` | The preset grid [Hz]; the site gets those of its frequencies that its band covers, in the order given; takes priority over `freq_per_dec` |
+| `freq_per_dec` | Points per decade on the absolute-decade grid (`make_freq_grid`) inside this site's own band; use `common_freq_grid` + `newfreqs` for a survey |
+| `anchor`, `rtol` | As in `make_freq_grid` |
+| `extrap_decades` | Default `0.0`.  Grid frequencies up to this far **outside** the band are kept and extrapolated (`1/x` for "less than 1/x of a decade") |
+| `outside` | `"clip"` (default): grid frequencies beyond band + `extrap_decades` are left out; `"raise"`: `ValueError`.  If nothing is left, `ValueError` in both cases |
+| `interp_method` | currently ignored (Z, T, P, rot: GCV smoothing spline) |
 
-```python
-# In script — passed as **interp_pars
-interp_pars = {
-    "freq_per_dec":  6,
-    "interp_method": "gcvspline",
-}
-data_dict = data_proc.interpolate_data(data_dict, **interp_pars)
-```
+The result has the new boolean key `extrapolated` (one flag per frequency).
+
+**Extrapolation**: Z, T, P and rot continue as a straight line in log f, using
+the value and slope of the smoothing spline at the edge of the band (a
+cubic would run away); the error arrays keep their value at the edge.  Extrapolated
+values are guesses carrying the error of the last measured frequency: keep the
+margin small (about one grid step), and inflate their errors using the flag if
+the inversion should not trust them.  Gaps *inside* a band are bridged by the
+spline.
+
+Changes of 2026-11-20:
+
+- `freq_per_dec` used to give a `linspace` from the site's own lowest to highest
+  frequency, i.e. different frequencies at every site.
+- Target frequencies outside the band were first refused (`allow_extrapolation`,
+  removed the same day) and are now clipped or extrapolated as described above.
+- The `freq_order` tag now matches the new array (the old code left `"dec"`
+  with an ascending array); `freq_per_dec` grids follow the stored order.
+- Error arrays (`Z_err`, `T_err`, `P_err`) are interpolated **linearly in
+  log-frequency**: the spline made variances negative (down to -10 in a noisy
+  test), which gave NaN in every later error propagation.
+- Derived per-frequency keys (`Zdet`, `Zssq`, `Zavg`, `rho`, `phi`, their
+  errors, `dplus`) are removed because they refer to the old grid; compute them
+  after the interpolation (as `mt_data_processor.py` does now).
 
 ---
 
@@ -482,7 +613,11 @@ the complex entries.
 Parses a comma-separated FEMTIC sitelist produced by `mt_make_sitelist.py`
 with `WHAT_FOR="femtic"`.
 
-**Column order** (no header line; `#` = comment):
+**Column order** (no column header; lines starting with `#` are skipped.
+Since 2026-11-20 the list starts with two `#` lines naming the UTM zone,
+e.g. `# utm_zone=33 hemisphere=N mode=common central_meridian=15.0`; all
+`easting`/`northing` are in that one zone, also if the sites lie on both sides
+of a zone boundary, see `mt_make_sitelist_readme.md`):
 
 ```
 name, lat, lon, elev, sitenum, easting, northing
@@ -593,3 +728,6 @@ Modified: 2026-03-25 — manufacturer parameter in load_edi (phoenix/metronix/de
 Modified: 2026-04-27 — estimate_errors section rewritten: spline_residual, spline_residual_smoothed, and mad methods; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-05-23 — added read_sitelist(): parse FEMTIC sitelist CSV (name,lat,lon,elev,sitenum,easting,northing) with optional name filter; raw values only, no CRS conversion; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-09-07 — added make_collection(): build a station-dict collection directly from a directory of EDI files (load_edi + optional FT correction + Zdet/Zssq/Zavg invariants), returned in-memory and optionally saved via save_list_of_dicts_npz() as the COLL_FILE consumed by mt_get_averages.py; Claude Sonnet 5 (Anthropic)
+Modified: 2026-11-20 -- common frequency grids (make_freq_grid, common_freq_grid; interpolate_data anchored grid, anchor/rtol, freq_order tag, linear interpolation of the error arrays, derived keys removed); FT-convention detection (detect_ft_convention, scan_edi_header_convention, load_edi manufacturer="auto", auto_fallback, ft_detect_pars, keys ft_detected / ft_detect_fraction / ft_detect_nvotes / ft_detect_source); save_edi write_convention (>INFO line) and documentation of the invalid-value marker; Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+Modified: 2026-11-20 (b) -- one preset survey grid, each site on the part its band covers: common_freq_grid freq_range "survey" (default) / "common" / (fmin, fmax) with a coverage report; new freq_grid_coverage; interpolate_data clips (outside="clip") or raises, extrap_decades (1/x decade) extrapolates just outside the band, new key "extrapolated"; allow_extrapolation removed; Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+Modified: 2026-11-20 (c) -- `read_sitelist()` docs: one UTM zone for all sites of a list (also across zone boundaries), zone named in the `# utm_zone=...` comment line, which is skipped; Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use

@@ -75,8 +75,13 @@ A typical dictionary returned by :func:`load_edi` looks like::
         "err_kind": "var" or "std",
         "freq_order": "inc", "dec", or "keep",
         "Z_units": "mV/km/nT",            # always; rho_a formula uses 1e6/(mu0*omega)
-        "manufacturer": "metronix",        # or "phoenix" / "delta"
+        "manufacturer": "metronix",        # or "phoenix" / "delta" / "auto"
         "ft_convention": "e-iwt",          # "e+iwt_corrected" after Phoenix fix
+        # only with manufacturer="auto" (see detect_ft_convention):
+        "ft_detected": "e-iwt",            # "e-iwt" / "e+iwt" / "undetermined"
+        "ft_detect_fraction": 1.0,         # share of the votes for that result
+        "ft_detect_nvotes": 18,            # number of votes counted
+        "ft_detect_source": "data",        # "data" / "header" / "fallback:<manufacturer>"
         "source_kind": "spectra" or "tables",
         "station": str or None,
         "lat_deg": float or None,
@@ -107,6 +112,9 @@ Modified: 2026-05-23 — added read_sitelist(): parse FEMTIC sitelist CSV (name,
 Modified: 2026-06-12 — absorbed correct_ft_convention() from mt_ft_convention.py into processing helpers; no public API change; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-06-13 — added compute_zavg(): off-diagonal geometric-mean invariant sqrt(Zxy*Zyx); same signature/error-propagation pattern as compute_zdet/compute_zssq; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-09-07 — added make_collection(): build a station-dict collection directly from a directory of EDI files (load_edi + optional FT correction + Zdet/Zssq/Zavg invariants), returned in-memory and optionally saved via save_list_of_dicts_npz() as the COLL_FILE consumed by mt_get_averages.py; Claude Sonnet 5 (Anthropic)
+Modified: 2026-11-20 -- (1) common frequency grids: new make_freq_grid() and common_freq_grid(); interpolate_data(freq_per_dec=...) now builds a grid anchored on absolute decades (f = anchor * 10**(k/freq_per_dec), k integer) instead of a linspace between the site's own min and max, so every site gets frequencies from the same grid; new keywords anchor, rtol, allow_extrapolation (target frequencies outside the data band now raise ValueError unless allowed); output order follows freq_order and the freq_order tag is updated (it was left at "dec" with an ascending array); derived per-frequency keys (Zdet, Zssq, Zavg, rho, phi, ..., dplus) are removed because they refer to the old grid; the error arrays (Z_err, T_err, P_err) are interpolated linearly in log-frequency instead of with the smoothing spline, which produced negative variances (down to -10 in a noisy test case). (2) FT-convention detection: new detect_ft_convention() (sign of the phase quadrant of Zdet, Zxy, Zyx; optional explicit exp(+-iwt) tag in the header via scan_edi_header_convention()); load_edi(manufacturer="auto") uses it per station, keywords auto_fallback and ft_detect_pars; new keys ft_detected, ft_detect_fraction, ft_detect_nvotes, ft_detect_source. (3) save_edi writes an >INFO line with the FT convention of the stored data and the invalid-value marker (write_convention=True) so that the file is self-describing. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+Modified: 2026-11-20 (b) -- grids per site from one preset survey grid: common_freq_grid() default freq_range="survey" (band of the whole survey; "common" = intersection as before; or (fmin, fmax)) with a report of the sites that get only part of the grid; new freq_grid_coverage(); interpolate_data() keeps the target frequencies that the site's band covers and leaves out the others (outside="clip", or "raise"), new keyword extrap_decades (1/x decade) keeps and extrapolates target frequencies just outside the band (straight line in log f from the spline value and slope at the band edge; errors keep the edge value), new boolean key "extrapolated"; keyword allow_extrapolation removed (it was introduced the same day). Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+Modified: 2026-11-20 (c) -- read_sitelist(): docstring only; the easting/northing of a list written by mt_make_sitelist.py are in ONE UTM zone for all sites (UTM_ZONE_MODE 'common', also across zone boundaries), named in the '# utm_zone=...' comment line at the top of the list, which the reader skips; Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
 """
 
 from __future__ import annotations
@@ -116,6 +124,7 @@ import sys
 import os
 import json
 import inspect
+import warnings
 
 from datetime import date
 from pathlib import Path
@@ -196,8 +205,14 @@ def read_sitelist(path: str | Path,
 
     where *lat*/*lon* are WGS-84 decimal degrees, *elev* is elevation [m],
     *sitenum* is the 0-based site index written by the script, and
-    *easting*/*northing* are UTM metres in the zone derived at list-generation
-    time (auto or ``UTM_ZONE_OVERRIDE``).
+    *easting*/*northing* are UTM metres in ONE zone for all sites (since
+    2026-11-20, ``UTM_ZONE_MODE = "common"`` of mt_make_sitelist.py: sites on
+    the other side of a zone boundary are projected into the same zone).  The
+    zone is given in a comment line at the top of the list, e.g.
+    ``# utm_zone=33 hemisphere=N mode=common central_meridian=15.0``, which
+    this reader skips.  A list written with ``UTM_ZONE_MODE = "per_site"`` has
+    ``# utm_zone=per_site zones=32N/33N ...`` and mixes grids if the sites lie
+    in different zones.
 
     Parameters
     ----------
@@ -699,6 +714,8 @@ def load_edi(
     invalid_sentinel: float = 1.0e30,
     freq_order: str = "inc",
     manufacturer: str = "metronix",
+    auto_fallback: str = "metronix",
+    ft_detect_pars: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Load an EDI file into a dictionary.
 
@@ -730,7 +747,7 @@ def load_edi(
         - ``"dec"``  — descending frequency (i.e. ascending period).
         - ``"keep"`` — preserve the order as found in the EDI file.
 
-    manufacturer : {"metronix", "phoenix", "delta"}, optional
+    manufacturer : {"metronix", "phoenix", "delta", "auto"}, optional
         Instrument manufacturer.  Default is ``"metronix"``.
 
         MT processing software uses different Fourier-transform sign
@@ -745,9 +762,25 @@ def load_edi(
           the standard (e⁻ⁱωᵗ) convention.
         - ``"delta"`` — treated identically to ``"metronix"`` (no
           correction).
+        - ``"auto"`` - for EDIs whose writer is not known (many processing
+          codes do not put the manufacturer into the file): the convention
+          is detected per station from the data with
+          :func:`detect_ft_convention` (and an explicit ``exp(+-iwt)`` tag in
+          the file, if there is one), and Z and T are conjugated if the file
+          is exp(+iwt).  If the detection is inconclusive, *auto_fallback* is
+          used and a :class:`UserWarning` is issued.
 
         The applied correction is recorded in ``edi["ft_convention"]``
-        (``"e-iwt"`` or ``"e+iwt_corrected"``).
+        (``"e-iwt"`` or ``"e+iwt_corrected"``).  With ``"auto"`` the keys
+        ``ft_detected``, ``ft_detect_fraction``, ``ft_detect_nvotes`` and
+        ``ft_detect_source`` document how the decision was made.
+    auto_fallback : {"metronix", "phoenix", "delta"}, optional
+        Manufacturer (i.e. convention) assumed when ``manufacturer="auto"``
+        and the detection is inconclusive.  Default ``"metronix"`` (no
+        correction).
+    ft_detect_pars : dict or None, optional
+        Keyword arguments for :func:`detect_ft_convention` (``margin_deg``,
+        ``min_votes``, ``decisive``) when ``manufacturer="auto"``.
 
     Returns
     -------
@@ -755,12 +788,18 @@ def load_edi(
         Site dictionary; see the module docstring for the full layout.
         Additional key ``"manufacturer"`` (str) records the value passed in.
     """
-    _valid_manufacturers = {"metronix", "phoenix", "delta"}
+    _valid_manufacturers = {"metronix", "phoenix", "delta", "auto"}
     manufacturer = manufacturer.lower()
     if manufacturer not in _valid_manufacturers:
         raise ValueError(
             f"Unknown manufacturer {manufacturer!r}; "
             f"expected one of {sorted(_valid_manufacturers)}."
+        )
+    auto_fallback = str(auto_fallback).lower()
+    if auto_fallback not in {"metronix", "phoenix", "delta"}:
+        raise ValueError(
+            f"Unknown auto_fallback {auto_fallback!r}; "
+            f"expected 'metronix', 'phoenix' or 'delta'."
         )
     if err_kind not in {"var", "std"}:
         raise ValueError(f"Unknown err_kind {err_kind!r}; expected 'var' or 'std'.")
@@ -937,7 +976,41 @@ def load_edi(
     # functions relative to the standard geophysical e^{-iωt} convention.
     # Negate Im(Z) and Im(T) so that the returned arrays are always in the
     # standard convention regardless of manufacturer.
-    if manufacturer == "phoenix":
+    # manufacturer="auto": decide from the data (and an explicit header tag).
+    ft_info: Dict[str, Any] = {}
+    if manufacturer == "auto":
+        _det = detect_ft_convention({"Z": Z}, header=text, **(ft_detect_pars or {}))
+        _conv = _det["convention"]
+        _src = _det["source"]
+        if _conv is None:
+            _conv = "e+iwt" if auto_fallback == "phoenix" else "e-iwt"
+            _src = "fallback:" + auto_fallback
+            warnings.warn(
+                f"load_edi: FT convention of {Path(path).name} could not be "
+                f"detected ({_det['reason']}); assuming {_conv} "
+                f"(auto_fallback={auto_fallback!r}).",
+                UserWarning,
+                stacklevel=2,
+            )
+        if _det["agree"] is False:
+            warnings.warn(
+                f"load_edi: {Path(path).name}: the header says "
+                f"{_det['header_convention']} but the data say "
+                f"{_det['data_convention']}; the data are used.",
+                UserWarning,
+                stacklevel=2,
+            )
+        flip = _conv == "e+iwt"
+        ft_info = {
+            "ft_detected": _det["convention"] or "undetermined",
+            "ft_detect_fraction": float(_det["fraction"]),
+            "ft_detect_nvotes": int(_det["n_votes"]),
+            "ft_detect_source": _src,
+        }
+    else:
+        flip = manufacturer == "phoenix"
+
+    if flip:
         Z = Z.conj()
         if T is not None:
             T = T.conj()
@@ -974,6 +1047,7 @@ def load_edi(
 
     # Keep full meta dict too (for forward compatibility)
     edi.update(meta)
+    edi.update(ft_info)
 
     return edi
 
@@ -1054,6 +1128,269 @@ def correct_ft_convention(
         data_dict["T"] = np.conj(T)
 
     data_dict["ft_convention"] = to_convention
+
+
+# ---------------------------------------------------------------------------
+# FT sign-convention detection
+# ---------------------------------------------------------------------------
+#
+# Physics behind the data test (x = north, y = east, z = down):
+#
+#   time dependence exp(-iwt):  Zxy = |Z| exp(-i*pi/4),  Zyx = -Zxy   (1-D Earth)
+#   time dependence exp(+iwt):  Zxy = |Z| exp(+i*pi/4),  Zyx = -Zxy
+#
+# so for layered / 2-D / 3-D Earths with the usual phases between 0 and 90 deg
+# the sign of sin(2*phi) of an off-diagonal element, phi = arg(Zij), is -1 for
+# exp(-iwt) and +1 for exp(+iwt).  The sign is not changed by a reversal of
+# the polarity of a sensor (phi -> phi + pi) or by an exchange of the x and y
+# axes, which are the usual ways in which EDIs differ.  The determinant
+# Zdet = Zxx*Zyy - Zxy*Zyx is invariant against rotation of the axes and has
+# the phase ~ phi_xy + phi_yx (0..180 deg for exp(+iwt), -180..0 for exp(-iwt)),
+# so the sign of Im(Zdet) is the most robust single indicator.
+
+_EXPLICIT_FT_PATTERNS = (
+    # exp(-iwt), exp(+i*omega*t), exp{-i w t}, exp(- i \omega t)
+    re.compile(r"exp\s*[\(\{]?\s*([+\-\u2212])\s*[ij]\s*\*?\s*"
+               r"(?:\\omega|omega|\u03c9|w)\s*\*?\s*t", re.IGNORECASE),
+    # e^(-iwt), e^-iwt, e^{+i w t}
+    re.compile(r"\be\s*\^\s*[\(\{]?\s*([+\-\u2212])\s*[ij]\s*\*?\s*"
+               r"(?:\\omega|omega|\u03c9|w)\s*\*?\s*t", re.IGNORECASE),
+    # e-iwt, e+iwt
+    re.compile(r"\be\s*([+\-\u2212])\s*[ij]\s*\*?\s*"
+               r"(?:\\omega|omega|\u03c9|w)\s*\*?\s*t", re.IGNORECASE),
+)
+
+_MANUFACTURER_FINGERPRINTS = (
+    ("phoenix", ("phoenix", "ssmt2000", "mtutools", "mtu-5", "mtu5")),
+    ("metronix", ("metronix", "adu-0", "adu0", "mapros")),
+)
+
+
+def scan_edi_header_convention(text: str | List[str]) -> Dict[str, Any]:
+    """Look for an explicit FT sign-convention tag in the text of an EDI file.
+
+    Matches ``exp(-iwt)``, ``exp(+i*omega*t)``, ``e^{-iwt}``, ``e-iwt`` and
+    similar spellings (case-insensitive) in every non-numeric line of the
+    file.  Also reports a manufacturer fingerprint and the ``PROGVERS`` string
+    if there are any.  This is only a *hint*: many EDIs carry no such tag,
+    and a tag can be wrong; the data test of :func:`detect_ft_convention`
+    decides.
+
+    Parameters
+    ----------
+    text : str or list of str
+        Text of the EDI file (or its lines).
+
+    Returns
+    -------
+    dict
+        ``convention`` (``"e-iwt"``, ``"e+iwt"`` or ``None``), ``line`` (the
+        line that matched, or ``None``), ``manufacturer_hint`` (``"phoenix"``,
+        ``"metronix"`` or ``None``; informative only) and ``program`` (the
+        ``PROGVERS`` value or ``None``).
+    """
+    lines = text.splitlines() if isinstance(text, str) else list(text)
+    conv: Optional[str] = None
+    hit: Optional[str] = None
+    program: Optional[str] = None
+    low_parts: List[str] = []
+    for ln in lines:
+        s = ln.strip()
+        if not s:
+            continue
+        if s[0] in "0123456789+-.":      # numeric data line
+            continue
+        low_parts.append(s.lower())
+        if program is None:
+            m = re.search(r'PROGVERS\s*=\s*"?([^"\n]*)', s, re.IGNORECASE)
+            if m:
+                program = m.group(1).strip() or None
+        if conv is None:
+            for pat in _EXPLICIT_FT_PATTERNS:
+                m = pat.search(s)
+                if m:
+                    conv = "e-iwt" if m.group(1) in ("-", "\u2212") else "e+iwt"
+                    hit = s
+                    break
+    low = "\n".join(low_parts)
+    hint: Optional[str] = None
+    for name, keys in _MANUFACTURER_FINGERPRINTS:
+        if any(k in low for k in keys):
+            hint = name
+            break
+    return {"convention": conv, "line": hit,
+            "manufacturer_hint": hint, "program": program}
+
+
+def _ft_votes(sin_arg: np.ndarray, ok: np.ndarray, thr: float) -> Tuple[int, int]:
+    """Count (n_plus, n_minus) signs of *sin_arg* where *ok* and |sin_arg| > thr."""
+    s = sin_arg[ok & (np.abs(sin_arg) > thr)]
+    return int((s > 0).sum()), int((s < 0).sum())
+
+
+def detect_ft_convention(
+    data: Any,
+    *,
+    header: str | List[str] | None = None,
+    margin_deg: float = 5.0,
+    min_votes: int = 6,
+    decisive: float = 0.75,
+    invalid_sentinel: float = 1.0e30,
+) -> Dict[str, Any]:
+    """Detect the Fourier-transform sign convention (exp(-iwt) / exp(+iwt)).
+
+    EDI files do not state which convention they use, and processing codes
+    differ.  The two conventions are related by complex conjugation of Z (and
+    T), and can be told apart from the *data*: with x = north, y = east,
+    z = down, the phase of the off-diagonal impedances of a layered, 2-D or
+    3-D Earth lies in the first/third quadrant for exp(+iwt) and in the
+    fourth/second quadrant for exp(-iwt) (1-D: ``Zxy`` at +45 / -45 deg).
+
+    The test counts, per frequency, the sign of
+
+    - ``sin(arg(Zdet))`` (Zdet = Zxx*Zyy - Zxy*Zyx; rotation invariant),
+    - ``sin(2*arg(Zxy))`` and ``sin(2*arg(Zyx))``
+
+    (+1 = exp(+iwt), -1 = exp(-iwt)).  Points whose phase is within
+    *margin_deg* of a quadrant boundary are ignored, because noise can flip
+    their sign.  The result is taken from the Zdet votes if at least
+    *min_votes* are left and one convention has at least the fraction
+    *decisive* of them; otherwise from the pooled Zxy/Zyx votes under the same
+    rule; otherwise from an explicit ``exp(+-iwt)`` tag in *header* (if given
+    and found); otherwise the result is ``None`` (inconclusive).  If the data
+    decide and the header says the opposite, the data win and ``agree`` is
+    False.
+
+    Not reliable for: data in which most phases are outside 0..90 deg (strong
+    current channelling, static-shift-like phase excursions, wrong sensor
+    polarity of one component only), or very few frequencies.  Check the
+    ``fraction`` of the result.
+
+    Parameters
+    ----------
+    data : dict or ndarray
+        Site dictionary with key ``"Z"`` (n, 2, 2) complex, or the array.
+    header : str or list of str, optional
+        Text (or lines) of the EDI file, searched for an explicit tag with
+        :func:`scan_edi_header_convention`.
+    margin_deg : float, optional
+        Exclusion margin around the quadrant boundaries (degrees of phase).
+    min_votes : int, optional
+        Minimum number of votes (= usable frequencies) needed for a decision
+        from the data; twice as many for the pooled Zxy/Zyx votes.
+    decisive : float, optional
+        Fraction (0.5 .. 1) of the votes the winning convention needs.
+    invalid_sentinel : float, optional
+        Values with a larger magnitude are ignored.
+
+    Returns
+    -------
+    dict
+        ``convention`` ("e-iwt", "e+iwt" or None), ``source`` ("data",
+        "header" or None), ``fraction`` (share of the deciding votes for the
+        result; nan if none), ``n_votes`` (size of the deciding set),
+        ``votes`` (dict ``{"det": (n_plus, n_minus), "xy": ..., "yx": ...}``,
+        plus = exp(+iwt)), ``data_convention`` (what the data alone say),
+        ``header_convention``, ``header_line``, ``manufacturer_hint``,
+        ``program``, ``agree`` (True/False if both data and header decide,
+        else None) and ``reason`` (text).
+    """
+    if not 0.5 < float(decisive) <= 1.0:
+        raise ValueError("detect_ft_convention: decisive must be in (0.5, 1].")
+
+    Z = np.asarray(data["Z"] if isinstance(data, Mapping) else data)
+    Z = np.asarray(Z, dtype=np.complex128)
+    if Z.ndim != 3 or Z.shape[1:] != (2, 2):
+        raise ValueError("detect_ft_convention: Z must have shape (n, 2, 2).")
+
+    thr = float(np.sin(np.radians(2.0 * float(margin_deg))))
+
+    def _ok(a: np.ndarray) -> np.ndarray:
+        return (np.isfinite(a.real) & np.isfinite(a.imag)
+                & (np.abs(a) > 0.0) & (np.abs(a) < invalid_sentinel))
+
+    votes: Dict[str, Tuple[int, int]] = {}
+    for name, (i, j) in (("xy", (0, 1)), ("yx", (1, 0))):
+        z = Z[:, i, j]
+        ok = _ok(z)
+        with np.errstate(invalid="ignore", divide="ignore"):
+            s = 2.0 * z.real * z.imag / np.abs(z) ** 2
+        votes[name] = _ft_votes(s, ok, thr)
+
+    zdet = Z[:, 0, 0] * Z[:, 1, 1] - Z[:, 0, 1] * Z[:, 1, 0]
+    ok = _ok(zdet)
+    for _i in range(2):                  # no sentinel / NaN in any component
+        for _j in range(2):
+            _z = Z[:, _i, _j]
+            ok &= (np.isfinite(_z.real) & np.isfinite(_z.imag)
+                   & (np.abs(_z) < invalid_sentinel))
+    with np.errstate(invalid="ignore", divide="ignore"):
+        s = zdet.imag / np.abs(zdet)
+    votes["det"] = _ft_votes(s, ok, thr)
+
+    def _decide(npl: int, nmi: int, need: int) -> Tuple[Optional[str], float, int]:
+        n = npl + nmi
+        if n < need:
+            return None, float("nan"), n
+        if npl >= nmi:
+            conv, frac = "e+iwt", npl / n
+        else:
+            conv, frac = "e-iwt", nmi / n
+        if frac >= float(decisive):
+            return conv, frac, n
+        return None, frac, n
+
+    # Zxy and Zyx vote at the same frequencies and are not independent, so the
+    # pooled off-diagonal set needs twice as many votes as the Zdet set.
+    c_det, f_det, n_det = _decide(*votes["det"], need=int(min_votes))
+    c_off, f_off, n_off = _decide(votes["xy"][0] + votes["yx"][0],
+                                  votes["xy"][1] + votes["yx"][1],
+                                  need=2 * int(min_votes))
+    if c_det is not None:
+        data_conv, frac, nv, basis = c_det, f_det, n_det, "Zdet"
+    elif c_off is not None:
+        data_conv, frac, nv, basis = c_off, f_off, n_off, "Zxy/Zyx"
+    else:
+        data_conv, frac, nv, basis = None, max(f_det, f_off, key=lambda v: -1 if v != v else v), max(n_det, n_off), ""
+
+    hdr = scan_edi_header_convention(header) if header is not None else {
+        "convention": None, "line": None, "manufacturer_hint": None, "program": None}
+    h_conv = hdr["convention"]
+
+    agree: Optional[bool] = None
+    if data_conv is not None and h_conv is not None:
+        agree = (data_conv == h_conv)
+
+    if data_conv is not None:
+        conv, source = data_conv, "data"
+        reason = (f"{basis}: {frac * 100:.0f}% of {nv} votes for {data_conv}"
+                  + ("" if agree is None else
+                     ("; header tag agrees" if agree else
+                      f"; header tag says {h_conv} (data used)")))
+    elif h_conv is not None:
+        conv, source, frac, nv = h_conv, "header", float("nan"), 0
+        reason = (f"data inconclusive ({n_det} Zdet / {n_off} Zxy-Zyx votes); "
+                  f"header tag: {hdr['line']!r}")
+    else:
+        conv, source = None, None
+        reason = (f"data inconclusive ({n_det} Zdet / {n_off} Zxy-Zyx votes, "
+                  f"need >= {int(min_votes)} / {2 * int(min_votes)} and "
+                  f"{decisive * 100:.0f}% agreement) and no header tag")
+
+    return {
+        "convention": conv,
+        "source": source,
+        "fraction": float(frac) if frac == frac else float("nan"),
+        "n_votes": int(nv),
+        "votes": votes,
+        "data_convention": data_conv,
+        "header_convention": h_conv,
+        "header_line": hdr["line"],
+        "manufacturer_hint": hdr["manufacturer_hint"],
+        "program": hdr["program"],
+        "agree": agree,
+        "reason": reason,
+    }
 
 
 def estimate_errors(edi_dict: Dict[str, Any], method: Dict[str, Any]) -> Dict[str, Any]:
@@ -1242,12 +1579,292 @@ def estimate_errors(edi_dict: Dict[str, Any], method: Dict[str, Any]) -> Dict[st
     return edi_new
 
 
+# ---------------------------------------------------------------------------
+# Frequency grids and interpolation
+# ---------------------------------------------------------------------------
+
+def make_freq_grid(
+    freq_per_dec: float,
+    fmin: float,
+    fmax: float,
+    *,
+    anchor: float = 1.0,
+    rtol: float = 1.0e-3,
+    order: str = "inc",
+) -> np.ndarray:
+    """Log-spaced frequency grid anchored on absolute decades.
+
+    The grid points are ``f_k = anchor * 10**(k / freq_per_dec)`` with integer
+    ``k``; those inside ``[fmin, fmax]`` are returned.  Because ``k`` is an
+    integer, the value of a grid point does not depend on *fmin*/*fmax*, so
+    grids made for different sites are subsets of one grid, and sites with the
+    same band get exactly the same frequencies (with ``anchor = 1`` the grid
+    contains ..., 0.1, 1, 10, 100, ... Hz).
+
+    Parameters
+    ----------
+    freq_per_dec : float
+        Points per decade (> 0; normally an integer).
+    fmin, fmax : float
+        Band limits [Hz], ``0 < fmin <= fmax``.
+    anchor : float, optional
+        Frequency [Hz] that is a grid point.  Default 1.0.
+    rtol : float, optional
+        Relative tolerance: a grid point within ``rtol`` (relative) outside the
+        band is kept (so that a site starting at 1.0004 Hz still gets the
+        1 Hz point).  Default 1e-3.
+    order : {"inc", "dec"}, optional
+        Order of the returned array.  Default ascending.
+
+    Returns
+    -------
+    numpy.ndarray
+        Frequencies [Hz]; possibly empty if the band holds no grid point.
+    """
+    fpd = float(freq_per_dec)
+    if not fpd > 0.0:
+        raise ValueError("make_freq_grid: freq_per_dec must be > 0.")
+    if not (fmin > 0.0 and fmax >= fmin and anchor > 0.0):
+        raise ValueError("make_freq_grid: need 0 < fmin <= fmax and anchor > 0.")
+    if str(order).lower() not in ("inc", "dec"):
+        raise ValueError("make_freq_grid: order must be 'inc' or 'dec'.")
+
+    dl = np.log10(1.0 + float(rtol))
+    lo = np.log10(fmin / anchor) - dl
+    hi = np.log10(fmax / anchor) + dl
+    k_lo = int(np.ceil(fpd * lo - 1.0e-9))
+    k_hi = int(np.floor(fpd * hi + 1.0e-9))
+    k = np.arange(k_lo, k_hi + 1, dtype=float)
+    grid = anchor * np.power(10.0, k / fpd)
+    return grid if str(order).lower() == "inc" else grid[::-1].copy()
+
+
+def _grid_cover(
+    new_logf: np.ndarray,
+    lf_min: float,
+    lf_max: float,
+    extrap_decades: float = 0.0,
+    rtol: float = 1.0e-3,
+):
+    """Which grid points (log10 f) does a data band [lf_min, lf_max] cover?
+
+    Returns ``(keep, extrapolated)``: *keep* are the points inside the band
+    (within *rtol*) or at most *extrap_decades* outside it; *extrapolated* are
+    the kept points that lie outside the band by more than *rtol*.
+    """
+    dl = np.log10(1.0 + float(rtol))
+    ed = max(float(extrap_decades), 0.0) + 1.0e-9
+    new_logf = np.asarray(new_logf, dtype=float)
+    keep = (new_logf >= lf_min - dl - ed) & (new_logf <= lf_max + dl + ed)
+    extrap = keep & ((new_logf < lf_min - dl) | (new_logf > lf_max + dl))
+    return keep, extrap
+
+
+def freq_grid_coverage(
+    grid: Any,
+    freqs: Any,
+    *,
+    extrap_decades: float = 0.0,
+    rtol: float = 1.0e-3,
+    names: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Which frequencies of a grid does each site get?
+
+    A site gets the grid frequencies inside its own band (within *rtol*), plus
+    those at most *extrap_decades* outside it (these are extrapolated, see
+    :func:`interpolate_data`).  This is exactly the selection made by
+    ``interpolate_data(site, newfreqs=grid, extrap_decades=...)``.
+
+    Parameters
+    ----------
+    grid : array-like
+        Frequency grid [Hz].
+    freqs : sequence
+        One entry per site: an array of frequencies [Hz] or a site dictionary
+        with key ``"freq"``.
+    extrap_decades : float, optional
+        Extrapolation margin in decades (``1/x`` for "less than 1/x of a
+        decade"); 0 = none.  Default 0.
+    rtol : float, optional
+        Relative tolerance at the band edges.  Default 1e-3.
+    names : list of str, optional
+        Site names for the output.
+
+    Returns
+    -------
+    dict
+        ``names`` (list), ``fmin``, ``fmax`` (nsite,), ``keep`` and
+        ``extrapolated`` (nsite, ngrid) boolean arrays, ``n_keep``,
+        ``n_extrap`` (nsite,), ``ngrid``.
+    """
+    g = np.asarray(grid, dtype=float).ravel()
+    lg = np.log10(g)
+    fmins, fmaxs, labels = [], [], []
+    for n, item in enumerate(freqs):
+        f = np.asarray(item["freq"] if isinstance(item, Mapping) else item,
+                       dtype=float).ravel()
+        f = f[np.isfinite(f) & (f > 0.0)]
+        if f.size == 0:
+            raise ValueError(f"freq_grid_coverage: site {n} has no valid frequency.")
+        fmins.append(float(f.min()))
+        fmaxs.append(float(f.max()))
+        if names is not None:
+            labels.append(str(names[n]))
+        elif isinstance(item, Mapping) and item.get("station"):
+            labels.append(str(item["station"]))
+        else:
+            labels.append(str(n))
+    keep = np.zeros((len(labels), g.size), dtype=bool)
+    ext = np.zeros_like(keep)
+    for n in range(len(labels)):
+        keep[n], ext[n] = _grid_cover(lg, np.log10(fmins[n]), np.log10(fmaxs[n]),
+                                      extrap_decades, rtol)
+    return {
+        "names": labels,
+        "fmin": np.asarray(fmins), "fmax": np.asarray(fmaxs),
+        "keep": keep, "extrapolated": ext,
+        "n_keep": keep.sum(axis=1), "n_extrap": ext.sum(axis=1),
+        "ngrid": int(g.size),
+    }
+
+
+def common_freq_grid(
+    freqs: Any,
+    freq_per_dec: float,
+    *,
+    freq_range: Any = "survey",
+    anchor: float = 1.0,
+    rtol: float = 1.0e-3,
+    order: str = "inc",
+    extrap_decades: float = 0.0,
+    names: Optional[List[str]] = None,
+    verbose: bool = True,
+) -> np.ndarray:
+    """One preset frequency grid for a whole set of sites.
+
+    Inversions that are parallelised per frequency need all sites on the same
+    frequencies.  This builds the grid (:func:`make_freq_grid`) once for the
+    survey; ``interpolate_data(site, newfreqs=grid)`` then gives each site the
+    part of the grid that its own band covers, so that every frequency of every
+    site is a member of this grid and all sites with the same frequency agree
+    on its value.
+
+    Parameters
+    ----------
+    freqs : sequence
+        One entry per site: an array of frequencies [Hz] or a site dictionary
+        with key ``"freq"``.
+    freq_per_dec : float
+        Points per decade.
+    freq_range : "survey", "common" or (fmin, fmax), optional
+        ``"survey"`` (default): the band of the whole survey (lowest minimum to
+        highest maximum), so that no site limits the grid; sites with a shorter
+        band get a subset.  ``"common"``: only the band that *all* sites cover
+        (highest minimum to lowest maximum), i.e. every site has every
+        frequency.  A tuple gives the band explicitly [Hz] (the preset grid).
+    anchor, rtol, order
+        See :func:`make_freq_grid`.
+    extrap_decades : float, optional
+        Used for the report only: grid frequencies at most this many decades
+        outside a site's band count as covered (see :func:`interpolate_data`).
+    names : list of str, optional
+        Site names (same length as *freqs*) for the messages; default
+        ``station`` of the dictionaries or the index.
+    verbose : bool, optional
+        Print the grid, the band of the survey, and which sites get only part
+        of the grid.  Default True.
+
+    Returns
+    -------
+    numpy.ndarray
+        The frequency grid [Hz].
+
+    Raises
+    ------
+    ValueError
+        For ``freq_range="common"`` if the sites have no common band; if the
+        band holds no grid point.
+    """
+    cov0 = freq_grid_coverage(np.array([1.0]), freqs, names=names)   # band of each site
+    fmins_a, fmaxs_a, labels = cov0["fmin"], cov0["fmax"], cov0["names"]
+    i_lo = int(np.argmax(fmins_a))      # site with the highest minimum
+    i_hi = int(np.argmin(fmaxs_a))      # site with the lowest maximum
+    i_min = int(np.argmin(fmins_a))     # site with the lowest minimum
+    i_max = int(np.argmax(fmaxs_a))     # site with the highest maximum
+
+    if isinstance(freq_range, str):
+        mode = freq_range.lower()
+        if mode == "survey":
+            f_lo, f_hi = float(fmins_a[i_min]), float(fmaxs_a[i_max])
+        elif mode == "common":
+            f_lo, f_hi = float(fmins_a[i_lo]), float(fmaxs_a[i_hi])
+            if f_lo > f_hi * (1.0 + rtol):
+                raise ValueError(
+                    f"common_freq_grid: no common band; {labels[i_lo]} starts at "
+                    f"{f_lo:.4g} Hz, {labels[i_hi]} ends at {f_hi:.4g} Hz. "
+                    f"Use freq_range='survey' or (fmin, fmax), or drop a site.")
+        else:
+            raise ValueError(
+                "common_freq_grid: freq_range must be 'survey', 'common' or (fmin, fmax).")
+    else:
+        mode = "range"
+        f_lo, f_hi = (float(v) for v in freq_range)
+
+    grid = make_freq_grid(freq_per_dec, f_lo, f_hi, anchor=anchor, rtol=rtol, order=order)
+    if grid.size == 0:
+        raise ValueError(
+            f"common_freq_grid: no grid point between {f_lo:.4g} and {f_hi:.4g} Hz.")
+
+    if verbose:
+        cov = freq_grid_coverage(grid, freqs, extrap_decades=extrap_decades,
+                                 rtol=rtol, names=labels)
+        ng = grid.size
+        print(f"  frequency grid: {ng} points, {freq_per_dec:g} per decade, "
+              f"{grid.min():.4g} - {grid.max():.4g} Hz (anchor {anchor:g} Hz)")
+        print(f"    band of the survey : {fmins_a.min():.4g} - {fmaxs_a.max():.4g} Hz "
+              f"({len(labels)} sites)")
+        if mode == "common":
+            print(f"    common band        : {f_lo:.4g} - {f_hi:.4g} Hz")
+            print(f"    lowest f limited by  {labels[i_lo]} ({fmins_a[i_lo]:.4g} Hz); "
+                  f"highest f by {labels[i_hi]} ({fmaxs_a[i_hi]:.4g} Hz)")
+        nfull = int(np.sum(cov["n_keep"] == ng))
+        part = [n for n in range(len(labels)) if 0 < cov["n_keep"][n] < ng]
+        none = [n for n in range(len(labels)) if cov["n_keep"][n] == 0]
+        print(f"    {nfull} of {len(labels)} sites cover the whole grid"
+              + (f" (extrapolation margin {extrap_decades:.3g} decade)"
+                 if extrap_decades > 0 else ""))
+        if part:
+            print(f"    {len(part)} site(s) get part of the grid:")
+            for n in part[:10]:
+                print(f"      {labels[n]:<20s} {cov['n_keep'][n]:3d} of {ng} points "
+                      f"({fmins_a[n]:.4g} - {fmaxs_a[n]:.4g} Hz)"
+                      + (f", {cov['n_extrap'][n]} extrapolated" if cov['n_extrap'][n] else ""))
+            if len(part) > 10:
+                print(f"      ... and {len(part) - 10} more")
+        if none:
+            print(f"    WARNING: no grid frequency inside the band of {len(none)} site(s): "
+                  + ", ".join(labels[n] for n in none[:10]))
+    return grid
+
+
+# Per-frequency quantities derived from Z; they are on the old grid after an
+# interpolation and are therefore removed by interpolate_data().
+_DERIVED_FREQ_KEYS = (
+    "Zdet", "Zdet_err", "Zssq", "Zssq_err", "Zavg", "Zavg_err",
+    "rho", "phi", "rho_err", "phi_err", "dplus", "extrapolated",
+)
+
+
 def interpolate_data(
     edi_dict: Dict[str, Any],
     *,
     newfreqs: Optional[np.ndarray] = None,
     freq_per_dec: Optional[int] = None,
     interp_method: str = "linear",
+    anchor: float = 1.0,
+    rtol: float = 1.0e-3,
+    extrap_decades: float = 0.0,
+    outside: str = "clip",
 ) -> Dict[str, Any]:
     """Interpolate MT transfer functions to a new frequency grid.
 
@@ -1256,42 +1873,127 @@ def interpolate_data(
     edi_dict : dict
         Site dictionary as returned by :func:`load_edi`.
     newfreqs : array-like, optional
-        Explicit target frequency array [Hz] (log or linear spacing).
-        Takes priority over *freq_per_dec*.
+        Target frequency array [Hz] (the preset grid for the survey; see
+        :func:`common_freq_grid`).  The site gets those frequencies of it that
+        its own band covers (see *extrap_decades*, *outside*), in the order
+        given.  Takes priority over *freq_per_dec*.
     freq_per_dec : int, optional
-        Number of frequencies per decade for a log-spaced grid spanning
-        the data range.  Used when *newfreqs* is not given.
+        Number of frequencies per decade.  Used when *newfreqs* is not given.
+        The grid is anchored on absolute decades (:func:`make_freq_grid`):
+        ``f = anchor * 10**(k / freq_per_dec)`` with integer ``k`` inside the
+        band of this site, so all such grids are subsets of one grid.  For a
+        survey, build the grid once with :func:`common_freq_grid` and pass it as
+        *newfreqs* instead.  (Before 2026-11-20 the grid was a ``linspace`` from
+        the site's own lowest to highest frequency, so it differed from site to
+        site.)
     interp_method : str, optional
-        Interpolation method passed to the spline builder.  Currently
-        only ``"gcvspline"`` and ``"linear"`` (default) are recognised;
-        other values are passed through to ``make_spline``.
+        Currently ignored: Z, T, P and rot are always resampled with a
+        smoothing spline (GCV) in log-frequency (``make_spline``).  The error
+        arrays (Z_err, T_err, P_err) are interpolated linearly in
+        log-frequency since 2026-11-20 (a spline can make variances negative).
+    anchor : float, optional
+        Frequency [Hz] that is a grid point for *freq_per_dec*.  Default 1.
+    rtol : float, optional
+        Relative tolerance for the band edges.  Default 1e-3.
+    extrap_decades : float, optional
+        Target frequencies up to this many decades outside the data band are
+        kept and **extrapolated**; use ``1/x`` for "less than 1/x of a decade".
+        Default 0 (no extrapolation: only grid frequencies inside the band).
+        The extrapolation is linear in log-frequency, continuing the smoothing
+        spline of Z, T, P with its value and slope at the edge of the band
+        (an unconstrained cubic would run away); the error arrays keep their
+        edge value.  Extrapolated data are therefore guesses with the error of
+        the last measured frequency: keep the margin small, or inflate their
+        errors using the ``extrapolated`` flag.
+    outside : {"clip", "raise"}, optional
+        What to do with target frequencies beyond the band plus
+        *extrap_decades*.  ``"clip"`` (default): leave them out, so the site
+        gets only the part of the grid that its band covers.  ``"raise"``:
+        ``ValueError``.  If no target frequency is left, ``ValueError`` is
+        raised in both cases.
 
     Returns
     -------
     dict
-        Updated site dictionary with arrays resampled onto the new grid.
+        Updated site dictionary with arrays resampled onto the new frequencies
+        and the boolean array ``extrapolated`` (nf,) that marks the
+        extrapolated ones.  For *freq_per_dec* the order follows
+        ``freq_order`` of the input (ascending unless it is ``"dec"``);
+        ``freq_order`` is set to match the new array.  Derived quantities that
+        live on the old grid (Zdet, Zssq, Zavg, rho, phi, their errors, dplus)
+        are removed; recompute them afterwards.
     """
     edi_new = dict(edi_dict)
 
-    old_logf = np.log10(np.asarray(edi_new["freq"], dtype=float).ravel())
+    freq_old = np.asarray(edi_new["freq"], dtype=float).ravel()
+    old_logf = np.log10(freq_old)
+    lf_min, lf_max = float(old_logf.min()), float(old_logf.max())
+
+    tag = str(edi_new.get("freq_order") or "").lower()
+    if tag not in ("inc", "dec"):
+        tag = "dec" if (freq_old.size > 1 and freq_old[-1] < freq_old[0]) else "inc"
+
+    outside = str(outside).lower()
+    if outside not in ("clip", "raise"):
+        raise ValueError("interpolate_data: outside must be 'clip' or 'raise'.")
 
     if newfreqs is not None:
-        new_logf = np.log10(np.asarray(newfreqs, dtype=float).ravel())
+        new_freq = np.asarray(newfreqs, dtype=float).ravel().copy()
     elif freq_per_dec is not None:
-        f_min, f_max = old_logf.min(), old_logf.max()
-        n_pts = max(2, int(round((f_max - f_min) * freq_per_dec)) + 1)
-        new_logf = np.linspace(f_min, f_max, n_pts)
+        new_freq = make_freq_grid(
+            freq_per_dec, float(freq_old.min()), float(freq_old.max()),
+            anchor=anchor, rtol=rtol, order=tag)
     else:
         raise ValueError(
             "interpolate_data: provide either 'newfreqs' or 'freq_per_dec'.")
 
-    if new_logf.size == 0:
+    if new_freq.size == 0:
         raise ValueError("interpolate_data: target frequency grid is empty.")
+    if not np.all(np.isfinite(new_freq) & (new_freq > 0.0)):
+        raise ValueError("interpolate_data: target frequencies must be finite and > 0.")
+
+    keep, extrap = _grid_cover(np.log10(new_freq), lf_min, lf_max, extrap_decades, rtol)
+    if not keep.all():
+        if outside == "raise":
+            raise ValueError(
+                f"interpolate_data: station {edi_new.get('station')!r}: "
+                f"{int((~keep).sum())} of {keep.size} target frequencies lie outside the "
+                f"data band {freq_old.min():.4g} - {freq_old.max():.4g} Hz plus "
+                f"{extrap_decades:g} decade (e.g. {new_freq[~keep][0]:.4g} Hz); "
+                f"use outside='clip' or extrap_decades.")
+        new_freq = new_freq[keep]
+        extrap = extrap[keep]
+        if new_freq.size == 0:
+            raise ValueError(
+                f"interpolate_data: station {edi_new.get('station')!r}: no target "
+                f"frequency inside the data band {freq_old.min():.4g} - "
+                f"{freq_old.max():.4g} Hz (extrap_decades = {extrap_decades:g}).")
+    new_logf = np.log10(new_freq)
     nf = new_logf.size
 
     lam = None  # let make_spline decide; gcvspline handles its own lambda
 
-    edi_new["freq"] = np.power(10.0, new_logf)
+    edi_new["freq"] = new_freq
+    if nf > 1 and np.all(np.diff(new_freq) > 0.0):
+        edi_new["freq_order"] = "inc"
+    elif nf > 1 and np.all(np.diff(new_freq) < 0.0):
+        edi_new["freq_order"] = "dec"
+    elif nf > 1:
+        edi_new["freq_order"] = "keep"
+
+    # target points beyond the band: spline value and slope at the edge, then a
+    # straight line in log f (the spline itself would continue as a cubic)
+    x_clip = np.clip(new_logf, lf_min, lf_max)
+    below = new_logf < lf_min
+    above = new_logf > lf_max
+
+    def _eval_spline(spl) -> np.ndarray:
+        y = np.asarray(spl(x_clip))
+        if below.any():
+            y[below] = spl(lf_min) + spl(lf_min, 1) * (new_logf[below] - lf_min)
+        if above.any():
+            y[above] = spl(lf_max) + spl(lf_max, 1) * (new_logf[above] - lf_max)
+        return y
 
     def _interp_any(arr: np.ndarray) -> np.ndarray:
         out = np.zeros((nf,) + arr.shape[1:], dtype=arr.dtype)
@@ -1300,15 +2002,41 @@ def interpolate_data(
             if np.iscomplexobj(y):
                 sr = make_spline(old_logf, y.real, lam=lam)
                 si = make_spline(old_logf, y.imag, lam=lam)
-                out[(slice(None),) + idx] = sr(new_logf) + 1j * si(new_logf)
+                out[(slice(None),) + idx] = _eval_spline(sr) + 1j * _eval_spline(si)
             else:
                 s = make_spline(old_logf, y, lam=lam)
-                out[(slice(None),) + idx] = s(new_logf)
+                out[(slice(None),) + idx] = _eval_spline(s)
         return out
 
-    for key in ["Z", "T", "P", "Z_err", "T_err", "P_err", "rot"]:
+    # Error arrays: piecewise-linear in log-frequency (constant beyond the
+    # band).  A smoothing spline of a variance can go negative (it did, down to
+    # -10 for noisy data), which turns into NaN in every later error
+    # propagation; linear interpolation of non-negative values stays
+    # non-negative.
+    _order = np.argsort(old_logf)
+    _xs = old_logf[_order]
+
+    def _interp_err(arr: np.ndarray) -> np.ndarray:
+        out = np.zeros((nf,) + arr.shape[1:], dtype=arr.dtype)
+        for idx in np.ndindex(arr.shape[1:]):
+            y = arr[(slice(None),) + idx][_order]
+            if np.iscomplexobj(y):
+                out[(slice(None),) + idx] = (np.interp(new_logf, _xs, y.real)
+                                             + 1j * np.interp(new_logf, _xs, y.imag))
+            else:
+                out[(slice(None),) + idx] = np.interp(new_logf, _xs, y)
+        return out
+
+    for key in ["Z", "T", "P", "rot"]:
         if key in edi_new and edi_new[key] is not None:
             edi_new[key] = _interp_any(np.asarray(edi_new[key]))
+    for key in ["Z_err", "T_err", "P_err"]:
+        if key in edi_new and edi_new[key] is not None:
+            edi_new[key] = _interp_err(np.asarray(edi_new[key]))
+
+    for key in _DERIVED_FREQ_KEYS:
+        edi_new.pop(key, None)
+    edi_new["extrapolated"] = np.asarray(extrap, dtype=bool)
 
     return edi_new
 
@@ -2492,6 +3220,24 @@ def _format_block(values: np.ndarray, n_per_line: int = 6,
 # EDI writer
 # ---------------------------------------------------------------------------
 
+def _ft_info_line(edi: Mapping[str, Any]) -> Optional[str]:
+    """``>INFO`` line with the FT convention of the stored data (or None).
+
+    ``"e+iwt_corrected"`` is the label :func:`load_edi` leaves after it has
+    conjugated Phoenix data, i.e. the stored arrays are exp(-iwt).  The
+    wording avoids the EDI keywords the header reader looks for.
+    """
+    label = str(edi.get("ft_convention") or "").strip().lower()
+    if label in ("e-iwt", "e+iwt_corrected"):
+        sign = "-"
+    elif label == "e+iwt":
+        sign = "+"
+    else:
+        return None
+    return (f"  Fourier convention of Z and T: exp({sign}iwt); "
+            f"Z in mV/km/nT; invalid values: 1.0E32")
+
+
 def save_edi(
     edi: Optional[Dict[str, Any]] = None,
     *,
@@ -2500,6 +3246,7 @@ def save_edi(
     add_pt_blocks: bool = True,
     pt_err_kind: Optional[str] = None,
     lon_keyword: str = "LON",
+    write_convention: bool = True,
     **kwargs: Any,
 ) -> None:
     """Write an EDI dictionary to a classical table-style EDI file.
@@ -2508,6 +3255,17 @@ def save_edi(
 
         save_edi(data_dict, path="out.edi")
         save_edi(**data_dict, path="out.edi")
+
+    Invalid values (NaN, +-inf, or |value| >= 1e32) are written as
+    ``1.000000E+32``, the value given by ``EMPTY=1.0E32`` in the ``>HEAD``
+    block (:func:`_format_block`); :func:`load_edi` treats everything above
+    ``invalid_sentinel`` (1e30) as invalid.
+
+    With ``write_convention=True`` (default) an ``>INFO`` line states the
+    Fourier-transform convention of the stored Z and T (from
+    ``edi["ft_convention"]``, if known), the unit of Z and the invalid-value
+    marker, so that :func:`detect_ft_convention` / ``load_edi(manufacturer=
+    "auto")`` find an explicit tag in files written here.
     """
     if edi is None:
         edi = kwargs
@@ -2567,9 +3325,14 @@ def save_edi(
     lines.append("")
 
     # INFO
-    if edi.get("info"):
+    _info_txt = edi.get("info")
+    _conv_line = _ft_info_line(edi) if write_convention else None
+    if _info_txt or _conv_line:
         lines.append(">INFO")
-        lines.append(edi.get("info"))
+        if _info_txt:
+            lines.append(str(_info_txt))
+        if _conv_line:
+            lines.append(_conv_line)
 
     # FREQ
     lines.append(f">FREQ NFREQ={int(nfreq)} ORDER={_order_tag} //{int(nfreq)}")

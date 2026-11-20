@@ -25,11 +25,14 @@ modules treat the dict returned by `load_edi` as the standard **site container**
 | Error setting / flooring | `set_errors` (`mode="fix"` or `"floor"`) |
 | Error estimation from curve scatter | `estimate_errors` (spline-residual, smoothed, MAD) |
 | Interpolation | `interpolate_data` |
+| One preset frequency grid for all sites (each site gets the part its band covers) | `make_freq_grid`, `common_freq_grid`, `freq_grid_coverage` |
+| FT sign-convention detection (exp(-iwt) / exp(+iwt)) | `detect_ft_convention`, `scan_edi_header_convention`, `load_edi(manufacturer="auto")` |
 | Rotation | `rotate_data` |
 | 1-D forward modelling | `mt1dfwd`, `wait1d` |
 
 **FT sign-convention:** `load_edi` accepts `manufacturer="phoenix"` and
-automatically conjugates Z and T to the standard e⁻ⁱωᵗ convention.
+automatically conjugates Z and T to the standard e⁻ⁱωᵗ convention. With `manufacturer="auto"` the convention is detected from
+the data (`detect_ft_convention`).
 
 **Z units:** stored in mV/km/nT throughout; `ρ_a = |Z|² × 10⁶ / (μ₀ω)`.
 
