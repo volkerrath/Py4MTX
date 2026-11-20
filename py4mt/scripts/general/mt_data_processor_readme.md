@@ -128,18 +128,32 @@ covers:
 
 ```python
 interp_pars = {
-    "freq_per_dec":   6,
+    "freq_per_dec":   6,          # points per decade; None if n_freq is used
+    "n_freq":         None,       # exactly this many frequencies; None if freq_per_dec is used
     "freq_range":     "survey",   # "survey", "common", or (fmin, fmax) in Hz
-    "anchor":         1.0,        # Hz, f = anchor * 10**(k/freq_per_dec), k integer
+    "anchor":         1.0,        # Hz, f = anchor * 10**(k/freq_per_dec), k integer (not used with n_freq)
     "interp_method":  "gcvspline",   # currently ignored by interpolate_data
     "extrap_decades": 0.0,        # 1/x: extrapolate up to 1/x decade outside a station's band
 }
 ```
 
-- `freq_per_dec` points per decade on absolute decades (the decades 0.1, 1, 10,
-  ... are always grid points).  `freq_range = "survey"` (default) spans the band
-  of the whole survey, so no station limits the grid; `"common"` is only the band
-  that all stations cover; a tuple presets the band explicitly.
+- Two ways to define the grid; set **one** of `freq_per_dec` / `n_freq` and the
+  other to `None` (both set, or neither, stops the script with a message):
+  - `freq_per_dec` points per decade on absolute decades (the decades 0.1, 1, 10,
+    ... are always grid points); the number of frequencies depends on the band.
+  - `n_freq = N` **exactly N frequencies**, equally spaced in log f, with **both
+    limits of the band as grid points** (`data_proc.make_freq_grid_n`); `anchor`
+    is not used.  E.g. `n_freq = 25` with `freq_range = (0.01, 100.)` gives 25
+    frequencies from 0.01 to 100 Hz (0.21 decade apart).  With `"survey"` or
+    `"common"` the limits are the extreme frequencies found in the data
+    (e.g. 0.00173 Hz), not rounded values; give `(fmin, fmax)` if you want round
+    limits.  N counts the grid, not what a station gets: a station whose band is
+    shorter than the limits gets only the grid points inside its band (every
+    station gets exactly N if its band covers the limits, e.g. always with
+    `"common"`).
+- `freq_range = "survey"` (default) spans the band of the whole survey, so no
+  station limits the grid; `"common"` is only the band that all stations cover; a
+  tuple presets the band explicitly.
 - A station gets exactly those grid frequencies that lie in its own band.  Nothing
   is made up outside the band, except for grid frequencies within
   `extrap_decades` of it (`1.0/6.0` = one grid step at 6 per decade; `0.0` = none).
@@ -296,6 +310,16 @@ Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.  `OBS_INVALID`
 ("drop" as before, or "mark") and `OBS_INVALID_SE`; see *FEMTIC observe.dat*.
 `femtic.edi_list_to_observe_dat` also treats 1e32 markers as invalid (before they were
 written as huge valid numbers) and no longer writes `nan` errors.
+
+## Changes 2026-11-20 (e) (exactly N frequencies)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.  New `interp_pars`
+key `n_freq` (see *Interpolation*); `freq_per_dec` and `n_freq` are alternatives.
+Needs the `data_proc.py` of the same date (`make_freq_grid_n`, `common_freq_grid(n_freq=...)`).
+Tests: `test_data_proc_freq_ft.py` (124 cases now); ran end to end on a synthetic
+survey of 5 stations (explicit limits: every station exactly N identical
+frequencies; "survey": subsets of one N-point grid; both / neither set: the script
+stops with a message).
 
 ## Changes 2026-11-20 (d) (phase wrap-around in the plots)
 

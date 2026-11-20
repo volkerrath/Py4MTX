@@ -38,6 +38,7 @@ are written to text files and optionally plotted.
 | `PLTARGS` | Dict of plotting parameters (sizes, fonts, colours, markers). |
 | `FIGURE_TITLE` | Figure titles (2026-11-11). `"auto"` = `PLTARGS["suptitle"]` as before; `None`, `False`, `""` = none; text with `{title}` (the automatic title) and `{key}` (`"imped"`, `"rhophas"` or `"phstens"`); dict `{"imped": spec, "rhophas": spec, "phstens": spec, "default": spec}`. |
 | `PANEL_TITLES` | `False` = no titles of the panels of the three figures (default `True`). |
+| `PHASE_WRAP_MODE`, `PHASE_WRAP_STYLE` | Phase panels of the rho/phase figure (2026-11-20): a phase curve that jumps by more than 180 deg between two periods is interrupted and the two points joined by a separate line. Mode `"direct"` (default, straight line), `"short"` (through the window edge; meant for phases inside +-180 deg, the panels show phases shifted by +-90 deg), `"off"`; style = dict of Matplotlib line properties over the dotted default (`None` = dotted, `False` = gap only). Passed to `viz.plot_rhophas` (keys `phase_wrap_*` of `PLTARGS`, set per panel: off for the rho panels). |
 | `PERIODS`, `N_LAYER`, `MODEL` | Model definition (period array, layer count, parameter matrix). |
 
 ## Outputs
@@ -55,6 +56,10 @@ are written to text files and optionally plotted.
 ## Changes 2026-11-11 (titles)
 
 `FIGURE_TITLE` and `PANEL_TITLES` (table above); both work through `util.resolve_title` (needs the `util.py` of the same date). Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before. Only compile-checked and tested at the level of the title logic (`util.resolve_title`, `test_util_titles.py`); the script was not run end to end.
+
+## Changes 2026-11-20 (phase wraps)
+
+`PHASE_WRAP_MODE` / `PHASE_WRAP_STYLE` (table above), through `viz.plot_rhophas` (needs the `viz.py` and `data_viz.py` of the same date). Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Ran end to end on the model of the script (all three figures written); the dotted connections show in the xx/yy phase panel.
 
 ## Bugs fixed during cleanup
 

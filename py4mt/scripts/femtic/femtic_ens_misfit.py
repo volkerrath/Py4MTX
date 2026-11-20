@@ -59,6 +59,14 @@ local site.dat, any case, and/or site ids) writes one file per site and format
 
 Changelog
 ---------
+2026-11-20  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            phase curves that leave the +-180 deg window are interrupted
+            and the two points joined by a dotted line (bands and density
+            skip the jump). New settings CURVES_PHASE_WRAP_MODE ("direct" |
+            "short" | "off"), CURVES_PHASE_WRAP_STYLE (dict of Matplotlib
+            line properties; None = dotted; False = gap only) and
+            CURVES_PHASE_WRAP_RANGE. The work is done in femtic_misfit.py
+            and data_viz.py of the same date (see their changelogs).
 2026-11-11c Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             nRMS2 switched off: no modelling error is used. New setting
             SHOW_RMS2 (default False): the crossplot panels show "nRMS" only,
@@ -96,7 +104,7 @@ from __future__ import annotations
 
 import os
 import sys
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 # ---------------------------------------------------------------------------
 # py4mt environment: make the modules importable (femtic_misfit.py, femtic.py)
@@ -343,6 +351,21 @@ CURVES_MULTIPAGE: Optional[bool] = None   # None = auto: all sites / N sites -> 
                                    # sub-directory <prefix>_curves/
 CURVES_APPRES_PHASE_DEG: bool = True   # APP_RES_AND_PHS phase in degrees
                                        # (False: radians)
+# phase curves that leave the +-180 deg window (a jump of more than half the
+# window between two periods): the line is interrupted there and the two
+# points are joined by a separate line; bands and density skip the jump
+CURVES_PHASE_WRAP_MODE: str = "direct"   # "direct" (straight line between the two
+                                       # points) | "short" (the short way, through
+                                       # the window edge) | "off" (no handling)
+CURVES_PHASE_WRAP_STYLE: Union[None, bool, Dict[str, Any]] = None
+                                       # Matplotlib line properties of the connection,
+                                       # e.g. {"linestyle": "--", "alpha": 0.5};
+                                       # colour / width / alpha of the curve are
+                                       # inherited. None = data_viz.PHASE_WRAP_STYLE
+                                       # (dotted); False = gap only, no connection
+CURVES_PHASE_WRAP_RANGE: Tuple[float, float] = (-180.0, 180.0)
+                                       # phase window; (-3.14159, 3.14159) if the
+                                       # phases are in radians
 
 # ---------------------------------------------------------------------------
 # Run

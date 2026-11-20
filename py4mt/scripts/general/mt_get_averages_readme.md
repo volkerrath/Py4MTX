@@ -205,6 +205,8 @@ where `tag` ∈ {`ssq`, `det`, `avg`}.
 | `ERRORS` | `"bootstrap"` | Error estimator: `"std"` (sample std, spatial spread), `"bootstrap"` (bootstrap std-of-the-mean), or `None` |
 | `ERR_NSIM` | `500` | Number of bootstrap resamples (used only when `ERRORS="bootstrap"`) |
 | `ERR_ALPHA` | `0.20` | Opacity of the std shading |
+| `PHASE_WRAP_MODE` | `"direct"` | Phase panel (2026-11-20): a phase curve (site curves, average) that jumps by more than 180 deg between two neighbouring periods, i.e. leaves the +-180 deg window, is interrupted and the two points joined by a separate line; the +-1 std band is cut there. `"direct"` straight line, `"short"` through the window edge, `"off"` as before. Only `Zssq` and `Zdet` can wrap (`Zavg` is folded to 0-90 deg), and with `YLIM_PHASE = (0, 90)` the connection is outside the axes |
+| `PHASE_WRAP_STYLE` | `None` | Dict of Matplotlib line properties of the connection over the dotted default, e.g. `{"linestyle": "--", "alpha": 0.5}`; colour, width and opacity of the curve are inherited; `None` = dotted; `False` = gap only |
 | `LEGEND_SITES` | `True` | If `True`, all station names in legend; if `False`, averages only (larger font) |
 | `SITE_ALPHA` | `0.35` | Opacity of individual site curves |
 | `SITE_LW` | `1.8` | Line width of individual site curves |
@@ -267,3 +269,14 @@ default — in `data_proc.make_collection()` (if `BUILD_FROM_EDI = True`).
 ## Changes 2026-11-11 (titles)
 
 `FIGURE_TITLE` (table *Plot appearance*). Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before. Only compile-checked and tested at the level of the title logic (`util.resolve_title`, `test_util_titles.py`); the script was not run end to end.
+
+## Changes 2026-11-20 (phase wraps)
+
+`PHASE_WRAP_MODE` / `PHASE_WRAP_STYLE` (table *Plot appearance*): the phase panel uses `data_viz.mark_phase_wraps` for the
+site curves and the average, and cuts the std band where the average wraps (`data_viz.phase_wrap_index`). Needs the
+`data_viz.py` of the same date. Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Ran on a synthetic
+collection (three sites that wrap at slightly different periods).
+
+Caveat, not changed: the frequency-wise phase average is the arithmetic mean over the sites. In a bin where some sites
+are just below +180 deg and others just above -180 deg the mean falls in the middle of the window (and the std is
+large), whatever the plot does with the wrap; a circular mean would be needed there.

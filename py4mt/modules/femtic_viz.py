@@ -912,6 +912,18 @@ Provenance:
                         to the previous module). plot_ensemble_slices has no
                         map_markers (unchanged). AI-generated code -- review
                         before production use.
+    2026-11-20  Claude Sonnet 5.5 (Anthropic)
+                        plot_data_ensemble: phase curves that leave the +-180
+                        deg window are interrupted where they jump by more
+                        than half the window, and the two points are joined by
+                        a dotted line (data_viz.add_phase, needs the data_viz
+                        of the same date). New keywords phase_wrap_mode
+                        ("direct" default | "short" | "off"), phase_wrap_style
+                        (dict of Matplotlib line properties; None = dotted;
+                        False = gap only) and phase_wrap_range, passed to the
+                        'phase' panels only. The component markers are not
+                        put on the connection lines. AI-generated code --
+                        review before production use.
     """
 
 from __future__ import annotations
@@ -2674,6 +2686,9 @@ def plot_data_ensemble(
     axs: Optional[Any] = None,
     tick_fontsize: int = 8,
     label_fontsize: int = 9,
+    phase_wrap_mode: str = "direct",
+    phase_wrap_style: Optional[Union[dict, bool]] = None,
+    phase_wrap_range: Tuple[float, float] = (-180.0, 180.0),
     out: bool = True,
 ) -> Tuple[Any, np.ndarray]:
     """Joint plot of original and perturbed MT data for a fixed list of samples.
@@ -2766,6 +2781,20 @@ def plot_data_ensemble(
         Font size for axis tick labels.  Default ``8``.
     label_fontsize : int, optional
         Font size for panel titles and legends.  Default ``9``.
+    phase_wrap_mode : {"direct", "short", "off"}, optional
+        ``'phase'`` panels only.  A phase curve that leaves the +-180 deg
+        window (a jump of more than half the window between two periods) is
+        interrupted there and the two points are joined by a separate line:
+        ``"direct"`` (default) a straight line between the two points,
+        ``"short"`` the short way through the window edge, ``"off"`` no
+        handling (as before).  See :func:`data_viz.add_phase`.
+    phase_wrap_style : dict or bool or None, optional
+        Matplotlib line properties of that connection, merged over
+        ``data_viz.PHASE_WRAP_STYLE`` (dotted); colour, width and opacity of
+        the curve are inherited.  ``None`` = the default style, ``False`` =
+        gap only, no connection.
+    phase_wrap_range : (float, float), optional
+        The phase window, default ``(-180, 180)``.
     out : bool, optional
         Print progress messages.
 
@@ -2809,6 +2838,17 @@ def plot_data_ensemble(
         "tipper": data_viz.add_tipper,
         "pt":     data_viz.add_pt,
     }
+
+    # phase wraps: keywords of add_phase only (the other plotters would pass
+    # them on to Matplotlib and fail)
+    if str(phase_wrap_mode).lower() not in ("direct", "short", "off"):
+        raise ValueError(
+            "plot_data_ensemble: phase_wrap_mode must be 'direct', 'short' or "
+            f"'off', got {phase_wrap_mode!r}.")
+    _wrap_kw = dict(wrap_mode=str(phase_wrap_mode).lower(),
+                    wrap_style=phase_wrap_style,
+                    wrap_range=tuple(phase_wrap_range))
+    _wrap_gid = getattr(data_viz, "PHASE_WRAP_GID", None)
 
     # ------------------------------------------------------------------
     # Normalise 'what' -> list of panel names; validate each entry.
@@ -2935,6 +2975,8 @@ def plot_data_ensemble(
     def _apply_markers(ax: Any, lines_before: list, marker: str) -> None:
         for line in ax.lines:
             if line not in lines_before:
+                if _wrap_gid is not None and line.get_gid() == _wrap_gid:
+                    continue            # connection of a phase wrap: no marker
                 line.set_marker(marker)
                 line.set_markersize(markersize)
                 if markevery is not None:
@@ -2960,8 +3002,10 @@ def plot_data_ensemble(
         linestyle: str,
         add_to_legend: bool,        # True only for the original curves
         legend_done: set,
+        plot_kw: Optional[dict] = None,   # extra keywords of the plotter
     ) -> None:
         """Draw all sites onto *ax* for one panel."""
+        plot_kw = dict(plot_kw or {})
 
         def _need_legend(key: str) -> bool:
             if not add_to_legend or key in legend_done:
@@ -2981,7 +3025,7 @@ def plot_data_ensemble(
                     plotter(site, ax=ax, show_errors=show_err,
                             legend=_need_legend(comp),
                             alpha=alpha, linestyle=linestyle,
-                            comps=comp, **es_kw)
+                            comps=comp, **es_kw, **plot_kw)
                     _apply_markers(ax, lb, _marker_for(comp))
         else:
             # tipper / pt: one call per site
@@ -2992,7 +3036,7 @@ def plot_data_ensemble(
                 lb = list(ax.lines)
                 plotter(site, ax=ax, show_errors=show_err,
                         legend=_need_legend("_panel_"),
-                        alpha=alpha, linestyle=linestyle, **es_kw)
+                        alpha=alpha, linestyle=linestyle, **es_kw, **plot_kw)
                 _apply_markers(ax, lb, _marker_for("inv"))
 
     # ------------------------------------------------------------------
@@ -3025,6 +3069,7 @@ def plot_data_ensemble(
             ax = axs_arr[row, col]
             comp_list = _panel_comp_lists[col]
             _legend_done: set = set()
+            _pkw = _wrap_kw if str(w).lower() == "phase" else None
 
             # original curves (solid, alpha_orig)
             _plot_panel(ax, plotter, comp_list,
@@ -3032,7 +3077,7 @@ def plot_data_ensemble(
                         _show_orig, _style_orig, alpha_orig,
                         linestyle="-",
                         add_to_legend=True,
-                        legend_done=_legend_done)
+                        legend_done=_legend_done, plot_kw=_pkw)
 
             # perturbed curves (dashed, alpha_pert, no legend entries)
             _plot_panel(ax, plotter, comp_list,
@@ -3040,7 +3085,7 @@ def plot_data_ensemble(
                         _show_pert, _style_pert, alpha_pert,
                         linestyle="--",
                         add_to_legend=False,
-                        legend_done=_legend_done)
+                        legend_done=_legend_done, plot_kw=_pkw)
 
             # Deduplicated legend (removes duplicates from internal calls).
             handles, labels = ax.get_legend_handles_labels()

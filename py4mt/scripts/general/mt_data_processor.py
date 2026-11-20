@@ -20,6 +20,7 @@ A collection NPZ file with all stations is saved at the end.
 @modified:  2026-11-11 -- FIGURE_TITLE: title of the station figures ("auto" = station | name as before; None / "" = none; text with {station}, {name_str}; dict per station); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 @modified:  2026-11-20 -- (1) INTERPOLATE: one frequency grid for all stations (freq_per_dec points per decade on absolute decades, band = common band of all stations or an explicit range); the interpolation now runs first, so PT, invariants, errors and rho/phi live on the new grid (they were left on the old one); the DPLUS block reads Z/Z_err from data_dict. (2) MANUFACTURER = "auto": FT convention (exp(-iwt) / exp(+iwt)) detected per station from the data (data_proc.detect_ft_convention) with a summary table; the notes on FT_CORRECTION corrected (load_edi has already converted Phoenix data). (3) OUT_FILES token "observe": one FEMTIC observe.dat for all stations, optionally with the dummy VTF stations (femtic.edi_list_to_observe_dat). (4) PLOT_DIR is only created when PLOT is set; EDI list sorted. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 @modified:  2026-11-20 (b) -- INTERPOLATE: the grid is preset for the whole survey (freq_range "survey" = band of all stations, default; "common" = intersection; or (fmin, fmax)) and every station is written on the part of it that its own band covers; extrap_decades (1/x decade) allows extrapolation just outside the band (flag data_dict["extrapolated"]); stations with no grid frequency are skipped; the old "identical frequencies" check is replaced by a coverage report and a <COLL_NAME>_freq_coverage.csv; allow_extrapolation removed. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+@modified:  2026-11-20 (c) -- INTERPOLATE: new interp_pars key n_freq = exactly N frequencies, log-spaced between the limits of freq_range ('survey', 'common' or (fmin, fmax)) with both limits as grid points (data_proc.make_freq_grid_n); freq_per_dec and n_freq are alternatives (exactly one must be set); n_freq is popped before interpolate_data. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 @modified:  2026-11-20 (c) -- observe.dat: OBS_INVALID = "drop" | "mark" (and OBS_INVALID_SE) chooses how invalid data are written: the frequency is left out ("drop", as before) or only the bad component is written with a negative error, which FEMTIC does not use ("mark"); the per-station counts are printed. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 @modified:  2026-11-20 (d) -- phase panels: where a phase curve leaves the +-180 deg window the solid line is interrupted and the jump is drawn as a dotted connection; PHASE_WRAP_MODE ('direct', 'short', 'off') and PHASE_WRAP_STYLE (dict of Line2D keywords, False = no connection) in the plot configuration, passed to data_viz.add_phase; Claude Sonnet 5.5 (Anthropic); AI-generated, review before use
 """
@@ -66,14 +67,13 @@ print(titstrng + "\n\n")
 # WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas/edi/"
 # WORK_DIR = "/home/vrath/MT_Data/waldim/edi_synth_iso/"
 ###WORK_DIR = "/home/vrath/MT_Data/Peru/Tacna/NEW/edis_26b/"
-# WORK_DIR = "/home/vrath/MT_Data/TEST/edis_exp_interp/"
-WORK_DIR = "/home/vrath/ACTIVE/mt_processor/2022_25/"
+WORK_DIR = "/home/vrath/MT_Data/TEST/edis_exp_interp/"
 if not os.path.isdir(WORK_DIR):
    sys.exit(" File: %s does not exist! EXit." % WORK_DIR)
 
 
 DATA_DIR_IN = WORK_DIR
-DATA_DIR_OUT = WORK_DIR # + "/proc/"
+DATA_DIR_OUT = WORK_DIR + "/proc/"
 
 NAME_STR = ""
 COLL_NAME = "Review"
@@ -160,8 +160,15 @@ if SET_ERRORS:
 INTERPOLATE = False
 if INTERPOLATE:
     # ONE preset frequency grid for the whole survey (inversions are parallelised
-    # per frequency): freq_per_dec points per decade on absolute decades,
-    # f = anchor * 10**(k / freq_per_dec), k integer (data_proc.common_freq_grid).
+    # per frequency).  Two ways to define it - set ONE of them, the other None:
+    #   freq_per_dec = x   x points per decade on absolute decades,
+    #                      f = anchor * 10**(k / x), k integer; the number of
+    #                      frequencies depends on the band (data_proc.make_freq_grid)
+    #   n_freq = N         exactly N frequencies, equally spaced in log f, with
+    #                      BOTH limits of the band as grid points (anchor is not
+    #                      used; data_proc.make_freq_grid_n).  The band is the one
+    #                      given by freq_range below, e.g. (0.01, 100.) with
+    #                      n_freq = 25 gives 25 frequencies from 0.01 to 100 Hz.
     # EVERY station is written on the part of this grid that its own band covers
     # (no frequency is made up outside the band, except within extrap_decades);
     # stations with the same band get the same frequencies, and every frequency
@@ -170,6 +177,9 @@ if INTERPOLATE:
     #                                highest maximum): no station limits the grid
     #              = "common"        only the band that ALL stations cover
     #              = (fmin, fmax)    explicit band [Hz]
+    # With n_freq the limits are the first and last frequency, so with "survey"
+    # the grid starts at the lowest and ends at the highest frequency of any
+    # station (not rounded to nice values); give (fmin, fmax) for round limits.
     # Alternatively give "newfreqs" (explicit array [Hz]); it is used as it is.
     # The order of the grid follows FREQ_ORDER ("dec" -> descending).
     #   extrap_decades: grid frequencies at most this far OUTSIDE a station's band
@@ -178,11 +188,12 @@ if INTERPOLATE:
     #       data_dict["extrapolated"]).  Give 1/x for "less than 1/x of a decade",
     #       e.g. 1.0/6.0 = one grid step at 6 per decade; 0.0 = no extrapolation.
     interp_pars = {
-        "freq_per_dec":   4,
+        "freq_per_dec":   6,           # points per decade (None if n_freq is used)
+        "n_freq":         None,        # exactly this many frequencies (None if freq_per_dec is used)
         "freq_range":     "survey",
-        "anchor":         1.0,         # Hz; a grid point (..., 0.1, 1, 10, ...)
+        "anchor":         1.0,         # Hz; a grid point (..., 0.1, 1, 10, ...); not used with n_freq
         "interp_method":  "gcvspline",
-        "extrap_decades": 0.1,
+        "extrap_decades": 0.0,
     }
 
 ESTIMATE_ERRORS = False
@@ -318,16 +329,20 @@ if INTERPOLATE and not DROP_INVALID:
 if INTERPOLATE:
     interp_site = dict(interp_pars)
     _fpd = interp_site.pop("freq_per_dec", None)
+    _nfreq = interp_site.pop("n_freq", None)
     _range = interp_site.pop("freq_range", "survey")
     _anchor = interp_site.pop("anchor", 1.0)
     _extrap = float(interp_site.get("extrap_decades", 0.0) or 0.0)
     if interp_site.get("newfreqs") is None:
         interp_site.pop("newfreqs", None)
-        if _fpd is None:
-            sys.exit(" INTERPOLATE needs freq_per_dec or newfreqs in interp_pars! Exit.")
+        if _fpd is None and _nfreq is None:
+            sys.exit(" INTERPOLATE needs freq_per_dec, n_freq or newfreqs in interp_pars! Exit.")
+        if _fpd is not None and _nfreq is not None:
+            sys.exit(" INTERPOLATE: give freq_per_dec OR n_freq in interp_pars, not both "
+                     "(set the other to None)! Exit.")
         print("\n One preset frequency grid for all %d stations:" % len(loaded))
         interp_site["newfreqs"] = common_freq_grid(
-            [d for _, d in loaded], _fpd, freq_range=_range, anchor=_anchor,
+            [d for _, d in loaded], _fpd, n_freq=_nfreq, freq_range=_range, anchor=_anchor,
             order=FREQ_ORDER if FREQ_ORDER in ("inc", "dec") else "inc",
             extrap_decades=_extrap,
             names=[Path(e).stem for e, _ in loaded], verbose=True)

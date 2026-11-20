@@ -56,6 +56,8 @@ Empty axes are automatically removed.
 | `USE_EDI` / `USE_NPZ` / `USE_DAT` | Select input format (only one should be `True`) |
 | `PLT_FMT` | List of output formats (e.g. `['.png', '.pdf']`) |
 | `CATALOG` | Assemble a PDF catalogue of all plots |
+| `PHASE_WRAP_MODE`, `PHASE_WRAP_STYLE` | Phase panels (2026-11-20): a phase curve that jumps by more than 180 deg between two periods (it leaves the +-180 deg window) is interrupted and the two points joined by a separate line. Mode `"direct"` (default, straight line), `"short"` (through the window edge), `"off"` (as before); style = dict of Matplotlib line properties over the dotted default (`None` = dotted, `False` = gap only). Passed to `add_phase` only |
+| `LINE_KW` | Matplotlib line keywords for the `add_rho` / `add_phase` curves, taken from `PLTARGS` (`{"linewidth": PLTARGS["Linewidths"][0]}`) |
 | `FIGURE_TITLE` | Figure title of the station figures (2026-11-11). `"auto"` = the station name as before; `None`, `False`, `""` = none; text with `{station}`, `{key}`; dict `{"<station>": spec, "default": spec}`. |
 
 ## Dependencies
@@ -65,3 +67,15 @@ Empty axes are automatically removed.
 ## Changes 2026-11-11 (titles)
 
 `FIGURE_TITLE` (table above), via `util.resolve_title` (needs the `util.py` of the same date). Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before. Only compile-checked and tested at the level of the title logic (`util.resolve_title`, `test_util_titles.py`); the script was not run end to end.
+
+## Changes 2026-11-20 (phase wraps)
+
+`PHASE_WRAP_MODE` / `PHASE_WRAP_STYLE` (table above), through `data_viz.add_phase` (needs the `data_viz.py` of the same
+date). Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.
+
+One more change, needed to run the script at all: the whole `PLTARGS` dict (keys such as `"Fontsize"`, `"Labelsize"`,
+`"Colors"`) was passed to `add_rho` / `add_phase`, which hand unknown keywords on to Matplotlib (`AttributeError:
+Line2D.set() got an unexpected keyword argument 'Fontsize'`). The curves now get `LINE_KW` (the line width of `PLTARGS`);
+`PLTARGS` itself is unchanged. Ran end to end on a synthetic `observation.npz` (PNG, PDF and catalogue written).
+Not changed: `pd.DataFrame(np.load(...))` on an `NpzFile` gave an empty-looking frame with pandas 3.0 in the test
+environment, and `mpl.backends.backend_pdf` is not always imported by then; both depend on the installed versions.

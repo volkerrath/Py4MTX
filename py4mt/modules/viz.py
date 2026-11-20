@@ -23,6 +23,12 @@ Modified: 2026-07-17 by Claude Sonnet 5 (Anthropic) — migrated from legacy
     plot_sparsity_pattern: coo_matrix -> coo_array; removed a redundant,
     now-unused duplicate import line that still referenced the legacy
     csr_matrix/csc_matrix/coo_matrix names.
+Modified: 2026-11-20 by Claude Sonnet 5.5 (Anthropic), AI-generated, review
+    before use -- plot_rhophas: phase curves that leave the +-180 deg window
+    can be interrupted at the wrap and the two points joined by a separate
+    line (dotted by default); opt-in through the new keys phase_wrap_mode,
+    phase_wrap_style, phase_wrap_range, phase_wrap_curves of **pltargs
+    (default: off, as before). Uses data_viz.mark_phase_wraps.
 """
 
 import os
@@ -194,6 +200,17 @@ def plot_rhophas(thisaxis=None, data=None, **pltargs):
         Data to plot. The default is None.
     **pltargs : dict
         kwargs for plotting.
+        Optional keys for phase curves that leave the +-180 deg window (a
+        jump of more than half the window between two periods; see
+        data_viz.mark_phase_wraps): ``phase_wrap_mode`` "off" (default: no
+        handling, as before), "direct" (the line is interrupted and the two
+        points joined by a straight line) or "short" (joined the short way,
+        through the window edge); ``phase_wrap_style`` dict of Matplotlib line
+        properties of the joining line, merged over the dotted default
+        (None = dotted, False = gap only); ``phase_wrap_range`` the window
+        (default (-180, 180)); ``phase_wrap_curves`` which of the two plotted
+        quantities (0 = data column 1 / 5, 1 = data column 2 / 6) are phases
+        (default (1,): the second one; (0, 1) for a panel with two phases).
 
     Returns
     -------
@@ -207,6 +224,19 @@ def plot_rhophas(thisaxis=None, data=None, **pltargs):
         # fig.suptitle(pltargs['title'], fontsize=pltargs['fontsizes'][2])
     else:
         ax = thisaxis
+
+    # phase wraps (opt-in): mark_phase_wraps on the lines of the phase curves
+    _wmode = str(pltargs.get('phase_wrap_mode', 'off')).lower()
+    _wcurves = tuple(pltargs.get('phase_wrap_curves', (1,)))
+    if _wmode != 'off':
+        from data_viz import mark_phase_wraps
+
+    def _wrap(line, k):
+        if line is not None and _wmode != 'off' and k in _wcurves:
+            mark_phase_wraps(
+                ax, line, wrap_mode=_wmode,
+                wrap_style=pltargs.get('phase_wrap_style'),
+                wrap_range=tuple(pltargs.get('phase_wrap_range', (-180.0, 180.0))))
 
     [points, dats] = np.shape(data)
 
@@ -227,50 +257,54 @@ def plot_rhophas(thisaxis=None, data=None, **pltargs):
         plot_cal = True
 
     if plot_cal:
-        ax.plot(per, cal_rhoa,
-                color=pltargs['c_cal'][0], linestyle=pltargs['l_cal'][0], linewidth=pltargs['l_cal'][1])
+        _ln, = ax.plot(per, cal_rhoa,
+                       color=pltargs['c_cal'][0], linestyle=pltargs['l_cal'][0], linewidth=pltargs['l_cal'][1])
+        _wrap(_ln, 0)
 
     if plot_err:
-        ax.errorbar(per,
-                    obs_rhoa,
-                    yerr=err_rhoa,
-                    linestyle=pltargs['l_obs'][0],
-                    marker=pltargs['m_obs'][0],
-                    markersize=pltargs['m_size'],
-                    color=pltargs['c_obs'][0],
-                    linewidth=pltargs['l_obs'][1],
-                    capsize=2, capthick=0.5)
+        _ln = ax.errorbar(per,
+                          obs_rhoa,
+                          yerr=err_rhoa,
+                          linestyle=pltargs['l_obs'][0],
+                          marker=pltargs['m_obs'][0],
+                          markersize=pltargs['m_size'],
+                          color=pltargs['c_obs'][0],
+                          linewidth=pltargs['l_obs'][1],
+                          capsize=2, capthick=0.5).lines[0]
     else:
-        ax.plot(per,
-                obs_rhoa,
-                linestyle=pltargs['l_obs'][0],
-                marker=pltargs['m_obs'][0],
-                markersize=pltargs['m_size'],
-                linewidth=pltargs['l_obs'][1],
-                color=pltargs['c_obs'][0])
+        _ln, = ax.plot(per,
+                       obs_rhoa,
+                       linestyle=pltargs['l_obs'][0],
+                       marker=pltargs['m_obs'][0],
+                       markersize=pltargs['m_size'],
+                       linewidth=pltargs['l_obs'][1],
+                       color=pltargs['c_obs'][0])
+    _wrap(_ln, 0)
 
     if plot_cal:
-        ax.plot(per, cal_phas,
-                color=pltargs['c_cal'][1], linestyle=pltargs['l_cal'][0], linewidth=pltargs['l_cal'][1])
+        _ln, = ax.plot(per, cal_phas,
+                       color=pltargs['c_cal'][1], linestyle=pltargs['l_cal'][0], linewidth=pltargs['l_cal'][1])
+        _wrap(_ln, 1)
 
     if plot_err:
-        ax.errorbar(per,
-                    obs_phas,
-                    yerr=err_phas,
-                    linestyle=pltargs['l_obs'][0],
-                    marker=pltargs['m_obs'][1],
-                    markersize=pltargs['m_size'],
-                    color=pltargs['c_obs'][1],
-                    linewidth=pltargs['l_obs'][1],
-                    capsize=2, capthick=0.5)
+        _ln = ax.errorbar(per,
+                          obs_phas,
+                          yerr=err_phas,
+                          linestyle=pltargs['l_obs'][0],
+                          marker=pltargs['m_obs'][1],
+                          markersize=pltargs['m_size'],
+                          color=pltargs['c_obs'][1],
+                          linewidth=pltargs['l_obs'][1],
+                          capsize=2, capthick=0.5).lines[0]
     else:
-        ax.plot(per,
-                obs_phas,
-                linestyle=pltargs['l_obs'][0],
-                marker=pltargs['m_obs'][1],
-                markersize=pltargs['m_size'],
-                linewidth=pltargs['l_obs'][1],
-                color=pltargs['c_obs'][1])
+        _ln, = ax.plot(per,
+                       obs_phas,
+                       linestyle=pltargs['l_obs'][0],
+                       marker=pltargs['m_obs'][1],
+                       markersize=pltargs['m_size'],
+                       linewidth=pltargs['l_obs'][1],
+                       color=pltargs['c_obs'][1])
+    _wrap(_ln, 1)
 
     ax.set_xscale('log')
     ax.set_xlabel('period [s]', fontsize=pltargs['fontsizes'][1])

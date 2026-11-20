@@ -15,6 +15,12 @@ text files, and generates diagnostic plots.
             text; dict per figure "imped" / "rhophas" / "phstens"), and the
             panel titles can be switched off; Claude Sonnet 5.5 (Anthropic),
             AI-generated, review before use
+@modified:  2026-11-20 -- phase panels of the rho/phase figure: a phase curve
+            that jumps by more than 180 deg between two periods (it leaves the
+            +-180 deg window) is interrupted and the two points are joined by a
+            dotted line (new PHASE_WRAP_MODE / PHASE_WRAP_STYLE, passed to
+            viz.plot_rhophas; needs the viz.py and data_viz.py of the same
+            date); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 import os
@@ -78,6 +84,17 @@ FIGURE_TITLE = "auto"   # figure title: "auto" = PLTARGS["suptitle"] as before;
                         # a dict {"imped": spec, "rhophas": spec, "phstens":
                         # spec, "default": spec}
 PANEL_TITLES = True     # False = no titles of the panels
+
+# --- phase wraps (phase panels of the rho/phase figure) ---
+# A phase curve that jumps by more than 180 deg between two periods (it leaves
+# the +-180 deg window) is interrupted and the two points are joined by a
+# separate line. Mode: "direct" (straight line), "short" (the short way through
+# the window edge; meant for phases inside +-180 deg, the panels here show
+# phases shifted by +-90 deg), "off" (no handling). Style: dict of Matplotlib
+# line properties merged over the dotted default, e.g.
+# {"linestyle": "--", "alpha": 0.5}; None = dotted; False = gap only.
+PHASE_WRAP_MODE = "direct"
+PHASE_WRAP_STYLE = None
 
 if RHO_PLT or IMP_PLT or PHT_PLT:
     PLOT_FORMAT = [".png"]
@@ -250,6 +267,7 @@ if RHO_PLT:
     PLTARGS["yscale"] = "log"
     PLTARGS["ylimits"] = []
     PLTARGS["ylabel"] = r"$\rho_a$  [$\Omega$ m]"
+    PLTARGS["phase_wrap_mode"] = "off"
     viz.plot_rhophas(thisaxis=ax[0, 0], data=data, **PLTARGS)
 
     data[:, 1] = phas[:, 1] + 90.
@@ -259,6 +277,8 @@ if RHO_PLT:
     PLTARGS["yscale"] = "linear"
     PLTARGS["ylimits"] = [-180., 180.]
     PLTARGS["ylabel"] = r"$\phi$ [$^\circ$]"
+    PLTARGS.update(phase_wrap_mode=PHASE_WRAP_MODE, phase_wrap_style=PHASE_WRAP_STYLE,
+                   phase_wrap_curves=(0, 1))
     viz.plot_rhophas(thisaxis=ax[1, 0], data=data, **PLTARGS)
 
     data[:, 1] = rhoa[:, 0]
@@ -268,6 +288,7 @@ if RHO_PLT:
     PLTARGS["yscale"] = "log"
     PLTARGS["ylimits"] = []
     PLTARGS["ylabel"] = r"$\rho_a$  [$\Omega$ m]"
+    PLTARGS["phase_wrap_mode"] = "off"
     viz.plot_rhophas(thisaxis=ax[0, 1], data=data, **PLTARGS)
 
     data[:, 1] = phas[:, 0] - 90.
@@ -277,6 +298,8 @@ if RHO_PLT:
     PLTARGS["yscale"] = "linear"
     PLTARGS["ylimits"] = [-180., 180.]
     PLTARGS["ylabel"] = r"$\phi$ [$^\circ$]"
+    PLTARGS.update(phase_wrap_mode=PHASE_WRAP_MODE, phase_wrap_style=PHASE_WRAP_STYLE,
+                   phase_wrap_curves=(0, 1))
     viz.plot_rhophas(thisaxis=ax[1, 1], data=data, **PLTARGS)
 
     for fmt in PLOT_FORMAT:

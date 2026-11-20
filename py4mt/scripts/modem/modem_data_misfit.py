@@ -186,6 +186,19 @@ Full_Interstation_TF is not drawn.
 
 Changelog
 ---------
+2026-11-20  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            "curves": phase curves that leave the +-180 deg window. Where a
+            phase curve jumps by more than 180 deg between two periods, the
+            line is interrupted and the two points are joined by a dotted
+            line (data_viz.add_phase, mark_phase_wraps); the percentile
+            bands are split there and the density skips the interval, member
+            by member. New settings CURVES_PHASE_WRAP_MODE ("direct" |
+            "short" | "off"), CURVES_PHASE_WRAP_STYLE (dict of Matplotlib
+            line properties of the connection, None = data_viz default,
+            False = gap only) and CURVES_PHASE_WRAP_RANGE (set it to
+            (-3.14159, 3.14159) for phases in radians). Needs the data_viz.py
+            of the same date. draw_density / draw_bands got the keyword
+            wrap_range (None = as before).
 2026-11-11c Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             nRMS2 switched off: no modelling error is used. New setting
             SHOW_RMS2 (default False): the crossplot panels show "nRMS" only,
@@ -246,7 +259,7 @@ import math
 import os
 import re
 import sys
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -436,6 +449,21 @@ CURVES_MULTIPAGE: bool = True      # ".pdf": one file, one page per site;
                                    # sub-directory <prefix>_curves/
 CURVES_APPRES_PHASE_DEG: bool = True   # Off_Diagonal_Rho_Phase: phase in
                                        # degrees (False: radians)
+# phase curves that leave the +-180 deg window (a jump of more than half the
+# window between two periods): the line is interrupted there and the two
+# points are joined by a separate line; bands and density skip the jump
+CURVES_PHASE_WRAP_MODE: str = "direct"   # "direct" (straight line between the two
+                                       # points) | "short" (the short way, through
+                                       # the window edge) | "off" (no handling)
+CURVES_PHASE_WRAP_STYLE: Union[None, bool, Dict[str, Any]] = None
+                                       # Matplotlib line properties of the connection,
+                                       # e.g. {"linestyle": "--", "alpha": 0.5};
+                                       # colour / width / alpha of the curve are
+                                       # inherited. None = data_viz.PHASE_WRAP_STYLE
+                                       # (dotted); False = gap only, no connection
+CURVES_PHASE_WRAP_RANGE: Tuple[float, float] = (-180.0, 180.0)
+                                       # phase window; (-3.14159, 3.14159) if the
+                                       # phases are in radians
 
 # ModEM data conventions (check against the header of your data file)
 CURVES_Z_UNITS: str = "ohm"        # unit of the impedance values: "ohm"
@@ -1260,6 +1288,8 @@ def _curves_cfg() -> dict:
         period_lim=CURVES_PERIOD_LIM, ylim=dict(CURVES_YLIM),
         panel_size=tuple(CURVES_PANEL_SIZE), multipage=CURVES_MULTIPAGE,
         appres_deg=CURVES_APPRES_PHASE_DEG, legend_loc=CURVES_LEGEND_LOC,
+        wrap_mode=CURVES_PHASE_WRAP_MODE, wrap_style=CURVES_PHASE_WRAP_STYLE,
+        wrap_range=tuple(CURVES_PHASE_WRAP_RANGE),
         z_to_si=_z_to_si(CURVES_Z_UNITS), z_conj=bool(CURVES_Z_CONJ),
         rhophs_log10=bool(CURVES_RHOPHS_LOG10),
     )
@@ -1499,7 +1529,8 @@ def resolve_layers(mode: str, M: int, max_curves: int) -> List[str]:
 
 
 def _draw(ax, plotter, frame, col: str, panel: str, *, color, ls, lw, alpha,
-          marker, ms, zorder, show_errors: bool = False) -> None:
+          marker, ms, zorder, show_errors: bool = False,
+          wrap: Optional[dict] = None) -> None:
     """
     Draw one series with a data_viz plotter and then normalize what it drew.
 
@@ -1507,6 +1538,10 @@ def _draw(ax, plotter, frame, col: str, panel: str, *, color, ls, lw, alpha,
     direction on every call and colour error shading from the colour cycle,
     so after the call: the axis direction is restored, the new lines get the
     requested marker/size/zorder, and new shading gets `color`.
+
+    `wrap` (dict wrap_mode / wrap_style / wrap_range, phase panel only; None =
+    the plotter default): handling of phase wraps, see data_viz.add_phase. The
+    connection lines it draws keep their own style (no marker added).
     """
     n_lines, n_coll = len(ax.lines), len(ax.collections)
     was_inv = ax.xaxis_inverted()
@@ -1516,20 +1551,29 @@ def _draw(ax, plotter, frame, col: str, panel: str, *, color, ls, lw, alpha,
         kw["error_alpha"] = 0.2
     if panel in ("rho", "phase"):
         kw["comps"] = col.split("_", 1)[1]
+    if panel == "phase" and wrap:
+        kw.update(wrap)                    # only add_phase knows these keywords
     plotter(frame, **kw)
     if ax.xaxis_inverted() != was_inv:
         ax.invert_xaxis()
+    wrap_gid = None
+    if panel == "phase":
+        import data_viz as _dv
+        wrap_gid = getattr(_dv, "PHASE_WRAP_GID", None)
     for ln in list(ax.lines)[n_lines:]:
+        ln.set_zorder(zorder)
+        if wrap_gid is not None and ln.get_gid() == wrap_gid:
+            continue                       # wrap connection: keep its style
         ln.set_marker(marker if marker else "none")
         ln.set_markersize(ms)
-        ln.set_zorder(zorder)
     for cl in list(ax.collections)[n_coll:]:
         cl.set_facecolor(color)
         cl.set_zorder(zorder - 0.5)
 
 
 def draw_density(ax, period: np.ndarray, y: np.ndarray, *, log_y: bool, color,
-                 nx: int, ny: int, gamma: float, zorder: float = 1.0) -> bool:
+                 nx: int, ny: int, gamma: float, zorder: float = 1.0,
+                 wrap_range: Optional[Tuple[float, float]] = None) -> bool:
     """
     Per-period density of many curves. `y` has shape (M, n) at the ascending
     `period` (n,). Every member curve is linearly interpolated (in log period,
@@ -1537,6 +1581,12 @@ def draw_density(ax, period: np.ndarray, y: np.ndarray, *, log_y: bool, color,
     and drawn with pcolormesh in `color` whose opacity is the fraction of
     members in the bin (PowerNorm with `gamma`; gamma < 1 lifts sparse
     regions). Returns False if nothing could be drawn.
+
+    `wrap_range` (lo, hi), for phases (not with `log_y`): a member whose curve
+    jumps by more than half the window between two neighbouring periods
+    (it leaves the window and comes back on the other side) is left out of
+    the grid points between these two periods, so that no streak runs through
+    the window. None = every member is interpolated across all intervals.
     """
     import matplotlib.colors as mcolors
 
@@ -1551,6 +1601,10 @@ def draw_density(ax, period: np.ndarray, y: np.ndarray, *, log_y: bool, color,
     with np.errstate(divide="ignore", invalid="ignore"):
         yv = np.where(y > 0.0, np.log10(y), np.nan) if log_y else np.asarray(y, float)
     yi = yv[:, idx] * (1.0 - t) + yv[:, idx + 1] * t          # (M, nx)
+    if wrap_range is not None and not log_y:
+        with np.errstate(invalid="ignore"):
+            jump = np.abs(np.diff(yv, axis=1)) > 0.5 * (float(wrap_range[1]) - float(wrap_range[0]))
+        yi = np.where(jump[:, idx], np.nan, yi)
     fin = np.isfinite(yi)
     if not fin.any():
         return False
@@ -1583,12 +1637,28 @@ def draw_density(ax, period: np.ndarray, y: np.ndarray, *, log_y: bool, color,
 
 
 def draw_bands(ax, period: np.ndarray, y: np.ndarray, *, pct, color,
-               zorder: float = 1.5) -> None:
-    """Percentile envelopes p..100-p of the member curves (one fill per p)."""
+               zorder: float = 1.5,
+               wrap_range: Optional[Tuple[float, float]] = None) -> None:
+    """
+    Percentile envelopes p..100-p of the member curves (one fill per p).
+
+    `wrap_range` (lo, hi), for phases: the band is cut where its lower or
+    upper edge jumps by more than half the window between two neighbouring
+    periods (a wrap), one fill per piece, so that no band runs through the
+    window. None = one fill over all periods.
+    """
+    n = period.size
     for p in pct:
         lo, hi = np.nanpercentile(y, [p, 100.0 - p], axis=0)
-        ax.fill_between(period, lo, hi, color=color, alpha=0.18, linewidth=0,
-                        zorder=zorder)
+        br = np.zeros(0, dtype=int)
+        if wrap_range is not None and n > 1:
+            import data_viz as dv
+            br = np.union1d(dv.phase_wrap_index(period, lo, *wrap_range),
+                            dv.phase_wrap_index(period, hi, *wrap_range))
+        edges = np.concatenate(([0], br + 1, [n])).astype(int)
+        for a, b in zip(edges[:-1], edges[1:]):
+            ax.fill_between(period[a:b], lo[a:b], hi[a:b], color=color, alpha=0.18,
+                            linewidth=0, zorder=zorder)
 
 
 def plot_site_curves(sid: str, series: Dict[str, dict], info: dict, *, M: int,
@@ -1639,9 +1709,15 @@ def plot_site_curves(sid: str, series: Dict[str, dict], info: dict, *, M: int,
             d[col + "_err"] = err
         return pd.DataFrame(d)
 
+    wrap_on = str(cfg["wrap_mode"]).lower() != "off"
     for ax, (w, cols) in zip(axes[0], panels):
         plotter = getattr(dv, _CURVE_PLOTTER[w])
         log_y = (w == "rho")
+        # phase wraps: keywords of add_phase (no other plotter takes them) and
+        # the window for the bands / density
+        wrap = (dict(wrap_mode=cfg["wrap_mode"], wrap_style=cfg["wrap_style"],
+                     wrap_range=cfg["wrap_range"]) if w == "phase" else None)
+        wrange = cfg["wrap_range"] if (w == "phase" and wrap_on) else None
         ax.set_xscale("log")
         if log_y:
             ax.set_yscale("log")
@@ -1661,26 +1737,29 @@ def plot_site_curves(sid: str, series: Dict[str, dict], info: dict, *, M: int,
                 if "density" in layers:
                     draw_density(ax, s["period"], cal, log_y=log_y, color=color,
                                  nx=cfg["dens_nx"], ny=cfg["dens_ny"],
-                                 gamma=cfg["dens_gamma"])
+                                 gamma=cfg["dens_gamma"], wrap_range=wrange)
                 if "bands" in layers:
-                    draw_bands(ax, s["period"], cal, pct=cfg["band_pct"], color=color)
+                    draw_bands(ax, s["period"], cal, pct=cfg["band_pct"], color=color,
+                               wrap_range=wrange)
                 if "curves" in layers:
                     for j in sub:
                         _draw(ax, plotter, frame(s, col, cal[j]), col, w, color=color,
                               ls="-", lw=0.6, alpha=alpha_m, marker=None, ms=0.0,
-                              zorder=2.0)
+                              zorder=2.0, wrap=wrap)
                 if cfg["median"]:
                     _draw(ax, plotter, frame(s, col, np.nanmedian(cal, axis=0)), col, w,
                           color=color, ls="-", lw=cfg["lw"] + 0.4, alpha=1.0,
-                          marker=None, ms=0.0, zorder=3.0)
+                          marker=None, ms=0.0, zorder=3.0, wrap=wrap)
             else:
                 _draw(ax, plotter, frame(s, col, cal[0]), col, w, color=color, ls="-",
-                      lw=cfg["lw"], alpha=1.0, marker=None, ms=0.0, zorder=3.0)
+                      lw=cfg["lw"], alpha=1.0, marker=None, ms=0.0, zorder=3.0,
+                      wrap=wrap)
             # observed data on top
             emode = cfg["obs_errors"]
             _draw(ax, plotter, frame(s, col, s["obs"], s["err"] if emode == "shade" else None),
                   col, w, color=color, ls="none", lw=0.0, alpha=1.0, marker=mk,
-                  ms=cfg["obs_ms"], zorder=5.0, show_errors=(emode == "shade"))
+                  ms=cfg["obs_ms"], zorder=5.0, show_errors=(emode == "shade"),
+                  wrap=wrap)
             if emode == "bar":
                 err, y = s["err"], s["obs"]
                 good = np.isfinite(err) & (err > 0.0)
@@ -1771,6 +1850,19 @@ def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
         return 1
     if cfg["obs_errors"] not in ("bar", "shade", "none"):
         print("modem_data_misfit: curves: CURVES_OBS_ERRORS must be bar/shade/none.")
+        return 1
+    if str(cfg["wrap_mode"]).lower() not in ("direct", "short", "off"):
+        print("modem_data_misfit: curves: CURVES_PHASE_WRAP_MODE must be direct/short/off.")
+        return 1
+    try:
+        _wlo, _whi = (float(v) for v in cfg["wrap_range"])
+        if not _whi > _wlo:
+            raise ValueError
+    except (TypeError, ValueError):
+        print("modem_data_misfit: curves: CURVES_PHASE_WRAP_RANGE must be (lo, hi) with hi > lo.")
+        return 1
+    if not (cfg["wrap_style"] is None or isinstance(cfg["wrap_style"], (bool, dict))):
+        print("modem_data_misfit: curves: CURVES_PHASE_WRAP_STYLE must be None, False or a dict.")
         return 1
     M = ds["M"]
     try:

@@ -23,6 +23,20 @@ error bars.
 Plot apparent resistivity (log-log) and phase (semilog-x) curves with
 optional model comparison and error envelopes.
 
+Optional keys of `**pltargs` for phase curves that leave the +-180 deg window
+(2026-11-20; off by default, nothing changes without them):
+
+| Key | Description |
+|-----|-------------|
+| `phase_wrap_mode` | `"off"` (default), `"direct"` (a curve that jumps by more than half the window between two periods is interrupted and the two points are joined by a straight line) or `"short"` (joined the short way, through the window edge) |
+| `phase_wrap_style` | dict of Matplotlib line properties of the joining line over the dotted default (`data_viz.PHASE_WRAP_STYLE`); `None` = dotted, `False` = gap only |
+| `phase_wrap_range` | the window, default `(-180, 180)` |
+| `phase_wrap_curves` | which of the two plotted quantities are phases: `(1,)` (default; data column 2 / 6, the phase of a rho/phase pair), `(0, 1)` for a panel with two phases, `(0,)` |
+
+The handling is `data_viz.mark_phase_wraps` applied to the lines of the observed
+(errorbar) and calculated curves of the selected quantities; the other plotters
+of the module ignore the keys, so one `PLTARGS` dict can be shared.
+
 ### `plot_phastens(thisaxis=None, data=None, **pltargs)`
 
 Plot phase tensor components (Φxx, Φxy, Φyx, Φyy) as a function of period.
@@ -73,6 +87,10 @@ All plotters read their configuration from `**pltargs`. Common keys:
 ---
 
 ## Changelog
+
+### Changelog (2026-11-20) — phase wraps in `plot_rhophas` (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- New opt-in keys `phase_wrap_mode`, `phase_wrap_style`, `phase_wrap_range`, `phase_wrap_curves` of `**pltargs` (see `plot_rhophas`); default `"off"`, so existing figures are unchanged. Needs `data_viz.py` of the same date (`mark_phase_wraps`).
+- Tests: `scripts/general/test_phase_wrap_plotters.py`.
 
 ### Changelog (2026-10-11) — FEMTIC I/O alignment
 - `plot_sparsity_pattern`: the sparse-matrix check is now `ensembles.check_sparse_matrix` (the function lives in `ensembles.py`; the former `femtic.check_sparse_matrix` call raised `AttributeError`).

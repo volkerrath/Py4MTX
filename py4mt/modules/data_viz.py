@@ -73,6 +73,8 @@ Modified: 2026-03-30 — pop linestyle from **line_kw in add_rho/add_phase/add_t
 Modified: 2026-04-12 — remove hardcoded marker="o" from add_rho, add_phase, add_rhoplus; pop marker from **line_kw (default None = no marker) so callers control markers without TypeError; add marker override to add_tipper and add_pt (uniform override, same pattern as existing linestyle override); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-11-20 -- add_phase: where a phase curve leaves the +-180 deg window and re-enters on the other side, the solid line and the error band are no longer drawn straight through the jump (long vertical streak); the curve is broken there and the two points are connected by one dotted line (wrap_mode="direct", default) or by two short dotted stubs through the window edge (wrap_mode="short"). The style of the connection is a dict of Line2D keywords (wrap_style, module default PHASE_WRAP_STYLE; False = no connection; wrap_mode="off" = old behaviour). Marker-only calls (linestyle "none") get no connection. "ls" is accepted as alias of "linestyle". Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
 
+Modified: 2026-11-20 (b) -- public helpers `mark_phase_wraps(ax, line, ...)` (interrupt an already drawn phase line at its wraps, add the connection, return the wrap indices) and `phase_wrap_index(x, y, lo, hi)`, constant `PHASE_WRAP_GID` (gid of the connection lines); `add_phase` now uses `mark_phase_wraps`; `wrap_style=True` accepted (= default style). For the other plotters (femtic_misfit, femtic_viz.plot_data_ensemble, viz.plot_rhophas, mt_get_averages, ...). Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
+
 Provenance (changes of 2026-11-20)
 ----------------------------------
 Author    : Claude (Claude Sonnet 5.5, Anthropic)
@@ -100,6 +102,10 @@ MU0 = 4.0e-7 * np.pi  # magnetic permeability of free space [H/m]
 #: (colour, linewidth, alpha, zorder).  Change it for all later calls with
 #: ``data_viz.PHASE_WRAP_STYLE.update(linestyle="--", alpha=0.5)``.
 PHASE_WRAP_STYLE: dict = {"linestyle": ":"}
+
+# gid of the connection lines drawn at phase wraps; callers that restyle the
+# lines of an axes after plotting (femtic_misfit._draw) can skip them by it
+PHASE_WRAP_GID: str = "py4mt_phase_wrap"
 
 
 def _as_array(x: Any) -> Optional[np.ndarray]:
@@ -787,7 +793,8 @@ def add_rhoplus(
 
 
 
-def _phase_wrap_index(x: np.ndarray, y: np.ndarray, lo: float, hi: float) -> np.ndarray:
+def phase_wrap_index(x: np.ndarray, y: np.ndarray, lo: float = -180.0,
+                     hi: float = 180.0) -> np.ndarray:
     """Indices ``k`` where a phase curve wraps between point ``k`` and ``k+1``.
 
     A wrap is a jump of more than half the window width ``hi - lo`` (180 deg
@@ -843,6 +850,77 @@ def _phase_wrap_segments(
 def _linestyle_is_none(ls: Any) -> bool:
     """True if a matplotlib linestyle means "no line"."""
     return isinstance(ls, str) and ls.strip().lower() in ("none", "")
+
+
+def _resolve_wrap_style(wrap_style) -> Optional[dict]:
+    """Style dict of the wrap connection: None / True = PHASE_WRAP_STYLE,
+    a mapping = PHASE_WRAP_STYLE updated by it, False = no connection (None
+    is returned)."""
+    if wrap_style is False:
+        return None
+    if wrap_style is None or wrap_style is True:
+        return dict(PHASE_WRAP_STYLE)
+    return {**PHASE_WRAP_STYLE, **dict(wrap_style)}
+
+
+def mark_phase_wraps(
+    ax: plt.Axes,
+    line,
+    *,
+    wrap_mode: str = "direct",
+    wrap_style: Optional[Mapping[str, Any] | bool] = None,
+    wrap_range: tuple = (-180.0, 180.0),
+) -> np.ndarray:
+    """Interrupt an already drawn phase curve at its wraps and connect them.
+
+    For any plotter that draws a phase curve with ``ax.plot`` / ``ax.semilogx``
+    / ``ax.errorbar``: pass the Line2D that was drawn (for ``errorbar`` the
+    data line, ``container.lines[0]``).  Where two neighbouring points differ
+    by more than half the window ``wrap_range`` (a curve that leaves the
+    +-180 deg window and re-enters on the other side), the line gets a NaN gap
+    and, unless ``wrap_style`` is False, a separate line is added to ``ax``
+    that joins the two points; see :func:`add_phase` for ``wrap_mode`` and
+    ``wrap_style``.  A line without a visible stroke (``linestyle`` "none" or
+    zero linewidth, markers only) is left alone.
+
+    Returns
+    -------
+    numpy.ndarray of int
+        Indices ``k`` of the wraps (between point ``k`` and ``k+1`` of the
+        original data), empty if there are none or ``wrap_mode="off"``.  Use
+        them as ``breaks`` for error bands (``_maybe_fill_between``).
+
+    Claude Sonnet 5.5 (Anthropic), 2026-11-20; AI-generated, review before
+    production use.
+    """
+    mode = str(wrap_mode).lower()
+    if mode not in ("short", "direct", "off"):
+        raise ValueError(
+            f"wrap_mode must be 'short', 'direct' or 'off', got {wrap_mode!r}.")
+    lo, hi = float(wrap_range[0]), float(wrap_range[1])
+    if not hi > lo:
+        raise ValueError(f"wrap_range must be (lo, hi) with hi > lo, got {wrap_range!r}.")
+    if mode == "off":
+        return np.zeros(0, dtype=int)
+    xy = np.asarray(line.get_xydata(), dtype=float)
+    if xy.ndim != 2 or xy.shape[0] < 2:
+        return np.zeros(0, dtype=int)
+    x, y = xy[:, 0], xy[:, 1]
+    k = phase_wrap_index(x, y, lo, hi)
+    if k.size == 0:
+        return k
+    ls = line.get_linestyle()
+    if _linestyle_is_none(ls) or str(ls) == "None" or float(line.get_linewidth()) == 0.0:
+        return k
+    line.set_data(np.insert(x, k + 1, np.nan), np.insert(y, k + 1, np.nan))
+    style = _resolve_wrap_style(wrap_style)
+    if style is not None:
+        xs, ys = _phase_wrap_segments(x, y, k, lo, hi, mode=mode)
+        ax.plot(xs, ys, **{
+            "color": line.get_color(), "linewidth": line.get_linewidth(),
+            "alpha": line.get_alpha(), "zorder": line.get_zorder(),
+            **style, "label": "_nolegend_", "gid": PHASE_WRAP_GID})
+    return k
 
 
 def add_phase(
@@ -941,37 +1019,20 @@ def add_phase(
     _lo, _hi = float(wrap_range[0]), float(wrap_range[1])
     if not _hi > _lo:
         raise ValueError(f"add_phase: wrap_range must be (lo, hi) with hi > lo, got {wrap_range!r}.")
-    if wrap_style is False:
-        _wstyle = None
-    elif wrap_style is None or wrap_style is True:
-        _wstyle = dict(PHASE_WRAP_STYLE)
-    else:
-        _wstyle = {**PHASE_WRAP_STYLE, **dict(wrap_style)}
-    _lw = line_kw.get("linewidth", line_kw.get("lw"))
-    _has_line = not _linestyle_is_none(_ls) and not (_lw is not None and float(_lw) == 0.0)
 
     for c in comps_list:
         col = f"phi_{c}"
         if col not in df.columns:
             continue
         y = df[col].to_numpy()
-        kwrap = (_phase_wrap_index(period, y, _lo, _hi) if _wmode != "off"
-                 else np.zeros(0, dtype=int))
-        xp, yp = period, y
-        if kwrap.size and _has_line:
-            # interrupt the solid line at the wraps (NaN = gap)
-            xp = np.insert(np.asarray(period, dtype=float), kwrap + 1, np.nan)
-            yp = np.insert(np.asarray(y, dtype=float), kwrap + 1, np.nan)
         _plot_kw = dict(linestyle=_ls, label=f"$\\phi,{c.upper()}$", **line_kw)
         if _mk is not None:
             _plot_kw["marker"] = _mk
-        main = ax.semilogx(xp, yp, **_plot_kw)[0]
-        if kwrap.size and _has_line and _wstyle is not None:
-            xs, ys = _phase_wrap_segments(period, y, kwrap, _lo, _hi, mode=_wmode)
-            ax.plot(xs, ys, **{
-                "color": main.get_color(), "linewidth": main.get_linewidth(),
-                "alpha": main.get_alpha(), "zorder": main.get_zorder(),
-                **_wstyle, "label": "_nolegend_"})
+        main = ax.semilogx(period, y, **_plot_kw)[0]
+        # interrupt the solid line at the wraps and connect them (no-op for
+        # marker-only lines and for wrap_mode="off")
+        kwrap = mark_phase_wraps(ax, main, wrap_mode=_wmode, wrap_style=wrap_style,
+                                 wrap_range=(_lo, _hi))
         if show_errors:
             err_col = f"{col}{error_suffix}"
             if err_col in df.columns:

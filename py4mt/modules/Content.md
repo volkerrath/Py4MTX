@@ -26,6 +26,7 @@ modules treat the dict returned by `load_edi` as the standard **site container**
 | Error estimation from curve scatter | `estimate_errors` (spline-residual, smoothed, MAD) |
 | Interpolation | `interpolate_data` |
 | One preset frequency grid for all sites (each site gets the part its band covers) | `make_freq_grid`, `common_freq_grid`, `freq_grid_coverage` |
+| Exactly N log-spaced frequencies between two limits (also as the survey grid: `common_freq_grid(n_freq=...)`) | `make_freq_grid_n` |
 | FT sign-convention detection (exp(-iwt) / exp(+iwt)) | `detect_ft_convention`, `scan_edi_header_convention`, `load_edi(manufacturer="auto")` |
 | Rotation | `rotate_data` |
 | 1-D forward modelling | `mt1dfwd`, `wait1d` |
@@ -60,7 +61,11 @@ pass to every plotter without collision.  `add_phase` additionally takes
 `wrap_mode`, `wrap_style` (dict of Line2D keywords; module default
 `PHASE_WRAP_STYLE`) and `wrap_range`: where a phase curve leaves the +-180 deg
 window the line is interrupted and the jump drawn as a (dotted) connection
-(2026-11-20); pass these to `add_phase` only.
+(2026-11-20); pass these to `add_phase` only. `mark_phase_wraps(ax, line, ...)`
+and `phase_wrap_index(x, y)` do the same for phase lines drawn by other code;
+used by `femtic_misfit.py`, `femtic_viz.plot_data_ensemble`,
+`viz.plot_rhophas` (opt-in) and the plotting scripts (`mt_plot_data.py`,
+`mt_get_averages.py`, `mt_aniso1d_forward.py`, `modem_data_misfit.py`, ...).
 
 ---
 

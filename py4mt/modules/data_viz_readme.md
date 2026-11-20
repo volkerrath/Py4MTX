@@ -144,7 +144,34 @@ through the middle of the window.  The three arguments are consumed by
 `add_phase` only: do not put them in a `PLTARGS` dict that is also passed to
 `add_rho`, `add_tipper` or `add_pt` (those would forward them to Matplotlib).
 `"ls"` is accepted as an alias of `"linestyle"`.  Tests:
-`scripts/general/test_data_viz_phase_wrap.py` (31 cases).
+`scripts/general/test_data_viz_phase_wrap.py` (41 cases).
+
+#### The same for phase lines drawn by other code (2026-11-20, later)
+
+`add_phase` is built on two public helpers that other plotters use:
+
+```python
+k = data_viz.mark_phase_wraps(ax, line, wrap_mode="direct", wrap_style=None,
+                              wrap_range=(-180.0, 180.0))
+idx = data_viz.phase_wrap_index(x, y, lo=-180.0, hi=180.0)
+```
+
+`mark_phase_wraps` takes a `Line2D` that has already been drawn (for
+`ax.errorbar` the data line `container.lines[0]`), inserts the NaN gaps and
+adds the connection (same arguments as in `add_phase`).  It returns the wrap
+indices `k` (between point `k` and `k+1` of the original data; empty if there
+is none or `wrap_mode="off"`), which are the `breaks` for an error band; a
+line without a visible stroke (markers only) gets no connection but its
+indices are still returned.  The connection lines carry the gid
+`data_viz.PHASE_WRAP_GID`, so that a caller that restyles the new lines of an
+axes after plotting (`femtic_misfit._draw`, `femtic_viz.plot_data_ensemble`)
+can leave them alone.  `wrap_style=True` is the same as `None` (the default
+style).  Users of the helpers: `femtic_misfit.py` (and `femtic_ens_misfit.py`,
+`femtic_mod_misfit.py`, `modem_data_misfit.py`), `femtic_viz.plot_data_ensemble`
+(and the callers `femtic_rto_prep.py`, `femtic_gst_prep.py`,
+`femtic_distcorr.py`), `viz.plot_rhophas` (opt-in), `mt_plot_data.py`,
+`mt_get_averages.py`, `mt_aniso1d_forward.py`.  Tests of these:
+`scripts/general/test_phase_wrap_plotters.py` (49 cases).
 
 > **Note for callers using a shared `PLTARGS` dict:** because `ylim` varies per panel, pass per-call overrides as `**{**PLTARGS, "ylim": (...)}` rather than mutating `PLTARGS["ylim"]` before each call.
 
@@ -204,3 +231,4 @@ Modified: 2026-03-16 — add_rhoplus (D+/rho+ test plot); Claude Sonnet 4.6 (Ant
 Modified: 2026-03-30 — linestyle override via **line_kw (all plotters); removed bogus required-key guard from add_tipper/add_pt; per-call PLTARGS pattern documented; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-04-12 — removed hardcoded marker="o" from add_rho, add_phase, add_rhoplus (default now no marker); pop marker from **line_kw so callers can supply it without TypeError; add uniform marker override to add_tipper and add_pt (same pattern as existing linestyle override); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-11-20 -- `add_phase`: phase curves that leave the +-180 deg window are interrupted and the jump is drawn as a connection in a style dict (`wrap_mode`, `wrap_style`, `wrap_range`, module default `PHASE_WRAP_STYLE`); `ls` accepted as alias of `linestyle`; `_maybe_fill_between(breaks=...)`. Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
+Modified: 2026-11-20 (b) -- public helpers `mark_phase_wraps(ax, line, ...)` and `phase_wrap_index(x, y, lo, hi)`, constant `PHASE_WRAP_GID`; `add_phase` uses `mark_phase_wraps`; `wrap_style=True` accepted (= default style). Used by femtic_misfit, femtic_viz.plot_data_ensemble, viz.plot_rhophas (opt-in) and several plotting scripts. Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use

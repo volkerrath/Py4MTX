@@ -20,7 +20,7 @@ magnetotelluric (MT) transfer functions.
   manual error setting (`estimate_errors`, `interpolate_data`, `rotate_data`,
   `set_errors`)
 - **One preset frequency grid for a whole survey** — `make_freq_grid`,
-  `common_freq_grid`, `freq_grid_coverage`; each site gets the part of the grid
+  `make_freq_grid_n`, `common_freq_grid`, `freq_grid_coverage`; each site gets the part of the grid
   that its band covers, optional extrapolation just outside the band
 - **FT-convention detection** — `detect_ft_convention`,
   `scan_edi_header_convention`, `load_edi(manufacturer="auto")`
@@ -467,6 +467,7 @@ site is written on the part of the grid that its own band covers:
 
 ```python
 grid = data_proc.common_freq_grid(sites, freq_per_dec=6)          # band of the whole survey
+grid = data_proc.common_freq_grid(sites, n_freq=25, freq_range=(1e-2, 1e2))   # exactly 25 points
 sites = [data_proc.interpolate_data(d, newfreqs=grid) for d in sites]
 # with a margin of 1/6 decade for extrapolation just outside a site's band:
 sites = [data_proc.interpolate_data(d, newfreqs=grid, extrap_decades=1/6) for d in sites]
@@ -485,9 +486,24 @@ Grid points `f_k = anchor * 10**(k / freq_per_dec)` with **integer k**, those in
 depend on the band, so grids of different sites are subsets of one grid, and
 with `anchor = 1` the decades (..., 0.1, 1, 10, ...) are always members.
 
-### `common_freq_grid(freqs, freq_per_dec, *, freq_range="survey", anchor=1.0, rtol=1e-3, order="inc", extrap_decades=0.0, names=None, verbose=True)`
+### `make_freq_grid_n(n_freq, fmin, fmax, *, order="inc")`
 
-`freqs`: one frequency array (or site dict) per site.
+**Exactly `n_freq` frequencies**, equally spaced in log f, with `fmin` and `fmax`
+themselves as the first and last point (exactly, not only within rounding); the
+spacing is `log10(fmax/fmin)/(n_freq-1)` decades.  Unlike `make_freq_grid` the
+frequencies are not anchored on the absolute decades, so a grid made for another
+band is not a subset of this one; that does not matter when one grid is made for
+the whole survey.  `n_freq` must be an integer >= 2 (1 only for `fmin == fmax`),
+else `ValueError`.
+
+### `common_freq_grid(freqs, freq_per_dec=None, *, n_freq=None, freq_range="survey", anchor=1.0, rtol=1e-3, order="inc", extrap_decades=0.0, names=None, verbose=True)`
+
+`freqs`: one frequency array (or site dict) per site.  Give **exactly one** of
+`freq_per_dec` (points per decade, `make_freq_grid`) and `n_freq` (exactly that
+many frequencies between the limits, `make_freq_grid_n`; `anchor` and `rtol`
+then do not shape the grid); otherwise `ValueError`.  A site gets the grid points
+that lie in its own band, so with `n_freq` and `freq_range=(fmin, fmax)` every
+site whose band covers the limits has exactly `n_freq` frequencies.
 
 | `freq_range` | Grid band |
 |--------------|-----------|
@@ -731,3 +747,4 @@ Modified: 2026-09-07 — added make_collection(): build a station-dict collectio
 Modified: 2026-11-20 -- common frequency grids (make_freq_grid, common_freq_grid; interpolate_data anchored grid, anchor/rtol, freq_order tag, linear interpolation of the error arrays, derived keys removed); FT-convention detection (detect_ft_convention, scan_edi_header_convention, load_edi manufacturer="auto", auto_fallback, ft_detect_pars, keys ft_detected / ft_detect_fraction / ft_detect_nvotes / ft_detect_source); save_edi write_convention (>INFO line) and documentation of the invalid-value marker; Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 Modified: 2026-11-20 (b) -- one preset survey grid, each site on the part its band covers: common_freq_grid freq_range "survey" (default) / "common" / (fmin, fmax) with a coverage report; new freq_grid_coverage; interpolate_data clips (outside="clip") or raises, extrap_decades (1/x decade) extrapolates just outside the band, new key "extrapolated"; allow_extrapolation removed; Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 Modified: 2026-11-20 (c) -- `read_sitelist()` docs: one UTM zone for all sites of a list (also across zone boundaries), zone named in the `# utm_zone=...` comment line, which is skipped; Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
+Modified: 2026-11-20 (d) -- make_freq_grid_n(): exactly n_freq log-spaced frequencies including both limits; common_freq_grid(n_freq=...), freq_per_dec now optional (exactly one of the two); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use

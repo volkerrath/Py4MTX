@@ -54,6 +54,7 @@ rho_global (scalar), n_sites (int).
 @modified:  2026-06-13 — fix global error: resample per-site log-means (not pooled values), stay in log space, report multiplicative factor ×/÷ σ_g; Claude Sonnet 4.6 (Anthropic)
 @modified:  2026-09-07 — BUILD_FROM_EDI switch: collection can now be built directly from an EDI_DIR via the new data_proc.make_collection() instead of requiring a pre-existing COLL_FILE; optional SAVE_COLLECTION caches the built collection to COLL_FILE; added PY4MTX_ROOT sys.path setup and data_proc import; Claude Sonnet 5 (Anthropic)
 @modified:  2026-11-11 — FIGURE_TITLE: title of the figures ("auto" = "<label> — apparent resistivity & phase" as before; None / "" = none; text with {label}, {tag}; dict per quantity "ssq" / "det" / "avg"); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+@modified:  2026-11-20 -- phase panel: a phase curve (site curves, average) that jumps by more than 180 deg between two neighbouring periods (it leaves the +-180 deg window) is interrupted and the two points are joined by a dotted line, the +-1 std band is cut there; new PHASE_WRAP_MODE / PHASE_WRAP_STYLE (data_viz.mark_phase_wraps, needs the data_viz.py of the same date); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 from __future__ import annotations
@@ -74,6 +75,7 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
             sys.path.insert(0, str(_p))
 
 from data_proc import make_collection
+from data_viz import mark_phase_wraps, phase_wrap_index
 import util as utl
 
 # ---------------------------------------------------------------------------
@@ -136,6 +138,16 @@ ERRORS      = "std" #"bootstrap"  # "std"       — sample std across sites (spa
                            # None / False — no error band
 ERR_NSIM    = 500      # number of bootstrap resamples (only used when ERRORS="bootstrap")
 ERR_ALPHA   = 0.20     # opacity of the error shading
+
+# Phase curves that leave the +-180 deg window (jump of more than 180 deg
+# between two periods; only the sum-of-squares and determinant invariants can,
+# Zavg is folded to 0-90 deg): the line is interrupted and the two points are
+# joined by a separate line, the std band is cut. Mode: "direct" (straight
+# line), "short" (the short way through the window edge), "off" (no handling).
+# Style: dict of Matplotlib line properties merged over the dotted default,
+# e.g. {"linestyle": "--", "alpha": 0.5}; None = dotted; False = gap only.
+PHASE_WRAP_MODE  = "direct"
+PHASE_WRAP_STYLE = None
 
 SITE_ALPHA  = 0.35
 SITE_LW     = 1.8
@@ -385,23 +397,32 @@ def _plot_invar(
     ax_rho.grid(True, which="both", ls=":", lw=0.4, alpha=0.5)
 
     # --- phase panel ---
+    _wkw = dict(wrap_mode=PHASE_WRAP_MODE, wrap_style=PHASE_WRAP_STYLE)
     for i, (freq_s, phi_s) in enumerate(zip(all_freqs, all_phi)):
-        ax_phi.semilogx(_period(freq_s), phi_s,
-                        color=colors[i], alpha=SITE_ALPHA, lw=SITE_LW)
+        _ln, = ax_phi.semilogx(_period(freq_s), phi_s,
+                               color=colors[i], alpha=SITE_ALPHA, lw=SITE_LW)
+        mark_phase_wraps(ax_phi, _ln, **_wkw)
 
     valid_p = np.isfinite(phi_favg)
-    ax_phi.semilogx(per_grid[valid_p], phi_favg[valid_p],
-                    color=AVG_COLOR, lw=AVG_LW, ls="--", zorder=5)
+    _ln, = ax_phi.semilogx(per_grid[valid_p], phi_favg[valid_p],
+                           color=AVG_COLOR, lw=AVG_LW, ls="--", zorder=5)
+    mark_phase_wraps(ax_phi, _ln, **_wkw)
 
     if PLOT_ERRORS:
         std_ok_p = valid_p & np.isfinite(phi_fstd)
         if std_ok_p.any():
-            ax_phi.fill_between(
-                per_grid[std_ok_p],
-                phi_favg[std_ok_p] - phi_fstd[std_ok_p],
-                phi_favg[std_ok_p] + phi_fstd[std_ok_p],
-                color=AVG_COLOR, alpha=ERR_ALPHA, lw=0, zorder=4,
-            )
+            _xb = per_grid[std_ok_p]
+            _yb = phi_favg[std_ok_p]
+            _sb = phi_fstd[std_ok_p]
+            # the band is cut where the average wraps (one fill per piece)
+            _kb = (np.zeros(0, dtype=int) if str(PHASE_WRAP_MODE).lower() == "off"
+                   else phase_wrap_index(_xb, _yb))
+            _edges = np.concatenate(([0], _kb + 1, [_xb.size])).astype(int)
+            for _a, _b in zip(_edges[:-1], _edges[1:]):
+                ax_phi.fill_between(
+                    _xb[_a:_b], _yb[_a:_b] - _sb[_a:_b], _yb[_a:_b] + _sb[_a:_b],
+                    color=AVG_COLOR, alpha=ERR_ALPHA, lw=0, zorder=4,
+                )
 
     ax_phi.axhline(0,  color="grey", lw=0.6, ls="-")
     ax_phi.axhline(45, color="grey", lw=0.6, ls=":")

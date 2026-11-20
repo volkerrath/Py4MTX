@@ -115,6 +115,7 @@ Modified: 2026-09-07 — added make_collection(): build a station-dict collectio
 Modified: 2026-11-20 -- (1) common frequency grids: new make_freq_grid() and common_freq_grid(); interpolate_data(freq_per_dec=...) now builds a grid anchored on absolute decades (f = anchor * 10**(k/freq_per_dec), k integer) instead of a linspace between the site's own min and max, so every site gets frequencies from the same grid; new keywords anchor, rtol, allow_extrapolation (target frequencies outside the data band now raise ValueError unless allowed); output order follows freq_order and the freq_order tag is updated (it was left at "dec" with an ascending array); derived per-frequency keys (Zdet, Zssq, Zavg, rho, phi, ..., dplus) are removed because they refer to the old grid; the error arrays (Z_err, T_err, P_err) are interpolated linearly in log-frequency instead of with the smoothing spline, which produced negative variances (down to -10 in a noisy test case). (2) FT-convention detection: new detect_ft_convention() (sign of the phase quadrant of Zdet, Zxy, Zyx; optional explicit exp(+-iwt) tag in the header via scan_edi_header_convention()); load_edi(manufacturer="auto") uses it per station, keywords auto_fallback and ft_detect_pars; new keys ft_detected, ft_detect_fraction, ft_detect_nvotes, ft_detect_source. (3) save_edi writes an >INFO line with the FT convention of the stored data and the invalid-value marker (write_convention=True) so that the file is self-describing. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 Modified: 2026-11-20 (b) -- grids per site from one preset survey grid: common_freq_grid() default freq_range="survey" (band of the whole survey; "common" = intersection as before; or (fmin, fmax)) with a report of the sites that get only part of the grid; new freq_grid_coverage(); interpolate_data() keeps the target frequencies that the site's band covers and leaves out the others (outside="clip", or "raise"), new keyword extrap_decades (1/x decade) keeps and extrapolates target frequencies just outside the band (straight line in log f from the spline value and slope at the band edge; errors keep the edge value), new boolean key "extrapolated"; keyword allow_extrapolation removed (it was introduced the same day). Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 Modified: 2026-11-20 (c) -- read_sitelist(): docstring only; the easting/northing of a list written by mt_make_sitelist.py are in ONE UTM zone for all sites (UTM_ZONE_MODE 'common', also across zone boundaries), named in the '# utm_zone=...' comment line at the top of the list, which the reader skips; Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
+Modified: 2026-11-20 (d) -- new make_freq_grid_n(n_freq, fmin, fmax): exactly n_freq log-spaced frequencies including both limits; common_freq_grid(n_freq=...) builds the one survey grid this way (freq_range "survey" / "common" / (fmin, fmax) as before; exactly one of freq_per_dec and n_freq must be given, freq_per_dec is now optional); Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
 """
 
 from __future__ import annotations
@@ -1639,6 +1640,67 @@ def make_freq_grid(
     return grid if str(order).lower() == "inc" else grid[::-1].copy()
 
 
+def make_freq_grid_n(
+    n_freq: int,
+    fmin: float,
+    fmax: float,
+    *,
+    order: str = "inc",
+) -> np.ndarray:
+    """Exactly *n_freq* log-spaced frequencies between two limits.
+
+    The points are equally spaced in ``log10(f)`` and include both limits:
+    ``f_0 = fmin`` and ``f_{N-1} = fmax`` (exactly, not only within rounding),
+    so the grid always has *n_freq* points -- unlike :func:`make_freq_grid`,
+    whose number of points depends on where the band lies relative to the
+    absolute decades.  The spacing is ``log10(fmax / fmin) / (n_freq - 1)``
+    decades.
+
+    Parameters
+    ----------
+    n_freq : int
+        Number of frequencies, at least 2 (1 is accepted only for
+        ``fmin == fmax``).  An integral float such as ``12.0`` is accepted.
+    fmin, fmax : float
+        Limits [Hz], ``0 < fmin <= fmax``; both are grid points.
+    order : {"inc", "dec"}, optional
+        Order of the returned array.  Default ascending.
+
+    Returns
+    -------
+    numpy.ndarray
+        ``n_freq`` frequencies [Hz].
+
+    Raises
+    ------
+    ValueError
+        If *n_freq* is not an integer >= 2 (or 1 with ``fmin == fmax``), the
+        limits are not ``0 < fmin <= fmax``, or *order* is unknown.
+    """
+    try:
+        n = int(n_freq)
+        integral = (n == n_freq)
+    except (TypeError, ValueError, OverflowError):
+        integral = False
+    if not integral:
+        raise ValueError(f"make_freq_grid_n: n_freq must be an integer, got {n_freq!r}.")
+    fmin, fmax = float(fmin), float(fmax)
+    if not (np.isfinite(fmin) and np.isfinite(fmax) and 0.0 < fmin <= fmax):
+        raise ValueError("make_freq_grid_n: need 0 < fmin <= fmax.")
+    if str(order).lower() not in ("inc", "dec"):
+        raise ValueError("make_freq_grid_n: order must be 'inc' or 'dec'.")
+    if n < 1 or (n == 1 and fmin != fmax):
+        raise ValueError(
+            "make_freq_grid_n: n_freq must be >= 2 (1 only for fmin == fmax), "
+            f"got {n_freq!r} for {fmin:.4g} - {fmax:.4g} Hz.")
+    if n == 1:
+        grid = np.array([fmin])
+    else:
+        grid = np.power(10.0, np.linspace(np.log10(fmin), np.log10(fmax), n))
+        grid[0], grid[-1] = fmin, fmax           # the limits exactly
+    return grid if str(order).lower() == "inc" else grid[::-1].copy()
+
+
 def _grid_cover(
     new_logf: np.ndarray,
     lf_min: float,
@@ -1730,8 +1792,9 @@ def freq_grid_coverage(
 
 def common_freq_grid(
     freqs: Any,
-    freq_per_dec: float,
+    freq_per_dec: Optional[float] = None,
     *,
+    n_freq: Optional[int] = None,
     freq_range: Any = "survey",
     anchor: float = 1.0,
     rtol: float = 1.0e-3,
@@ -1754,8 +1817,14 @@ def common_freq_grid(
     freqs : sequence
         One entry per site: an array of frequencies [Hz] or a site dictionary
         with key ``"freq"``.
-    freq_per_dec : float
-        Points per decade.
+    freq_per_dec : float, optional
+        Points per decade: the grid is anchored on absolute decades
+        (:func:`make_freq_grid`), so its number of points depends on the band.
+        Give either this or *n_freq*, not both.
+    n_freq : int, optional
+        Exactly this many frequencies, log-spaced and including both limits of
+        the band (:func:`make_freq_grid_n`); *anchor* and *rtol* do not apply
+        to the grid.  Give either this or *freq_per_dec*, not both.
     freq_range : "survey", "common" or (fmin, fmax), optional
         ``"survey"`` (default): the band of the whole survey (lowest minimum to
         highest maximum), so that no site limits the grid; sites with a shorter
@@ -1763,7 +1832,8 @@ def common_freq_grid(
         (highest minimum to lowest maximum), i.e. every site has every
         frequency.  A tuple gives the band explicitly [Hz] (the preset grid).
     anchor, rtol, order
-        See :func:`make_freq_grid`.
+        See :func:`make_freq_grid` (*rtol* is also the tolerance of the
+        coverage report, *order* applies to both kinds of grid).
     extrap_decades : float, optional
         Used for the report only: grid frequencies at most this many decades
         outside a site's band count as covered (see :func:`interpolate_data`).
@@ -1783,8 +1853,13 @@ def common_freq_grid(
     ------
     ValueError
         For ``freq_range="common"`` if the sites have no common band; if the
-        band holds no grid point.
+        band holds no grid point; if neither or both of *freq_per_dec* and
+        *n_freq* are given.
     """
+    if (freq_per_dec is None) == (n_freq is None):
+        raise ValueError(
+            "common_freq_grid: give exactly one of freq_per_dec (points per decade) "
+            "and n_freq (number of frequencies).")
     cov0 = freq_grid_coverage(np.array([1.0]), freqs, names=names)   # band of each site
     fmins_a, fmaxs_a, labels = cov0["fmin"], cov0["fmax"], cov0["names"]
     i_lo = int(np.argmax(fmins_a))      # site with the highest minimum
@@ -1810,7 +1885,10 @@ def common_freq_grid(
         mode = "range"
         f_lo, f_hi = (float(v) for v in freq_range)
 
-    grid = make_freq_grid(freq_per_dec, f_lo, f_hi, anchor=anchor, rtol=rtol, order=order)
+    if n_freq is not None:
+        grid = make_freq_grid_n(n_freq, f_lo, f_hi, order=order)
+    else:
+        grid = make_freq_grid(freq_per_dec, f_lo, f_hi, anchor=anchor, rtol=rtol, order=order)
     if grid.size == 0:
         raise ValueError(
             f"common_freq_grid: no grid point between {f_lo:.4g} and {f_hi:.4g} Hz.")
@@ -1819,8 +1897,15 @@ def common_freq_grid(
         cov = freq_grid_coverage(grid, freqs, extrap_decades=extrap_decades,
                                  rtol=rtol, names=labels)
         ng = grid.size
-        print(f"  frequency grid: {ng} points, {freq_per_dec:g} per decade, "
-              f"{grid.min():.4g} - {grid.max():.4g} Hz (anchor {anchor:g} Hz)")
+        if n_freq is not None:
+            _dec = np.log10(grid.max() / grid.min())
+            print(f"  frequency grid: exactly {ng} points, log-spaced between the limits, "
+                  f"{grid.min():.4g} - {grid.max():.4g} Hz"
+                  + (f" ({_dec / (ng - 1):.3g} decade = {(ng - 1) / _dec:.3g} per decade "
+                     f"on average)" if ng > 1 and _dec > 0 else ""))
+        else:
+            print(f"  frequency grid: {ng} points, {freq_per_dec:g} per decade, "
+                  f"{grid.min():.4g} - {grid.max():.4g} Hz (anchor {anchor:g} Hz)")
         print(f"    band of the survey : {fmins_a.min():.4g} - {fmaxs_a.max():.4g} Hz "
               f"({len(labels)} sites)")
         if mode == "common":

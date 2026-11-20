@@ -11,6 +11,14 @@ Cleanup: 4 Mar 2026 by Claude (Anthropic)
 @modified: 2026-11-11 -- FIGURE_TITLE: title of the station figures ("auto" = the
            station name as before; None / "" = none; text with {station}; dict
            per station); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+@modified: 2026-11-20 -- phase curves that leave the +-180 deg window are
+           interrupted and the two points joined by a dotted line (new
+           PHASE_WRAP_MODE / PHASE_WRAP_STYLE, passed to add_phase; needs the
+           data_viz.py of the same date). The Matplotlib line settings are now
+           taken from PLTARGS as LINE_KW (the whole PLTARGS dict, with keys such as
+           "Fontsize", was passed to add_rho / add_phase, which hand unknown
+           keywords on to Matplotlib: the script stopped there);
+           Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 import os
@@ -69,6 +77,15 @@ STRNG_OUT = ""
 # they stand); or a dict {"<station>": spec, "default": spec}
 FIGURE_TITLE = "auto"
 
+# Phase curves that leave the +-180 deg window (jump of more than 180 deg
+# between two periods): the line is interrupted and the two points are joined
+# by a separate line. Mode: "direct" (straight line), "short" (the short way
+# through the window edge), "off" (no handling). Style: dict of Matplotlib line
+# properties merged over the dotted default, e.g. {"linestyle": "--",
+# "alpha": 0.5}; None = dotted; False = gap only (no connection).
+PHASE_WRAP_MODE = "direct"
+PHASE_WRAP_STYLE = None
+
 FILES_ONLY = False
 PLT_FMT = [".png", ".pdf"]
 
@@ -107,6 +124,9 @@ PLTARGS = {
     "Colors": colors,
     "Grey": 0.7,
 }
+# keywords for the curves of add_rho / add_phase (Matplotlib line properties
+# only; the other entries of PLTARGS are style values of the old plotting code)
+LINE_KW = {"linewidth": PLTARGS["Linewidths"][0]}
 
 # =============================================================================
 #  Ensure output directory exists
@@ -125,10 +145,13 @@ for site in DAT_LIST:
 
     fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
 
-    add_rho(df, comps="xy,yx", ax=axs[0, 0], **PLTARGS)
-    add_phase(df, comps="xy,yx", ax=axs[0, 1], **PLTARGS)
-    add_rho(df, comps="xx,yy", ax=axs[1, 0], **PLTARGS)
-    add_phase(df, comps="xx,yy", ax=axs[1, 1], **PLTARGS)
+    # the wrap keywords belong to add_phase only (add_rho would hand them on
+    # to Matplotlib)
+    _wrap = dict(wrap_mode=PHASE_WRAP_MODE, wrap_style=PHASE_WRAP_STYLE)
+    add_rho(df, comps="xy,yx", ax=axs[0, 0], **LINE_KW)
+    add_phase(df, comps="xy,yx", ax=axs[0, 1], **_wrap, **LINE_KW)
+    add_rho(df, comps="xx,yy", ax=axs[1, 0], **LINE_KW)
+    add_phase(df, comps="xx,yy", ax=axs[1, 1], **_wrap, **LINE_KW)
     add_tipper(df, ax=axs[2, 0])
     add_pt(df, ax=axs[2, 1])
     _sup = utl.resolve_title(FIGURE_TITLE, str(station), str(station),

@@ -160,6 +160,9 @@ layers exist only in this script (not in `femtic_mod_misfit.py`).
 | `CURVES_LEGEND_LOC` | `'below'` | `"below"`, a matplotlib `loc`, or `None` |
 | `CURVES_MULTIPAGE` | `None` | `None` = auto: one multi-page PDF for all / N sites, single PDFs for a list of sites; `True` / `False` force it. Other formats (`.jpg`, `.png`, ...) are always one file per site in `<prefix>_curves/` |
 | `CURVES_APPRES_PHASE_DEG` | `True` | APP_RES_AND_PHS phase in degrees (else radians) |
+| `CURVES_PHASE_WRAP_MODE` | `"direct"` | Phase curves that leave the +-180 deg window (a jump of more than half the window between two periods): the line is interrupted there and the two points are joined by a separate line. `"direct"` = straight line between the two points, `"short"` = the short way through the window edge, `"off"` = no handling (as before). Members, median and the observed error shading are cut the same way; percentile bands are cut where their edge jumps; in the density a member that jumps leaves out the grid points between the two periods |
+| `CURVES_PHASE_WRAP_STYLE` | `None` | Matplotlib line properties of the connection, merged over the dotted default (`data_viz.PHASE_WRAP_STYLE`), e.g. `{"linestyle": "--", "alpha": 0.5}`; colour, width and opacity of the curve are inherited. `None` = dotted; `False` = gap only, no connection |
+| `CURVES_PHASE_WRAP_RANGE` | `(-180.0, 180.0)` | The phase window; `(-3.14159, 3.14159)` for phases in radians |
 
 ## Fit measures
 
@@ -277,6 +280,11 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### 2026-11-20 -- phase curves that leave the +-180 deg window (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- The interrupted line with a dotted connection (bands and density cut / skipped too) is done in `femtic_misfit.py` and
+  `data_viz.py` of the same date. New settings `CURVES_PHASE_WRAP_MODE` (`"direct"` | `"short"` | `"off"`),
+  `CURVES_PHASE_WRAP_STYLE` and `CURVES_PHASE_WRAP_RANGE`; see the table above.
 
 ### 2026-11-11c -- nRMS2 switched off (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
 - No modelling error is used, so RMS2 (observed plus synthesized error, Baba 2023) is no longer shown. New setting

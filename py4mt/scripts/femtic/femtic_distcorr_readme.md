@@ -126,6 +126,7 @@ elements.
 | `PLOT_COMPS` | `"xy,yx"` | Components of the `"rho"` / `"phase"` panels (subset of `xx,xy,yx,yy`). |
 | `PLOT_ERRORS` | `True` | Error envelopes of both data sets. |
 | `PLOT_PERIOD_LIMITS` | `None` | `(T_min, T_max)` in s. |
+| `PLOT_PHASE_WRAP_MODE`, `PLOT_PHASE_WRAP_STYLE` | `"direct"`, `None` | Phase curves that leave the +-180 deg window (a jump of more than 180 deg between two periods) are interrupted and the two points joined by a separate line: `"direct"` straight, `"short"` through the window edge, `"off"` as before; style = dict of Matplotlib line properties over the dotted default (`False` = gap only). Passed to `femtic_viz.plot_data_ensemble`. |
 | `PLOT_FILE`, `PLOT_FORMATS`, `PLOT_DPI` | `"observe_distcorr_iter{iter}_plot"`, `["png"]`, `200` | File name stem (`_overview` / `_site<ID>` and the format are appended), formats, resolution. |
 | `PLOT_TITLE` | `"auto"` | `"auto"`; `None` / `False` / `""` = none; text with `{site}`, `{id}`, `{cond}`, `{iter}`, `{new}`; or a dict `{"overview": ..., "site": ..., "default": ...}`. |
 | `SHOW` | `False` | Also show the figures on screen. |
@@ -220,5 +221,6 @@ EarthRef lists the same paper under `10.1029/88JB03636`, which was not checked.)
 |---|---|---|
 | 2026-11-13 | Claude Sonnet 5.5 (Anthropic) | Created: `femtic_distcorr.py` reads `observe.dat` and `distortion_iter<N>.dat` (N from `femtic.cnv`: best / last / number), corrects (or applies) the distortion matrices of the MT sites with first-order error propagation, writes a new observations file and a per-site report, and re-reads the written file as a check. Tests with synthetic files in `test_femtic_distcorr.py`. AI-generated; review before production use. |
 | 2026-11-13b | Claude Sonnet 5.5 (Anthropic) | Plots of the original and the corrected data with `femtic_viz.plot_data_ensemble`: overview of all MT sites and one figure per site for the most distorted sites; curves recoloured per component so that solid and dashed curves match. New settings `PLOT`, `PLOT_OVERVIEW`, `PLOT_OVERVIEW_NSITES`, `PLOT_SITES`, `PLOT_WHAT`, `PLOT_COMPS`, `PLOT_ERRORS`, `PLOT_PERIOD_LIMITS`, `PLOT_FILE`, `PLOT_FORMATS`, `PLOT_DPI`, `PLOT_TITLE`, `SHOW`. Needs `femtic_viz.py` and `data_viz.py` of the project. AI-generated; review before use. |
+| 2026-11-20 | Claude Sonnet 5.5 (Anthropic) | Phase curves of the data plots that leave the +-180 deg window are interrupted and the two points joined by a dotted line: new settings `PLOT_PHASE_WRAP_MODE` / `PLOT_PHASE_WRAP_STYLE`, passed to `femtic_viz.plot_data_ensemble`. Needs `femtic_viz.py` / `data_viz.py` of the same date. AI-generated; review before use. |
 
 Author: Volker Rath (DIAS)

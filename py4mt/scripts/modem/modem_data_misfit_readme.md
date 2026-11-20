@@ -264,6 +264,7 @@ for several singles), exactly as in `femtic_data_misfit.py`.
 | `CURVES_OBS_ERRORS`, `CURVES_OBS_MARKERSIZE`, `CURVES_LINEWIDTH` | `"bar"`, 3.5, 1.2 | Observed errors (`"bar"`/`"shade"`/`"none"`), sizes |
 | `CURVES_INVERT_X`, `CURVES_PERIOD_LIM`, `CURVES_YLIM`, `CURVES_PANEL_SIZE`, `CURVES_LEGEND_LOC`, `CURVES_MULTIPAGE` | see script | Axes and layout (`"best"` legend is slow with density) |
 | `CURVES_Z_UNITS`, `CURVES_Z_CONJ`, `CURVES_RHOPHS_LOG10`, `CURVES_APPRES_PHASE_DEG` | `"ohm"`, False, False, True | ModEM data conventions (see above) |
+| `CURVES_PHASE_WRAP_MODE`, `CURVES_PHASE_WRAP_STYLE`, `CURVES_PHASE_WRAP_RANGE` | `"direct"`, `None`, `(-180.0, 180.0)` | Phase curves that leave the +-180 deg window (jump of more than half the window between two periods): the line is interrupted and the two points joined by a separate line (`"direct"` straight, `"short"` through the window edge, `"off"` as before); style = dict of Matplotlib line properties over the dotted default (`False` = gap only); bands are cut and the density skips the jump; range `(-3.14159, 3.14159)` for radians |
 | `ENSEMBLE_OBS` | `"mean"` | Observed data across members: `"mean"` or `"first"` |
 | `REF_MEMBER` | `None` | RMS1 reference (None = ensemble mean) |
 | `SHOW_RMS2` | `False` | Show Baba's RMS2 (observed plus synthesized error, i.e. a modelling error) in plots and tables; `False` = not shown, RMS1 only (no modelling error is used); `True` = RMS1 and RMS2 for an ensemble (M > 1) |
@@ -470,3 +471,10 @@ stay distinct through the prefix). New helper `resolve_plot_dir()`.
 - The crossplot y label stays `calculated (ensemble mean)` for M > 1 (new keyword `ensemble_mean` of
   `plot_crossplot_datatype`). A single run never shows RMS2.
 - Tests: five more in `test_modem_data_misfit_titles.py` (34 tests, synthetic data).
+
+### Changelog (2026-11-20) --- phase curves that leave the +-180 deg window (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- "curves": a phase curve that jumps by more than 180 deg between two periods is interrupted and the two points are
+  joined by a dotted line (`data_viz.add_phase`, `data_viz.mark_phase_wraps`); percentile bands are cut at the wrap,
+  the density skips the interval member by member. New settings `CURVES_PHASE_WRAP_MODE`, `CURVES_PHASE_WRAP_STYLE`,
+  `CURVES_PHASE_WRAP_RANGE`; `draw_density` / `draw_bands` got `wrap_range`. Needs the `data_viz.py` of the same date.
+- Tests: `scripts/general/test_phase_wrap_plotters.py`.

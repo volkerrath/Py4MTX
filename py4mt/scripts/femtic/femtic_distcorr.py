@@ -135,6 +135,14 @@ Provenance
                 PLOT_ERRORS, PLOT_PERIOD_LIMITS, PLOT_FILE, PLOT_FORMATS,
                 PLOT_DPI, PLOT_TITLE, SHOW). Needs the femtic_viz.py /
                 data_viz.py of the project. AI-generated; review before use.
+    2026-11-20  Claude Sonnet 5.5 (Anthropic)
+                Phase curves of the data plots that leave the +-180 deg window
+                are interrupted and the two points joined by a dotted line:
+                new settings PLOT_PHASE_WRAP_MODE ("direct" | "short" | "off")
+                and PLOT_PHASE_WRAP_STYLE (dict of Matplotlib line properties;
+                None = dotted; False = gap only), passed to
+                femtic_viz.plot_data_ensemble. Needs the femtic_viz.py /
+                data_viz.py of the same date. AI-generated; review before use.
 """
 
 from __future__ import annotations
@@ -255,6 +263,14 @@ PLOT_COMPS = "xy,yx"
 PLOT_ERRORS = True
 #: Period limits (T_min, T_max) [s], or None.
 PLOT_PERIOD_LIMITS = None
+#: Phase curves that leave the +-180 deg window (jump of more than 180 deg
+#: between two periods) are interrupted there and the two points joined by a
+#: separate line. Mode: "direct" (straight line), "short" (the short way
+#: through the window edge), "off" (no handling). Style: dict of Matplotlib
+#: line properties merged over the dotted default, e.g.
+#: {"linestyle": "--", "alpha": 0.5}; None = dotted; False = gap only.
+PLOT_PHASE_WRAP_MODE = "direct"
+PLOT_PHASE_WRAP_STYLE = None
 #: File name stem of the figures (inside WORK_DIR, or a full path); {iter} as
 #: above. "_overview" / "_site<ID>" and the format are appended.
 PLOT_FILE = "observe_distcorr_iter{iter}_plot"
@@ -724,7 +740,9 @@ def plot_orig_vs_corrected(path_orig: str, path_new: str, rows: List[dict], *,
                            sites: Union[None, int, str, Sequence] = 6,
                            period_limits: Optional[Tuple[float, float]] = None,
                            formats: Sequence[str] = ("png",), dpi: int = 200,
-                           title="auto", show: bool = False) -> List[str]:
+                           title="auto", show: bool = False,
+                           phase_wrap_mode: str = "direct",
+                           phase_wrap_style=None) -> List[str]:
     """Plot the original and the new observe file with ``fviz.plot_data_ensemble``.
 
     Original data are drawn solid, the new data dashed. Both files are read
@@ -759,7 +777,8 @@ def plot_orig_vs_corrected(path_orig: str, path_new: str, rows: List[dict], *,
         plt.close(fig)
 
     common = dict(what=what_l, comps=comps, show_errors=show_errors,
-                  perlims=period_limits, out=False)
+                  perlims=period_limits, out=False,
+                  phase_wrap_mode=phase_wrap_mode, phase_wrap_style=phase_wrap_style)
     figsize = (5.0 * len(what_l), 3.8)
 
     if overview:
@@ -862,7 +881,9 @@ def main() -> int:
                 show_errors=PLOT_ERRORS, overview=PLOT_OVERVIEW,
                 overview_nsites=PLOT_OVERVIEW_NSITES, sites=PLOT_SITES,
                 period_limits=PLOT_PERIOD_LIMITS, formats=PLOT_FORMATS, dpi=PLOT_DPI,
-                title=PLOT_TITLE, show=SHOW)
+                title=PLOT_TITLE, show=SHOW,
+                phase_wrap_mode=PLOT_PHASE_WRAP_MODE,
+                phase_wrap_style=PLOT_PHASE_WRAP_STYLE)
             print(f"[femtic_distcorr] {len(saved)} figure file(s):")
             for s in saved:
                 print("   " + s)

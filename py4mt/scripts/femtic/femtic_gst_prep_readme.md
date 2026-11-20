@@ -384,6 +384,8 @@ from 0 … `N_SAMPLES − 1` each run.  The drawn list is printed at runtime.
 | `DAT_PHSLIMS`          | y-axis limits for `'phase'` panels (degrees); `None` = auto.                       |
 | `DAT_VTFLIMS`          | y-axis limits for `'tipper'` panels; `None` = auto.                                |
 | `DAT_PTLIMS`           | y-axis limits for `'pt'` panels; `None` = auto.                                    |
+| `DAT_PHASE_WRAP_MODE`  | Phase curves that leave the +-180 deg window: `"direct"` (default; line interrupted, the two points joined by a straight line), `"short"` (the short way through the window edge), `"off"` (as before). |
+| `DAT_PHASE_WRAP_STYLE` | Dict of Matplotlib line properties of that connection over the dotted default, e.g. `{"linestyle": "--"}`; `None` = dotted; `False` = gap only. |
 | `MOD_MESH`             | Path to the shared `mesh.dat`.                                                     |
 | `MOD_MODE`             | Slice rendering mode: `'tri'` \| `'scatter'` \| `'grid'`.                         |
 | `MOD_LOG10`            | Plot log₁₀(ρ) if `True`.                                                          |
@@ -521,6 +523,7 @@ Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_gst_prep_summary.md` is now written to `ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | Titles and colour bars of the slice figures: new `MOD_TITLE` / `ENS_TITLE`, `MOD_PANEL_TITLES` / `ENS_PANEL_TITLES`, `MOD_CBAR_LOCATION` / `ENS_CBAR_LOCATION`, `MOD_CBAR_SHRINK` / `ENS_CBAR_SHRINK`, `MOD_CBAR_THICKNESS` / `ENS_CBAR_THICKNESS` (section *Titles and colour bars of the slice figures*). `_plot_member_slices()` got the arguments `kind` and `index` for the title placeholders. Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. Not run end to end (no site / mesh data here); the changed calls were compile-checked. |
 | 2026-11-12 | Claude Sonnet 5.5 (Anthropic) | Fault trace in the slice figures. `ENS_SLICES` / `MOD_SLICES` may contain a fault from two surface points (`kind="profile"` with `p1`, `p2`, `dip`; `overlay=True`, optionally `panel=False` for the trace without a fault panel). `ENS_SLICES` are resolved with `fem.resolve_slice_positions()` for `plot_ensemble_slices` only when an entry is a `"profile"` or has `overlay` / `panel=False` (otherwise unchanged). Needs `femtic.py` / `femtic_viz.py` of the same date; see `femtic_viz_readme.md`, "Fault planes". Script not run here (syntax check and a synthetic-mesh test of the plot function). AI-generated; review before production use. |
+| 2026-11-20 | Claude Sonnet 5.5 (Anthropic) | Phase curves of the data plots that leave the +-180 deg window are interrupted and the two points joined by a dotted line: new `DAT_PHASE_WRAP_MODE` / `DAT_PHASE_WRAP_STYLE`, passed to `fviz.plot_data_ensemble`. Needs `femtic_viz.py` / `data_viz.py` of the same date. AI-generated; review before use. |
 
 ## Author
 

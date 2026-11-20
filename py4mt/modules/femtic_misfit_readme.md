@@ -136,6 +136,9 @@ The defaults of `Settings` (neutral; the scripts set their own).
 | `CURVES_LEGEND_LOC` | `'below'` | `"below"`, a matplotlib `loc`, or `None` |
 | `CURVES_MULTIPAGE` | `None` | `None` = auto: one multi-page PDF for all / N sites, single PDFs for a list of sites; `True` / `False` force it. Other formats (`.jpg`, `.png`, ...) are always one file per site in `<prefix>_curves/` |
 | `CURVES_APPRES_PHASE_DEG` | `True` | APP_RES_AND_PHS phase in degrees (else radians) |
+| `CURVES_PHASE_WRAP_MODE` | `"direct"` | Phase curves that leave the +-180 deg window (a jump of more than half the window between two periods): the line is interrupted there and the two points are joined by a separate line. `"direct"` = straight line between the two points, `"short"` = the short way through the window edge, `"off"` = no handling (as before). Members, median and the observed error shading are cut the same way; percentile bands are cut where their edge jumps; in the density a member that jumps leaves out the grid points between the two periods |
+| `CURVES_PHASE_WRAP_STYLE` | `None` | Matplotlib line properties of the connection, merged over the dotted default (`data_viz.PHASE_WRAP_STYLE`), e.g. `{"linestyle": "--", "alpha": 0.5}`; colour, width and opacity of the curve are inherited. `None` = dotted; `False` = gap only, no connection |
+| `CURVES_PHASE_WRAP_RANGE` | `(-180.0, 180.0)` | The phase window; `(-3.14159, 3.14159)` for phases in radians |
 
 ## Method (Baba 2023)
 
@@ -290,6 +293,17 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### 2026-11-20 -- phase curves that leave the +-180 deg window (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- "curves": a phase curve that jumps by more than 180 deg between two periods is interrupted there and the two points
+  are joined by a dotted line (`data_viz.add_phase`, new `data_viz.mark_phase_wraps`); percentile bands are cut at the
+  wrap (one fill per piece), the density skips the interval member by member. The observed data (markers only) are
+  not connected. New settings `CURVES_PHASE_WRAP_MODE` (`"direct"` default | `"short"` | `"off"` = as before),
+  `CURVES_PHASE_WRAP_STYLE` (dict of line properties; `None` = dotted; `False` = gap only), `CURVES_PHASE_WRAP_RANGE`.
+  `draw_density` / `draw_bands` got the keyword `wrap_range` (`None` = as before); `_draw` takes `wrap` (phase panel only,
+  the other plotters would hand the keywords on to Matplotlib) and does not put the marker on the connection lines.
+  Needs the `data_viz.py` of the same date.
+- Tests: `scripts/general/test_phase_wrap_plotters.py` (49 tests with the other plotters, synthetic data).
 
 ### 2026-11-11c -- nRMS2 switched off (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
 - No modelling error is used, so RMS2 (observed plus synthesized error, Baba 2023) is no longer shown. New setting

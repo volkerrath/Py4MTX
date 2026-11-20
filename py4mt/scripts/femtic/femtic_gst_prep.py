@@ -339,6 +339,13 @@ Provenance:
                 femtic_viz.py of the same date. Not run here (syntax and a
                 synthetic-mesh test of the plot function only).
                 AI-generated; review before production use.
+    2026-11-20  Claude Sonnet 5.5 (Anthropic)
+                Data plots: phase curves that leave the +-180 deg window are
+                interrupted and the two points joined by a dotted line (new
+                DAT_PHASE_WRAP_MODE / DAT_PHASE_WRAP_STYLE, passed to
+                fviz.plot_data_ensemble; default "direct" / dotted; "off" =
+                as before). Needs the femtic_viz.py / data_viz.py of the same
+                date. AI-generated; review before production use.
 """
 
 import os
@@ -863,6 +870,15 @@ if PLOT_DATA or PLOT_MODEL:
     DAT_VTFLIMS = (-1.,   +1.)
     DAT_PTLIMS  = None
 
+    # Phase curves that leave the +-180 deg window (jump of more than 180 deg
+    # between two periods): the line is interrupted and the two points are
+    # joined by a separate line. Mode: "direct" (straight line), "short" (the
+    # short way through the window edge), "off" (no handling). Style: dict of
+    # Matplotlib line properties merged over the dotted default, e.g.
+    # {"linestyle": "--", "alpha": 0.5}; None = dotted; False = gap only.
+    DAT_PHASE_WRAP_MODE = "direct"
+    DAT_PHASE_WRAP_STYLE = None
+
     #: MOD_MESH is already defined unconditionally above (needed regardless
     #: of PERTURB_MOD); no need to redefine it here.
 
@@ -1136,6 +1152,8 @@ if PLOT_DATA:
             phslims=DAT_PHSLIMS,
             vtflims=DAT_VTFLIMS,
             ptlims=DAT_PTLIMS,
+            phase_wrap_mode=DAT_PHASE_WRAP_MODE,
+            phase_wrap_style=DAT_PHASE_WRAP_STYLE,
             out=True,
         )
         member_dir = ENSEMBLE_DIR + ENSEMBLE_NAME + f"{i_samp}/"
