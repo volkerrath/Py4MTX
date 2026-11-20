@@ -21,6 +21,7 @@ A collection NPZ file with all stations is saved at the end.
 @modified:  2026-11-20 -- (1) INTERPOLATE: one frequency grid for all stations (freq_per_dec points per decade on absolute decades, band = common band of all stations or an explicit range); the interpolation now runs first, so PT, invariants, errors and rho/phi live on the new grid (they were left on the old one); the DPLUS block reads Z/Z_err from data_dict. (2) MANUFACTURER = "auto": FT convention (exp(-iwt) / exp(+iwt)) detected per station from the data (data_proc.detect_ft_convention) with a summary table; the notes on FT_CORRECTION corrected (load_edi has already converted Phoenix data). (3) OUT_FILES token "observe": one FEMTIC observe.dat for all stations, optionally with the dummy VTF stations (femtic.edi_list_to_observe_dat). (4) PLOT_DIR is only created when PLOT is set; EDI list sorted. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 @modified:  2026-11-20 (b) -- INTERPOLATE: the grid is preset for the whole survey (freq_range "survey" = band of all stations, default; "common" = intersection; or (fmin, fmax)) and every station is written on the part of it that its own band covers; extrap_decades (1/x decade) allows extrapolation just outside the band (flag data_dict["extrapolated"]); stations with no grid frequency are skipped; the old "identical frequencies" check is replaced by a coverage report and a <COLL_NAME>_freq_coverage.csv; allow_extrapolation removed. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 @modified:  2026-11-20 (c) -- observe.dat: OBS_INVALID = "drop" | "mark" (and OBS_INVALID_SE) chooses how invalid data are written: the frequency is left out ("drop", as before) or only the bad component is written with a negative error, which FEMTIC does not use ("mark"); the per-station counts are printed. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+@modified:  2026-11-20 (d) -- phase panels: where a phase curve leaves the +-180 deg window the solid line is interrupted and the jump is drawn as a dotted connection; PHASE_WRAP_MODE ('direct', 'short', 'off') and PHASE_WRAP_STYLE (dict of Line2D keywords, False = no connection) in the plot configuration, passed to data_viz.add_phase; Claude Sonnet 5.5 (Anthropic); AI-generated, review before use
 """
 
 import os
@@ -72,14 +73,14 @@ if not os.path.isdir(WORK_DIR):
 
 
 DATA_DIR_IN = WORK_DIR
-DATA_DIR_OUT = WORK_DIR + "/proc/"
+DATA_DIR_OUT = WORK_DIR # + "/proc/"
 
 NAME_STR = ""
 COLL_NAME = "Review"
 
 # Tokens (comma separated): edi, npz, hdf, mat, ncd, observe
 #   "observe" = one FEMTIC observe.dat for all stations (see the OBSERVE block)
-OUT_FILES = "edi, npz, observe"
+OUT_FILES = "edi, npz"
 STAT_FILE = True
 STAT_UPPER = True
 
@@ -156,7 +157,7 @@ if SET_ERRORS:
     }
 
 
-INTERPOLATE = True
+INTERPOLATE = False
 if INTERPOLATE:
     # ONE preset frequency grid for the whole survey (inversions are parallelised
     # per frequency): freq_per_dec points per decade on absolute decades,
@@ -237,6 +238,19 @@ if PLOT:
         "xlim": None,       # period limits (s), e.g. (1e-3, 1e3); None = auto
         "ylim": None,       # y-axis limits; None = auto
     }
+    # Phase panels: where a phase curve leaves the +-180 deg window and
+    # re-enters on the other side, the solid line is interrupted and the jump
+    # is drawn in PHASE_WRAP_STYLE instead (only for these two; they are
+    # passed to add_phase alone, not through PLTARGS, which also goes to add_rho).
+    #   PHASE_WRAP_MODE  "direct" one line from point to point
+    #                    "short"  two short stubs through the window edge
+    #                    "off"    solid line through the jump (old behaviour)
+    PHASE_WRAP_MODE = "direct"
+    #   PHASE_WRAP_STYLE dict of matplotlib Line2D keywords, on top of the
+    #                    defaults (dotted, colour/width of the curve), e.g.
+    #                    {"linestyle": (0, (1, 3)), "alpha": 0.5, "color": "0.4"};
+    #                    False = no connection at all
+    PHASE_WRAP_STYLE = {"linestyle": ":"}
     PLOT_FORMAT = [".pdf"]
 
     if not os.path.isdir(PLOT_DIR):
@@ -488,9 +502,11 @@ for edi, data_dict in loaded:
 
         # Use per-call ylim overrides rather than mutating the shared PLTARGS dict.
         add_rho(df_rp,   comps="xy,yx", ax=axs[0, 0], **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (1.e-4, 1.e+4)})
-        add_phase(df_rp, comps="xy,yx", ax=axs[0, 1], **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (-180., +180.)})
+        add_phase(df_rp, comps="xy,yx", ax=axs[0, 1], **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (-180., +180.)},
+                  wrap_mode=PHASE_WRAP_MODE, wrap_style=PHASE_WRAP_STYLE)
         add_rho(df_rp,   comps="xx,yy", ax=axs[1, 0], **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (1.e-4, 1.e+4)})
-        add_phase(df_rp, comps="xx,yy", ax=axs[1, 1], **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (-180., +180.)})
+        add_phase(df_rp, comps="xx,yy", ax=axs[1, 1], **{**PLTARGS, "xlim": (1.e-4, 1.e+3), "ylim": (-180., +180.)},
+                  wrap_mode=PHASE_WRAP_MODE, wrap_style=PHASE_WRAP_STYLE)
 
         if DPLUS and data_dict.get("dplus"):
             add_rhoplus(data_dict, comps="xy,yx", ax=axs[2, 0],

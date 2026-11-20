@@ -242,6 +242,19 @@ A 3×2 subplot figure is generated per station (4×2 when `DPLUS = True`) showin
 automatically.  Per-panel `ylim` overrides are passed as `**{**PLTARGS, "ylim": (...)}` —
 the shared `PLTARGS` dict is never mutated between calls.
 
+Phase wrap-around (2026-11-20): where a phase curve leaves the +-180 deg window
+and re-enters on the other side, the solid line and the error band are
+interrupted and the jump is drawn as a dotted connection instead of a long
+vertical streak.  Configuration (inside the `if PLOT:` block, passed to the
+two `add_phase` calls only, not through `PLTARGS`):
+
+| Constant | Default | Description |
+|----------|---------|-------------|
+| `PHASE_WRAP_MODE` | `"direct"` | `"direct"` = one line from point to point; `"short"` = two short stubs through the window edge; `"off"` = solid line through the jump (old) |
+| `PHASE_WRAP_STYLE` | `{"linestyle": ":"}` | dict of Line2D keywords of the connection, e.g. `{"linestyle": (0, (1, 3)), "alpha": 0.5, "color": "0.4"}`; `False` = no connection |
+
+See `data_viz_readme.md` for the details.
+
 Figure title (2026-11-11): `FIGURE_TITLE` (default `"auto"` = `<station><NAME_STR with " | " for "_">` as before; `None`, `False`, `""` = none; text with `{station}`, `{name_str}`, `{key}` (= the station); dict `{"<station>": spec, "default": spec}`). It is read inside the `if PLOT:` block and resolved by `util.resolve_title` (needs the `util.py` of the same date).
 
 Empty axes are removed. Plots are saved in all formats listed in `PLOT_FORMAT`
@@ -283,3 +296,11 @@ Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.  `OBS_INVALID`
 ("drop" as before, or "mark") and `OBS_INVALID_SE`; see *FEMTIC observe.dat*.
 `femtic.edi_list_to_observe_dat` also treats 1e32 markers as invalid (before they were
 written as huge valid numbers) and no longer writes `nan` errors.
+
+## Changes 2026-11-20 (d) (phase wrap-around in the plots)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.  `PHASE_WRAP_MODE`
+and `PHASE_WRAP_STYLE` (plot configuration) are passed to `data_viz.add_phase`; see
+*Diagnostic plots*.  Needs the `data_viz.py` of the same date.  Ran end to end on a
+synthetic survey (plots written); the phase-wrap logic itself is covered by
+`test_data_viz_phase_wrap.py`.

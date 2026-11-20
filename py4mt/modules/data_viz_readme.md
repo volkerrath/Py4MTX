@@ -108,6 +108,44 @@ Additional `**line_kw` are forwarded to the underlying `ax.loglog` / `ax.semilog
 - `linestyle` (str) — override the default line style. All plotters pop this from `**line_kw` before the plot call. For `add_tipper` and `add_pt`, the override is applied uniformly to all components; when omitted, each component keeps its own default (`"-"` for real parts, `"--"` for imaginary parts in `add_tipper`).
 - `marker` (str or None) — override the marker symbol. `add_rho` and `add_phase` have **no default marker** (marker-free lines by default); pass `marker="o"` to restore the old behaviour. `add_tipper` and `add_pt` keep their meaningful per-component defaults (`o`, `^`, `s`, `d`) but accept a uniform override via `marker=`. `add_rhoplus` applies the marker only to the ρ_a line; the ρ⁺ line always has no marker.
 
+### Phase curves that leave the +-180 deg window (`add_phase`, 2026-11-20)
+
+The phase of a complex number lives in a window of 360 deg (here -180 to
++180).  Where a curve leaves it on one side and re-enters on the other, two
+neighbouring points differ by more than 180 deg, and a plain line (and a
+plain error band) is drawn straight through the jump: a long vertical streak.
+`add_phase` now detects such jumps (more than half the window between two
+neighbouring plotted points; points that are NaN or have a non-positive period
+never count) and
+
+- interrupts the solid line and the `show_errors` band there, and
+- joins the two points with a separate line drawn in `wrap_style`.
+
+| Argument | Default | Meaning |
+|----------|---------|---------|
+| `wrap_mode` | `"direct"` | `"direct"`: one straight line from point to point. `"short"`: two short stubs, from the point to the window edge it leaves at and from the opposite edge to the next point (much less ink if the phase jitters around +-180 deg). `"off"`: old behaviour, line straight through the jump |
+| `wrap_style` | `None` | dict of Line2D keywords, applied on top of the module default `data_viz.PHASE_WRAP_STYLE` (`{"linestyle": ":"}`); colour, linewidth, alpha and zorder not given are taken from the solid curve. `False`: no connection (the curve is just interrupted) |
+| `wrap_range` | `(-180, 180)` | the phase window; use `(0, 360)` for phases given in that range |
+
+```python
+data_viz.add_phase(df, comps="xy,yx")                               # dotted, as the curve
+data_viz.add_phase(df, comps="xy,yx",
+                   wrap_style={"linestyle": (0, (1, 3)), "alpha": 0.5, "color": "0.4"})
+data_viz.add_phase(df, comps="xy,yx", wrap_mode="short")            # stubs only
+data_viz.add_phase(df, comps="xy,yx", wrap_style=False)             # gap, no connection
+data_viz.PHASE_WRAP_STYLE.update(linestyle="--")                    # for all later calls
+```
+
+Curves without a line (`linestyle="none"`, `linewidth=0`, i.e. markers only,
+as used for observed data in the FEMTIC/ModEM misfit plots) get no
+connection; their error band is still interrupted.  A jump of more than half
+the window is always taken as a wrap, never as a real change of the phase
+through the middle of the window.  The three arguments are consumed by
+`add_phase` only: do not put them in a `PLTARGS` dict that is also passed to
+`add_rho`, `add_tipper` or `add_pt` (those would forward them to Matplotlib).
+`"ls"` is accepted as an alias of `"linestyle"`.  Tests:
+`scripts/general/test_data_viz_phase_wrap.py` (31 cases).
+
 > **Note for callers using a shared `PLTARGS` dict:** because `ylim` varies per panel, pass per-call overrides as `**{**PLTARGS, "ylim": (...)}` rather than mutating `PLTARGS["ylim"]` before each call.
 
 > **Note on `femtic_viz.plot_data_ensemble`:** that function applies per-component markers *post-hoc* (by patching `Line2D` objects after each plotter call) rather than forwarding `marker=` through `**line_kw`. This avoids any duplicate-keyword collision and works with all `data_viz` versions.
@@ -165,3 +203,4 @@ Author: Volker Rath (DIAS)
 Modified: 2026-03-16 — add_rhoplus (D+/rho+ test plot); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-30 — linestyle override via **line_kw (all plotters); removed bogus required-key guard from add_tipper/add_pt; per-call PLTARGS pattern documented; Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-04-12 — removed hardcoded marker="o" from add_rho, add_phase, add_rhoplus (default now no marker); pop marker from **line_kw so callers can supply it without TypeError; add uniform marker override to add_tipper and add_pt (same pattern as existing linestyle override); Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-11-20 -- `add_phase`: phase curves that leave the +-180 deg window are interrupted and the jump is drawn as a connection in a style dict (`wrap_mode`, `wrap_style`, `wrap_range`, module default `PHASE_WRAP_STYLE`); `ls` accepted as alias of `linestyle`; `_maybe_fill_between(breaks=...)`. Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use

@@ -71,6 +71,13 @@ Modified: 2026-03-16 — add_rhoplus (D+/rho+ test plot), MT unit fix (mV/km/nT)
 Modified: 2026-03-17 — xlim/ylim parameters for all plotters (add_rho, add_rhoplus, add_phase, add_tipper, add_pt); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-03-30 — pop linestyle from **line_kw in add_rho/add_phase/add_tipper/add_pt (TypeError fix); add linestyle override to add_tipper/add_pt; remove bogus required-key guard from add_tipper/add_pt (checked "Z" key but tipper needs "T"; also broke DataFrame input); Claude Sonnet 4.6 (Anthropic)
 Modified: 2026-04-12 — remove hardcoded marker="o" from add_rho, add_phase, add_rhoplus; pop marker from **line_kw (default None = no marker) so callers control markers without TypeError; add marker override to add_tipper and add_pt (uniform override, same pattern as existing linestyle override); Claude Sonnet 4.6 (Anthropic)
+Modified: 2026-11-20 -- add_phase: where a phase curve leaves the +-180 deg window and re-enters on the other side, the solid line and the error band are no longer drawn straight through the jump (long vertical streak); the curve is broken there and the two points are connected by one dotted line (wrap_mode="direct", default) or by two short dotted stubs through the window edge (wrap_mode="short"). The style of the connection is a dict of Line2D keywords (wrap_style, module default PHASE_WRAP_STYLE; False = no connection; wrap_mode="off" = old behaviour). Marker-only calls (linestyle "none") get no connection. "ls" is accepted as alias of "linestyle". Claude Sonnet 5.5 (Anthropic); AI-generated, review before production use
+
+Provenance (changes of 2026-11-20)
+----------------------------------
+Author    : Claude (Claude Sonnet 5.5, Anthropic)
+Generated : 2026-11-20
+Notice    : AI-generated code; review and test it before production use.
 """
 
 from __future__ import annotations
@@ -85,6 +92,14 @@ import pandas as pd
 
 # Physical constant
 MU0 = 4.0e-7 * np.pi  # magnetic permeability of free space [H/m]
+
+#: Default style of the connection drawn by add_phase where a phase curve
+#: leaves the +-180 deg window and re-enters on the other side: a dict of
+#: matplotlib Line2D keywords.  Whatever is not given here (or in the
+#: ``wrap_style`` argument of add_phase) is taken from the solid curve
+#: (colour, linewidth, alpha, zorder).  Change it for all later calls with
+#: ``data_viz.PHASE_WRAP_STYLE.update(linestyle="--", alpha=0.5)``.
+PHASE_WRAP_STYLE: dict = {"linestyle": ":"}
 
 
 def _as_array(x: Any) -> Optional[np.ndarray]:
@@ -386,6 +401,7 @@ def _maybe_fill_between(
     err: Optional[np.ndarray],
     *,
     alpha: float = 0.25,
+    breaks: Optional[np.ndarray] = None,
 ) -> None:
     """Draw a symmetric error band ``[y - err, y + err]`` if errors are provided.
 
@@ -401,6 +417,10 @@ def _maybe_fill_between(
         1-sigma error values. If None, nothing is drawn.
     alpha : float, optional
         Opacity of the filled band. Default is 0.25.
+    breaks : array_like of int, optional
+        Indices ``k`` after which the band is interrupted (between point
+        ``k`` and ``k+1``), e.g. where a phase curve wraps around +-180 deg.
+        The band is then drawn in separate pieces.
     """
     if err is None:
         return
@@ -410,6 +430,13 @@ def _maybe_fill_between(
         return
     lower = y - err
     upper = y + err
+    if breaks is not None and len(breaks) > 0:
+        x = np.asarray(x, dtype=float)
+        cut = np.asarray(breaks, dtype=int) + 1
+        for xs, lo_, up_ in zip(np.split(x, cut), np.split(lower, cut),
+                                np.split(upper, cut)):
+            ax.fill_between(xs, lo_, up_, alpha=alpha, linewidth=0)
+        return
     ax.fill_between(x, lower, upper, alpha=alpha, linewidth=0)
 
 
@@ -760,6 +787,64 @@ def add_rhoplus(
 
 
 
+def _phase_wrap_index(x: np.ndarray, y: np.ndarray, lo: float, hi: float) -> np.ndarray:
+    """Indices ``k`` where a phase curve wraps between point ``k`` and ``k+1``.
+
+    A wrap is a jump of more than half the window width ``hi - lo`` (180 deg
+    for the usual +-180 deg window) between two neighbouring points in the
+    order in which they are plotted.  Points which are not finite (or whose
+    period is not positive) are never part of a wrap: the line is
+    interrupted there by matplotlib anyway.
+    """
+    x = np.asarray(x, dtype=float)
+    y = np.asarray(y, dtype=float)
+    if y.size < 2:
+        return np.zeros(0, dtype=int)
+    ok = np.isfinite(x) & (x > 0.0) & np.isfinite(y)
+    with np.errstate(invalid="ignore"):
+        jump = np.abs(np.diff(y)) > 0.5 * (hi - lo)
+    return np.flatnonzero(jump & ok[:-1] & ok[1:])
+
+
+def _phase_wrap_segments(
+    x: np.ndarray, y: np.ndarray, k: np.ndarray, lo: float, hi: float,
+    mode: str = "short",
+) -> tuple[np.ndarray, np.ndarray]:
+    """Connection lines for the wraps ``k``, as one NaN-separated polyline.
+
+    ``mode="short"``: the curve is continued the short way, through the
+    window edge: from point ``k`` to the edge it leaves at (``hi`` for a jump
+    downwards, ``lo`` for one upwards) and from the opposite edge to point
+    ``k+1``.  Both stubs meet at the same period, which is found by linear
+    interpolation in log(period) of the unwrapped curve.
+    ``mode="direct"``: one straight line from point ``k`` to point ``k+1``.
+    """
+    width = hi - lo
+    xs: list = []
+    ys: list = []
+    for i in np.asarray(k, dtype=int):
+        x0, x1, y0, y1 = float(x[i]), float(x[i + 1]), float(y[i]), float(y[i + 1])
+        if mode == "direct":
+            xs += [x0, x1, np.nan]
+            ys += [y0, y1, np.nan]
+            continue
+        if y1 < y0:                                  # leaves at the top
+            edge_out, edge_in, y1u = hi, lo, y1 + width
+        else:                                        # leaves at the bottom
+            edge_out, edge_in, y1u = lo, hi, y1 - width
+        den = y1u - y0
+        f = 0.5 if den == 0.0 else float(np.clip((edge_out - y0) / den, 0.0, 1.0))
+        xc = float(np.exp(np.log(x0) + f * (np.log(x1) - np.log(x0))))
+        xs += [x0, xc, np.nan, xc, x1, np.nan]
+        ys += [y0, edge_out, np.nan, edge_in, y1, np.nan]
+    return np.asarray(xs, dtype=float), np.asarray(ys, dtype=float)
+
+
+def _linestyle_is_none(ls: Any) -> bool:
+    """True if a matplotlib linestyle means "no line"."""
+    return isinstance(ls, str) and ls.strip().lower() in ("none", "")
+
+
 def add_phase(
     data: pd.DataFrame | Mapping[str, Any],
     comps: Optional[str] = None,
@@ -771,6 +856,9 @@ def add_phase(
     error_alpha: float = 0.25,
     xlim: Optional[tuple] = None,
     ylim: Optional[tuple] = None,
+    wrap_mode: str = "direct",
+    wrap_style: Optional[Mapping[str, Any] | bool] = None,
+    wrap_range: tuple = (-180.0, 180.0),
     **line_kw,
 ) -> plt.Axes:
     """Add impedance phase curves to an axes.
@@ -796,6 +884,30 @@ def add_phase(
         columns. Default is ``"_err"``.
     error_alpha : float, optional
         Opacity of the error envelopes (0–1). Default is 0.25.
+    wrap_mode : {"short", "direct", "off"}, optional
+        What to do where the phase of a curve leaves the window ``wrap_range``
+        (+-180 deg) and re-enters on the other side, i.e. where two
+        neighbouring points differ by more than half the window width.
+        ``"direct"`` (default): the solid line and the error band are
+        interrupted, and the two points are joined by one straight line in
+        ``wrap_style`` (dotted by default).
+        ``"short"``: interrupted as above, and the curve is continued the
+        short way through the window edge with two short stubs in
+        ``wrap_style``; much less ink if the phase jitters around +-180 deg.
+        ``"off"``: nothing special, the line runs straight through the jump.
+        Curves without a line (``linestyle="none"``, markers only) are never
+        connected.
+    wrap_style : dict or False, optional
+        Matplotlib Line2D keywords of the connection, e.g.
+        ``{"linestyle": (0, (1, 3)), "alpha": 0.5, "color": "0.4"}``.  They are
+        applied on top of the module default ``PHASE_WRAP_STYLE`` (dotted),
+        so only the differences need to be given.  Colour, linewidth, alpha
+        and zorder not given are those of the solid curve.  ``False`` draws no
+        connection (the curve is just interrupted).  None (default) = the
+        module default.
+    wrap_range : (float, float), optional
+        Lower and upper edge of the phase window; default ``(-180, 180)``.
+        Use ``(0, 360)`` for phases given in that range.
     **line_kw :
         Additional keyword arguments forwarded to ``ax.semilogx``.
 
@@ -803,6 +915,13 @@ def add_phase(
     -------
     matplotlib.axes.Axes
         The axes instance with the curves added.
+
+    Notes
+    -----
+    A jump of more than half the window is taken as a wrap, never as a real
+    change of the phase through the middle of the window (the usual phase
+    unwrapping assumption).  The error band is interrupted at a wrap, but not
+    continued on the other side of the window edge.
     """
     df = _ensure_df(data)
     fig, ax, _ = _maybe_ax(ax)
@@ -811,23 +930,54 @@ def add_phase(
 
     # Allow callers to override linestyle and marker via **line_kw without
     # collision.  Default linestyle is "-"; default marker is None (no marker).
-    _ls = line_kw.pop("linestyle", "-")
+    _ls_alias = line_kw.pop("ls", None)
+    _ls = line_kw.pop("linestyle", "-" if _ls_alias is None else _ls_alias)
     _mk = line_kw.pop("marker", None)
+
+    _wmode = str(wrap_mode).lower()
+    if _wmode not in ("short", "direct", "off"):
+        raise ValueError(
+            f"add_phase: wrap_mode must be 'short', 'direct' or 'off', got {wrap_mode!r}.")
+    _lo, _hi = float(wrap_range[0]), float(wrap_range[1])
+    if not _hi > _lo:
+        raise ValueError(f"add_phase: wrap_range must be (lo, hi) with hi > lo, got {wrap_range!r}.")
+    if wrap_style is False:
+        _wstyle = None
+    elif wrap_style is None or wrap_style is True:
+        _wstyle = dict(PHASE_WRAP_STYLE)
+    else:
+        _wstyle = {**PHASE_WRAP_STYLE, **dict(wrap_style)}
+    _lw = line_kw.get("linewidth", line_kw.get("lw"))
+    _has_line = not _linestyle_is_none(_ls) and not (_lw is not None and float(_lw) == 0.0)
 
     for c in comps_list:
         col = f"phi_{c}"
         if col not in df.columns:
             continue
         y = df[col].to_numpy()
+        kwrap = (_phase_wrap_index(period, y, _lo, _hi) if _wmode != "off"
+                 else np.zeros(0, dtype=int))
+        xp, yp = period, y
+        if kwrap.size and _has_line:
+            # interrupt the solid line at the wraps (NaN = gap)
+            xp = np.insert(np.asarray(period, dtype=float), kwrap + 1, np.nan)
+            yp = np.insert(np.asarray(y, dtype=float), kwrap + 1, np.nan)
         _plot_kw = dict(linestyle=_ls, label=f"$\\phi,{c.upper()}$", **line_kw)
         if _mk is not None:
             _plot_kw["marker"] = _mk
-        ax.semilogx(period, y, **_plot_kw)
+        main = ax.semilogx(xp, yp, **_plot_kw)[0]
+        if kwrap.size and _has_line and _wstyle is not None:
+            xs, ys = _phase_wrap_segments(period, y, kwrap, _lo, _hi, mode=_wmode)
+            ax.plot(xs, ys, **{
+                "color": main.get_color(), "linewidth": main.get_linewidth(),
+                "alpha": main.get_alpha(), "zorder": main.get_zorder(),
+                **_wstyle, "label": "_nolegend_"})
         if show_errors:
             err_col = f"{col}{error_suffix}"
             if err_col in df.columns:
                 err = df[err_col].to_numpy()
-                _maybe_fill_between(ax, period, y, err, alpha=error_alpha)
+                _maybe_fill_between(ax, period, y, err, alpha=error_alpha,
+                                    breaks=kwrap if kwrap.size else None)
 
     ax.invert_xaxis()
     ax.set_xlabel("Period (s)")

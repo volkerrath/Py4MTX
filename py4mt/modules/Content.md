@@ -56,7 +56,11 @@ Composable plotters working with tidy `pandas.DataFrame` from
 
 All plotters share `show_errors`, `comps`, `xlim`, `ylim`, `linestyle`,
 `marker`, `legend` keyword arguments.  A shared `PLTARGS` dict is safe to
-pass to every plotter without collision.
+pass to every plotter without collision.  `add_phase` additionally takes
+`wrap_mode`, `wrap_style` (dict of Line2D keywords; module default
+`PHASE_WRAP_STYLE`) and `wrap_range`: where a phase curve leaves the +-180 deg
+window the line is interrupted and the jump drawn as a (dotted) connection
+(2026-11-20); pass these to `add_phase` only.
 
 ---
 
