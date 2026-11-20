@@ -697,7 +697,7 @@ if PERTURB_MOD:
     # comes from the arbitrary shift lam of the singular R^T R (see MOD_REMOVE_MEAN below;
     # the printout gives the RMS std with and without it). MOD_REMOVE_MEAN = True is the
     # sensible setting together with MOD_PERTURB_ITER0 = True.
-    MOD_PERTURB_ITER0 = False
+    MOD_PERTURB_ITER0 = True
     MOD_ITER0_FILE = "resistivity_block_iter0.dat"   # must be in COPY_LIST or LINK_LIST
 
     # True: fill MOD_ITER0_FILE of every member with ONE homogeneous constant (all free regions;
