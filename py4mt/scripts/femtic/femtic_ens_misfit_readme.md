@@ -44,15 +44,36 @@ and here; the difference is only that the settings of this script do not have
 ## Usage
 
     python femtic_ens_misfit.py                              # settings block
-    python femtic_ens_misfit.py "./ens/member_*/"            # glob (quote it)
-    python femtic_ens_misfit.py ./m01/ ./m02/ ./m03/         # explicit members
+    python femtic_ens_misfit.py "ens/member_*/"              # glob (quote it)
+    python femtic_ens_misfit.py m01/ m02/ m03/               # explicit members
+    python femtic_ens_misfit.py -w /data/ens "member_*/"     # another WORK_DIR
+
+### Working directory
+
+All paths refer to `WORK_DIR`: `RUN_PATHS`, `OUT_DIR`, `NRMS_RESULTS`, `NRMS_CSV`,
+`NRMS_HIST_FILE`, `CURVES_SITE_DAT` and the paths on the command line are taken
+relative to `WORK_DIR`; an absolute path (or one starting with `~`) is used as given.
+`WORK_DIR` is the setting of the same name, or `-w` / `--work-dir DIR` on the
+command line (which replaces it); `None` or `""` means the current directory (as in
+`femtic_clean.py`). It must exist, else the script stops with return code 2.
+
+- The current directory is `WORK_DIR` while the script runs (and is restored
+  afterwards), so the last place of the `"auto"` `site.dat` search is `WORK_DIR`.
+- Paths are not normalized: globs and a trailing `/` (a glob that matches
+  directories only) are kept.
+- **Command-line paths are relative to `WORK_DIR`, not to the directory the script
+  is started from** (this changed on 2026-11-21); use an absolute path or `-w .` for
+  the old behaviour.
+- Not affected: a relative `PLOT_DIR` is still a sub-directory of the *output*
+  directory (which lies under `WORK_DIR` when the members do or `OUT_DIR` is relative),
+  and `PY4MTX_ROOT` (an environment variable that says where the code is).
 
 `femtic.py` (and `ensembles.py`), `inverse.py` (and `aniso.py`) and
 `femtic_misfit.py` must be importable; if `PY4MTX_ROOT` is set,
 `$PY4MTX_ROOT/py4mt/modules` and `.../scripts` are added to `sys.path`.
 Method `"curves"` needs `data_viz.py`, method `"nrms"` needs `femtic_viz.py`.
-The return code is 0 on success and 1 if no usable member was found or a file
-could not be read.
+The return code is 0 on success, 1 if no usable member was found or a file
+could not be read, and 2 if `WORK_DIR` is not a directory.
 
 Output (prefix = `OUT_PREFIX`, or `ensemble_M<M>`; directory = `OUT_DIR` if set,
 else `<common parent directory of the members>/<OUT_PREFIX>/`, made if missing;
@@ -90,18 +111,19 @@ layers exist only in this script (not in `femtic_mod_misfit.py`).
 
 | Name | Default | Meaning |
 |------|---------|---------|
-| `RUN_PATHS` | `['/media/vrath/LargeBack/Ensemb...` | Run dirs / files / globs (argv overrides) |
+| `WORK_DIR` | `'.../krafla2026/krafla_fine/krafla_ens_fine/'` | Base of all relative paths (settings and command line); the ensemble directory, i.e. the parent of the members. `None` / `""` = the current directory; `-w` / `--work-dir` replaces it. See "Working directory" |
+| `RUN_PATHS` | `['kra*/']` | Run dirs / files / globs, relative to `WORK_DIR` (argv overrides) |
 | `ITERATION` | `'best'` | `"best"`, `"last"`, or integer |
 | `ITER_PATTERN` | `'results_iter*.h5'` | Search pattern in run dirs |
 | `METHODS` | `('crossplot', 'histogram', 'qq'...` | `"crossplot"`, `"histogram"`, `"qq"`, `"curves"`, `"nrms"` |
 | `ENSEMBLE_OBS` | `'mean'` | Observed data across members |
 | `REF_MEMBER` | `None` | RMS1 reference (None = ensemble mean) |
 | `SHOW_RMS2` | `False` | Show Baba's RMS2 (observed plus synthesized error, i.e. a modelling error) in plots and tables; `False` = not shown, RMS1 only (no modelling error is used); `True` = RMS1 and RMS2 for an ensemble (M > 1) |
-| `OUT_DIR` | `'.../ann_rto_orig-err/results256/'` | `None` = the directory `<common parent of the members>/<OUT_PREFIX>/`, made if missing; or a path, used as given (no `OUT_PREFIX` sub-directory) |
+| `OUT_DIR` | `'results/'` | `None` = the directory `<common parent of the members>/<OUT_PREFIX>/`, made if missing; or a path (relative to `WORK_DIR`), used as given (no `OUT_PREFIX` sub-directory) |
 | `OUT_PREFIX` | `'Misfits'` | File prefix; also the NAME OF THE OUTPUT DIRECTORY while `OUT_DIR` is `None` |
 | `OUT_PREFIX_DIR` | `True` | `False`: with `OUT_DIR` `None` write into the common parent of the members itself (no `OUT_PREFIX` sub-directory) |
 | `PLOT_FORMATS`, `PLOT_DPI` | `('.pdf',); 300` | Figure output; must be a tuple (`(".pdf",)` -- with the comma), a plain string is accepted as one format |
-| `PLOT_DIR` | `None` | Directory for all figures: `None` = with the tables; relative name = sub-directory of the output directory (per run); absolute path = one directory for all figures |
+| `PLOT_DIR` | `None` | Directory for all figures: `None` = with the tables; relative name = sub-directory of the *output* directory (per run; not of `WORK_DIR`); absolute path = one directory for all figures |
 | `DATATYPES`, `COMPONENTS` | `None; None` | Restrict selection |
 | `NCOLS`, `PANEL_SIZE`, `EQUAL_ASPECT` | `4; 3.3; True` | Crossplot layout |
 | `CMAP`, `COLOR_RANGE` | `'turbo'; 'global'` | log10 f colouring |
@@ -124,18 +146,18 @@ layers exist only in this script (not in `femtic_mod_misfit.py`).
 | `QQ_NCOLS`, `QQ_PANEL_SIZE` | `4; 3.0` | Q-Q layout |
 | `WRITE_STATS`, `SHOW` | `True; False` | Text tables / interactive display |
 | `FIT_MEASURES` | `True` | Overall fit-measure table (`<prefix>_fit_measures.txt`) |
-| `NRMS_RESULTS` | `'.../results256/ANNECY_RTO_ORIG-ERR_results256.npz'` | Results `.npz` of `femtic_ens_post.py` for method `"nrms"`; `None` = use `NRMS_CSV` only |
+| `NRMS_RESULTS` | `None` | Results `.npz` of `femtic_ens_post.py` for method `"nrms"`, relative to `WORK_DIR` (e.g. `"results/<name>.npz"`); `None` = use `NRMS_CSV` only; with both `None` the method is skipped with a message |
 | `NRMS_NPZ_PREFIX` | `None` | Key prefix inside the `.npz` (`None` = the only one) |
-| `NRMS_CSV` | `None` | Fallback nRMS table (`<ENSEMBLE_PREFIX>_nrms.csv`) |
+| `NRMS_CSV` | `None` | Fallback nRMS table (`<ENSEMBLE_PREFIX>_nrms.csv`), relative to `WORK_DIR` |
 | `NRMS_MAX` | `None` | Acceptance threshold line (`None` = value stored in the `.npz`) |
 | `NRMS_BINS` | `'auto'` | Number of bins or a numpy rule (`"auto"`, `"fd"`, ...) |
-| `NRMS_HIST_FILE` | `None` | Extension-less output path (`None` = `<fig dir>/<prefix>_nrms_hist`) |
+| `NRMS_HIST_FILE` | `None` | Extension-less output path, relative to `WORK_DIR` (`None` = `<fig dir>/<prefix>_nrms_hist`) |
 | `NRMS_TICK_FONTSIZE`, `NRMS_LABEL_FONTSIZE`, `NRMS_TITLE_FONTSIZE` | `16; 16; None` | Fonts of the nRMS histogram |
 | `CURVES_WHAT` | `('rho', 'phase', 'tipper')` | Panels: `"rho"`, `"phase"`, `"tipper"`, `"pt"` |
 | `CURVES_COMPS` | `'xx, xy, yx, yy'` | Impedance components for rho / phase panels |
 | `SITE_MERGE_BY_POSITION` | `True` | Same position = same site id (first occurrence); see "Site ids" |
 | `SITE_MERGE_TOL` | `1.0` | Positions closer than this [m] are the same site |
-| `CURVES_SITE_DAT` | `'.../templates/site.dat'` | `site.dat` for site names (`None` = no names): `"auto"` = the local `site.dat` (results directory and up to two levels above, then the current working directory), or a path |
+| `CURVES_SITE_DAT` | `'auto'` | `site.dat` for site names (`None` = no names): `"auto"` = the local `site.dat` (results directory and up to two levels above, then `WORK_DIR`), or a path (relative to `WORK_DIR`) |
 | `CURVES_SITE_ID_OFFSET` | `0` | `site_id` = `sitenum` + offset (only for `CURVES_SITE_MATCH = "id"` and as the no-coordinates fallback) |
 | `CURVES_SITE_MATCH` | `'auto'` | Assign names by position (`"auto"`, `"coords"`) or by id (`"id"`) |
 | `CURVES_SITE_TOL` | `15.0` | Largest distance [m] for a coordinate match |
@@ -163,6 +185,14 @@ layers exist only in this script (not in `femtic_mod_misfit.py`).
 | `CURVES_PHASE_WRAP_MODE` | `"direct"` | Phase curves that leave the +-180 deg window (a jump of more than half the window between two periods): the line is interrupted there and the two points are joined by a separate line. `"direct"` = straight line between the two points, `"short"` = the short way through the window edge, `"off"` = no handling (as before). Members, median and the observed error shading are cut the same way; percentile bands are cut where their edge jumps; in the density a member that jumps leaves out the grid points between the two periods |
 | `CURVES_PHASE_WRAP_STYLE` | `None` | Matplotlib line properties of the connection, merged over the dotted default (`data_viz.PHASE_WRAP_STYLE`), e.g. `{"linestyle": "--", "alpha": 0.5}`; colour, width and opacity of the curve are inherited. `None` = dotted; `False` = gap only, no connection |
 | `CURVES_PHASE_WRAP_RANGE` | `(-180.0, 180.0)` | The phase window; `(-3.14159, 3.14159)` for phases in radians |
+| `CURVES_MAP` | `False` | Small map of the sites in every "curves" figure: the current site marked, all sites coloured by their nRMS (see "Site map in the curves figures" in `femtic_misfit_readme.md`) |
+| `CURVES_MAP_PLACEMENT` | `'right'` | `"right"` / `"left"`: an own column next to the panels (the figure gets wider by `CURVES_MAP_SIZE`); `"upper right"`, `"upper left"`, `"lower right"`, `"lower left"`: inset in that corner of the last (right) / first (left) panel, on top of the curves |
+| `CURVES_MAP_SIZE` | `1.7` | Side of the map block (map and colour bar) [in]: width of the column, or size of the inset |
+| `CURVES_MAP_TICKS` | `True` | Ticks and labels in model coordinates [km]; `False` = none (frame only) |
+| `CURVES_MAP_AXES` | `'ne'` | Which results-file coordinate is which: `"ne"` = `site_x` north (vertical), `site_y` east (horizontal), the FEMTIC convention; `"en"` = `site_x` east, `site_y` north. The map always has east horizontal and north vertical |
+| `CURVES_MAP_CMAP` | `None` | `None` = single-hue blue ramp, light = low nRMS, dark = high; or the name of a Matplotlib colormap |
+| `CURVES_MAP_NRMS_RANGE` | `None` | `(lo, hi)` of the colour scale; `None` = smallest / largest site nRMS |
+| `CURVES_MAP_MARKER_SIZE` | `12.0` | Size of a site marker [pt^2]; the current site is 4 times larger, with a ring |
 
 ## Fit measures
 
@@ -268,6 +298,15 @@ on. Consequences:
   with no source set (message, return code 0), paths from the command line
   override `RUN_PATHS`, `make_settings` rejects unknown names, `settings()`
   warns about a stray uppercase name.
+- **WORK_DIR (2026-11-21)**, same stand-in situation (no h5py): (a) with the default `WORK_DIR`, of 93 settings
+  handed to the engine only three differ from the previous version, the intended ones (`OUT_DIR`, `NRMS_RESULTS`,
+  `CURVES_SITE_DAT`; see the changelog); `RUN_PATHS` is the identical string, and the other 89 settings are too;
+  (b) 30 checks of the path rules (relative / absolute / `~` / glob / trailing `/`, `"auto"` and `None` kept,
+  `-w` and `--work-dir`, `WORK_DIR = None`, missing `WORK_DIR` -> return code 2, current directory = `WORK_DIR`
+  during the run and restored afterwards, also after an exception); (c) real engine, run from a different
+  directory: method `nrms` from a synthetic `NRMS_CSV` wrote `<WORK_DIR>/<OUT_DIR>/..._nrms_hist.pdf` and
+  `..._nrms_stats.txt` and nothing else anywhere; the glob `ens/kra*/` was expanded under `WORK_DIR` and
+  `-w` replaced a `WORK_DIR` setting. The crossplot / histogram / Q-Q / curves methods were not run in this check.
 - **Not run against real `results_iterN.h5` files** (no h5py here). The unit of
   the APP_RES_AND_PHS phase (degrees assumed, `CURVES_APPRES_PHASE_DEG`) and the
   run time of `"curves"` for a large ensemble with many sites are unchecked.
@@ -280,6 +319,44 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### 2026-11-21b -- site map in the curves figures (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- "curves": optional small map of the sites in every figure, the current site marked, all sites coloured by their
+  nRMS on one colour scale for all pages; model coordinates in km or none; own column (`"right"`, `"left"`) or inset
+  in a corner of a panel. New settings `CURVES_MAP`, `CURVES_MAP_PLACEMENT`, `CURVES_MAP_SIZE`, `CURVES_MAP_TICKS`,
+  `CURVES_MAP_AXES`, `CURVES_MAP_CMAP`, `CURVES_MAP_NRMS_RANGE`, `CURVES_MAP_MARKER_SIZE`; new functions
+  `site_map_data`, `site_map_style` and `_add_site_map`; `plot_site_curves` got the keyword `site_map` (`None` = as
+  before). The axes of the map carry the `gid`s `site_map`, `site_map_colorbar` and `site_map_block`.
+- With `CURVES_MAP = False` (default) the output is unchanged: crossplot, histogram, Q-Q and curves figures and all
+  tables of a single run, an ensemble (bands, curves, density), observed only, and `.pdf` + `.png` together are
+  byte-identical to the previous version (png and text files compared; pdf files carry a date).
+- Checked with `scripts/general/test_femtic_misfit_map.py` (64 tests, stand-in for `femtic.read_results_data`,
+  no h5py): settings, positions and frames, colour scale, own column and corner insets (position, size,
+  inside the panel), marker colours from the nRMS, observed only, ticks on / off, profile window, end to end for a
+  single run and an ensemble, invalid settings, results without positions. The tests were run against deliberately
+  broken copies of the code (frame swapped, ring hidden, wrong colour, wrong side, no minimum window, scale
+  changed): each one is caught. The 25 `femtic_misfit` tests of `test_phase_wrap_plotters.py` still pass.
+  Looked at: single run and ensemble, all six placements, ticks on / off, a long thin profile, one site, a site
+  without position, `.png` and a page of a multi-page `.pdf`.
+- **Not run against real `results_iterN.h5` files** (no h5py here): the figures were rendered from synthetic data.
+  That `site_x` is north and `site_y` east in your files (`CURVES_MAP_AXES = "ne"`) is the FEMTIC convention, but
+  was not checked on a real file; the method prints which coordinate is horizontal, and if the map looks mirrored
+  or rotated, `CURVES_MAP_AXES = "en"` swaps the two.
+
+### 2026-11-21 -- all paths refer to a WORK_DIR (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- New setting `WORK_DIR` (as in `femtic_clean.py`) and option `-w` / `--work-dir DIR`. Relative `RUN_PATHS`,
+  `OUT_DIR`, `NRMS_RESULTS`, `NRMS_CSV`, `NRMS_HIST_FILE`, `CURVES_SITE_DAT` and command-line paths are taken from it,
+  absolute ones as given; see "Working directory". The paths in the settings block are now written relative to
+  `WORK_DIR`, which is the ensemble directory `.../krafla2026/krafla_fine/krafla_ens_fine/` (the parent of the
+  members). `RUN_PATHS` resolves to the same members as before. **Three settings changed:** `OUT_DIR` is `results/`
+  under `WORK_DIR` (was `krafla_ens_fine_paired/results/`, now the commented alternative `../krafla_ens_fine_paired/results/`);
+  `NRMS_RESULTS` (was a file in `annecy2026`) is `None`, so the method `"nrms"` is skipped with a message; and
+  `CURVES_SITE_DAT` (also `annecy2026`) is `"auto"`. Set the last two to files of this ensemble.
+- The script changes into `WORK_DIR` for the run and back afterwards; the last place of the `"auto"` `site.dat`
+  search is therefore `WORK_DIR` (was: the directory the script was started from).
+- **Changed behaviour:** paths on the command line are relative to `WORK_DIR`, no longer to the current directory.
+  Return code 2 if `WORK_DIR` is not a directory. `settings()` takes an optional `work_dir`.
+- `femtic_misfit.py` is unchanged; the paths are resolved in this script before the settings are handed over.
 
 ### 2026-11-20 -- phase curves that leave the +-180 deg window (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
 - The interrupted line with a dotted connection (bands and density cut / skipped too) is done in `femtic_misfit.py` and

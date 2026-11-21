@@ -280,12 +280,14 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 #: Ensemble directory (templates/mesh.dat, templates/site.dat etc. are looked
 #: up here by default).
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
-
+# ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
+# ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_fine/krafla_ens_fine_paired/"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_fine/krafla_ens_fine/"
 #: Prefix of femtic_ens_post.py's ENSEMBLE_PREFIX (including the suffix it adds
 #: for ENS_MODEL_SOURCE = "perturbed" or for a random subsample). It names the
 #: results file and the figures.
-ENSEMBLE_PREFIX = "annecy_rto_orig-err"
+# ENSEMBLE_PREFIX = "annecy_rto_orig-err"
+ENSEMBLE_PREFIX = "krafla_rto_ref"
 
 #: Where femtic_ens_post.py wrote its results, and where the figures and the
 #: panels' block files go (MOD_STATS_DIR below).
@@ -399,14 +401,14 @@ MOD_STATS_WHAT = (
       ["best", "avg", "med", "err", "mad"]
 #    + ["p" + f"{_p:g}".replace(".", "_") for _p in (2.3, 15.9, 50.0, 84.1, 97.7)]
     + [f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS]
-    + ["err_boot"]
-    + [
-        "sens_mean",
-        "sens_median",
-        "sens_cv",
-    ]
-    + ["simrc_corr"]
-    + ["simrc_coef"]
+    # + ["err_boot"]
+    # + [
+    #     "sens_mean",
+    #     "sens_median",
+    #     "sens_cv",
+    # ]
+    # + ["simrc_corr"]
+    # + ["simrc_coef"]
 )
 
 #: Which sensitivity the "sens_*" entries of MOD_STATS_WHAT and the name in
@@ -433,7 +435,7 @@ MOD_STATS_WHAT = (
 #: statistic both peak at 0 and a threshold of MOD_ALPHA_SOURCE is
 #: "within N decades of that statistic's own maximum" for either kind; the
 #: native ranges are in the results file (res["sens_ranges"]).
-MOD_SENS_KIND = "auto"
+MOD_SENS_KIND = "volume_normalised"
 
 #: Extension-less base path for the "best" panel; _plot_slice() appends
 #: ".<fmt>" per MOD_PLOT_FORMAT entry. None = MOD_STATS_DIR/<prefix>_best.
@@ -497,7 +499,7 @@ MOD_ORIGIN_METHOD = "box"
 #: "latlon" — axis ticks in decimal degrees
 MOD_DISPLAY_COORDS = "utm"
 #: Decimal digits shown on axis tick labels (depth, map/curtain
-#: easting-northing, and lat/lon all share this one setting). None (default)
+#: easting-northing, and lat/loauto"n all share this one setting). None (default)
 #: keeps plot_model_slices' own per-axis-type formatting unchanged.
 MOD_TICK_DECIMALS = 0
 
@@ -541,10 +543,10 @@ MOD_MAP_MARKERS = [
     # star on every map; on a section through it (or within max_dist) at 2 km
     # depth with a bar from 1 to 3 km. The Vuache fault plane (panel=True
     # below) passes ~0.2 km from it at 2 km depth, so it shows on that panel.
-    dict(latlon=[45.9383, 6.0883], marker="*", color="black",
-         markerfacecolor="yellow", markeredgecolor="black", ms=30, mew=1.0,
-         zorder=14, depth=2.0, depth_err=1.0, name="Epagny 1996 (2 +- 1 km)"),
-    # Model centre (model-local x = y = 0): a black cross on the maps and, at
+    # dict(latlon=[45.9383, 6.0883], marker="*", color="black",
+    #      markerfacecolor="yellow", markeredgecolor="black", ms=30, mew=1.0,
+    #      zorder=14, depth=2.0, depth_err=1.0, name="Epagny 1996 (2 +- 1 km)"),
+    # # Model centre (model-local x = y = 0): a black cross on the maps and, at
     # depth 0, on the sections that pass within max_dist of it. Without this
     # entry the centre is the default yellow star on the maps only.
     dict(is_model_centre=True, marker="+", color="black", ms=16, mew=2.2,
@@ -649,15 +651,15 @@ MOD_SLICES = [
     # dict(kind="ew", y0=(45.9383, "latlon")),   # E-W through the epicentre
     # dict(kind="ns", x0=0.0),                   # N-S through the model centre
     # dict(kind="ew", y0=0.0),                   # E-W through the model centre
-    dict(kind="profile",
-     p1=([6.030869, 45.962166], "latlon"),
-     p2=([6.115936, 45.910655], "latlon"),
-     dip=110.0, z_top=0.0, z_bot=20000.0,
-     overlay=dict(color="magenta", linestyle=":", linewidth=10.0, alpha=0.9),
-     title="Vuache fault",
-     limit_km=0.0, alpha_outside=0.1,   # p1 ... p2 as given, then fading
-     fade_km=2.0,                        # ... to 25 % over 2 km (0 = abrupt)
-     panel=False)
+    # dict(kind="profile",
+    #  p1=([6.030869, 45.962166], "latlon"),
+    #  p2=([6.115936, 45.910655], "latlon"),
+    #  dip=110.0, z_top=0.0, z_bot=20000.0,
+    #  overlay=dict(color="magenta", linestyle=":", linewidth=10.0, alpha=0.9),
+    #  title="Vuache fault",
+    #  limit_km=0.0, alpha_outside=0.1,   # p1 ... p2 as given, then fading
+    #  fade_km=2.0,                        # ... to 25 % over 2 km (0 = abrupt)
+    #  panel=False)
 ]
 #: Epagny 1996 epicentre (45.9383, 6.0883) and the model centre: MOD_MAP_MARKERS.
 # --- Polylines (optional) -----------------------------------------------------
@@ -691,7 +693,7 @@ MOD_SLICES = [
 #:   MOD_POLYLINES["map 2 km x ns 0"] = dict(#: Decimal digits shown on axis tick labels (depth, map/curtain
 #: easting-northing, and lat/lon all share this one setting). None (default)
 #: keeps plot_model_slices' own per-axis-type formatting unchanged.
-MOD_TICK_DECIMALS = 2
+# MOD_TICK_DECIMALS = 0
 #:       points=_p / 1000.0, max_dist=0.0, z_range=[2.0, 2.0])
 MOD_POLYLINES = {}
 # MOD_POLYLINES = {
@@ -743,8 +745,8 @@ MOD_ZLIM = None  # [zmin, zmax] model-local km; None = auto
 #: exist in femtic_rto_prep.py and femtic_gst_prep.py, so the plot extent
 #: is identical between prep-time and post-time figures.
 MOD_ROI_AUTO = True
-MOD_ROI_PAD_XY = 4.0  # km of padding around the site bbox
-MOD_ROI_ZLIM = [-1.0, 5.0]
+MOD_ROI_PAD_XY = 2.0  # km of padding around the site bbox
+MOD_ROI_ZLIM = [-1.0, 6.0]
 #: depth range (km, positive-down) for ns/ew/plane panels; None = leave MOD_ZLIM as-is
 #: Lower bound is negative (above the z=0 datum) to give ~1 km of headroom
 #: so topography (mesh cells with z < 0) is not clipped out of the ns/ew/
@@ -847,7 +849,7 @@ MOD_STATS_STYLE["abs_diff_prior"] = dict(
 # MOD_ALPHA_FADE_WIDTH = 0.05
 # MOD_ALPHA_EXCLUDE = ("sens_", "simrc_", "diff_prior", "abs_diff_prior")
 
-MOD_ALPHA_SOURCE = "sens_median > -6."
+MOD_ALPHA_SOURCE = "sens_median_vn > -4."
 #: "blank" -- failing cells are removed (hard cut).
 #: "fade"  -- failing cells fade linearly from opaque at the threshold to
 #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
@@ -873,8 +875,7 @@ MOD_EQUAL_ASPECT = True
 #: vertical scale twice the horizontal one. Works for every
 #: MOD_DISPLAY_COORDS, also "latlon", where MOD_#: Decimal digits shown on axis tick labels (depth, map/curtain
 #: easting-northing, and lat/lon all share this one setting). None (default)
-#: keeps plot_model_slices' own per-axis-type formatting unchanged.
-MOD_TICK_DECIMALS = 2EQUAL_ASPECT alone does not
+#: keeps plot_model_slices' own per-axis-type formatting unchanged. EQUAL_ASPECT alone does not
 #: act (its test needs model/utm display); map panels stay 1:1 while
 #: MOD_EQUAL_ASPECT is True.
 MOD_VERT_EXAG = None
@@ -920,7 +921,7 @@ MOD_TITLE_FONTSIZE = MOD_LABEL_FONTSIZE + 10
 #:                        "default": "auto"}
 #:                     keys = entries of MOD_STATS_WHAT; values as above;
 #:                     "default" (else "auto") covers the keys not listed.
-MOD_TITLE = ""
+MOD_TITLE = "auto"
 #: Panel titles ("Map  z = 1.0 km", "N-S  easting = 0.0 km", ...): True = as
 #: before, False = none. A single panel is titled by adding title="text" to its
 #: MOD_SLICES entry (title="" leaves just that panel untitled).
@@ -936,7 +937,7 @@ MOD_CBAR_LOCATION = "bottom"
 #: Joint colour bar only: its length as a fraction of the side of the panel
 #: grid it runs along (0 < value <= 1), and its thickness in cm (None =
 #: 1.5 x MOD_LABEL_FONTSIZE points).
-MOD_CBAR_SHRINK = 0.6
+MOD_CBAR_SHRINK = 0.7
 MOD_CBAR_THICKNESS = None  # cm
 
 

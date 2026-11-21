@@ -1114,11 +1114,12 @@ print(titstrng + "\n\n")
 # #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
 # ENSEMBLE_PREFIX = "annecy_gst_0"
 
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
-ENSEMBLE_NAME = "ann_rto_orig-err_"
+# ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_fine/krafla_ens_fine/"
+ENSEMBLE_DIR =  r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_ens/"
+ENSEMBLE_NAME = "krafla_rto_"
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "annecy_rto_orig-err"
+ENSEMBLE_PREFIX = "krafla_rto_ref"
 
 #: Expected member numbers as (first, last), inclusive, e.g. (0, 255) for 256
 #: members named <ENSEMBLE_NAME>0 ... <ENSEMBLE_NAME>255. Only used by the
@@ -1202,7 +1203,7 @@ if ENS_MODEL_SOURCE == "perturbed":
 CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
 #: Maximum normalised RMS accepted from the convergence file (CNV_FILE).
-NRMS_MAX = 1.5
+NRMS_MAX =2.0
 
 #: A member's model is taken from its best-nRMS iteration N
 #: (resistivity_block_iter<N>.dat). If that file does not exist (FEMTIC wrote
@@ -1393,7 +1394,7 @@ SENS_H5_GROUP = None
 #: With "both" a member counts only if BOTH datasets can be read and
 #: mapped to the free parameters, so that the two sets rest on the same
 #: members.
-SENS_KIND = "volume_normalised"
+SENS_KIND = "both"
 _SENS_KIND_SPELLING = {"volume_normalized": "volume_normalised"}
 _sens_kind = _SENS_KIND_SPELLING.get(SENS_KIND, SENS_KIND)
 assert _sens_kind in (

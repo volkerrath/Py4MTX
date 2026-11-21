@@ -49,6 +49,30 @@ Notice      : This code is AI-generated. Review and test it before any
 
 Changelog
 ---------
+2026-11-21b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            "curves": optional small map of the sites in every figure. All
+            sites are points coloured by their site nRMS (the same nRMS as in
+            <prefix>_site_nrms.txt; one colour scale for all pages: smallest /
+            largest site nRMS, or CURVES_MAP_NRMS_RANGE; single-hue blue ramp,
+            light = low, or CURVES_MAP_CMAP), the current site has a larger
+            marker with a dark ring; with CURVES_OBSERVED_ONLY the points are
+            grey and there is no colour bar; a site without nRMS is hollow, a
+            site without a position (e.g. HTF / NMT only) is left out. Axes in
+            model coordinates [km] (site_x / site_y of the results file; east
+            horizontal, north vertical; CURVES_MAP_AXES says which of the two
+            is which, "ne" = FEMTIC convention), or none (CURVES_MAP_TICKS =
+            False); equal scale, the window is never flatter than 0.4 : 1.
+            Placement CURVES_MAP_PLACEMENT: "right" / "left" = an own column
+            next to the panels (figure wider by CURVES_MAP_SIZE), "upper
+            right" / "upper left" / "lower right" / "lower left" = inset in the
+            corner of the last / first panel (CURVES_MAP_SIZE inches square,
+            smaller for a flat window, drawn on top of the curves). New
+            settings CURVES_MAP, CURVES_MAP_PLACEMENT, CURVES_MAP_SIZE,
+            CURVES_MAP_TICKS, CURVES_MAP_AXES, CURVES_MAP_CMAP,
+            CURVES_MAP_NRMS_RANGE, CURVES_MAP_MARKER_SIZE; new functions
+            site_map_data, site_map_style, _add_site_map; plot_site_curves got
+            the keyword site_map (None = as before). With CURVES_MAP = False
+            (default) all output is unchanged.
 2026-11-20  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             "curves": phase curves that leave the +-180 deg window. Where a
             phase curve jumps by more than 180 deg between two periods, the
@@ -396,6 +420,27 @@ class Settings:
     CURVES_PHASE_WRAP_RANGE: Tuple[float, float] = (-180.0, 180.0)
                                        # phase window; (-3.14159, 3.14159) if the
                                        # phases are in radians
+
+    # small map of the sites in every figure (current site marked, all sites
+    # coloured by their nRMS, same colour scale on every page)
+    CURVES_MAP: bool = False           # True = draw the map
+    CURVES_MAP_PLACEMENT: str = "right"   # "right" | "left": an own column next to the
+                                       # panels (figure gets wider by CURVES_MAP_SIZE);
+                                       # "upper right" | "upper left" | "lower right" |
+                                       # "lower left": inset in the corner of the last
+                                       # (right) / first (left) panel, on top of the
+                                       # curves (do not put the legend there)
+    CURVES_MAP_SIZE: float = 1.7       # [in] side of the map block (map and colour bar)
+    CURVES_MAP_TICKS: bool = True      # True = ticks and labels in model coordinates
+                                       # [km]; False = no ticks, no labels (frame only)
+    CURVES_MAP_AXES: str = "ne"        # "ne": site_x = north (vertical), site_y = east
+                                       # (horizontal), the FEMTIC convention; "en":
+                                       # site_x = east, site_y = north
+    CURVES_MAP_CMAP: Optional[str] = None   # None = single-hue blue ramp, light = low
+                                       # nRMS, dark = high; or a Matplotlib colormap
+    CURVES_MAP_NRMS_RANGE: Optional[Tuple[float, float]] = None   # (lo, hi) of the colour
+                                       # scale; None = smallest / largest nRMS of the sites
+    CURVES_MAP_MARKER_SIZE: float = 12.0   # [pt^2] of a site (the current one is larger)
 
 
 
@@ -1294,6 +1339,10 @@ def _curves_cfg(opts) -> dict:
         name_case=opts.CURVES_NAME_CASE, title=opts.FIGURE_TITLE,
         site_dat=opts.CURVES_SITE_DAT, id_offset=opts.CURVES_SITE_ID_OFFSET,
         site_match=opts.CURVES_SITE_MATCH, site_tol=float(opts.CURVES_SITE_TOL),
+        map=bool(opts.CURVES_MAP), map_placement=opts.CURVES_MAP_PLACEMENT,
+        map_size=opts.CURVES_MAP_SIZE, map_ticks=bool(opts.CURVES_MAP_TICKS),
+        map_axes=opts.CURVES_MAP_AXES, map_cmap=opts.CURVES_MAP_CMAP,
+        map_range=opts.CURVES_MAP_NRMS_RANGE, map_ms=opts.CURVES_MAP_MARKER_SIZE,
     )
 
 
@@ -1849,12 +1898,232 @@ def draw_bands(ax, period: np.ndarray, y: np.ndarray, *, pct, color,
                             linewidth=0, zorder=zorder)
 
 
+# ---------------------------------------------------------------------------
+# Map of the sites in the "curves" figures
+# ---------------------------------------------------------------------------
+MAP_PLACEMENTS = ("right", "left", "upper right", "upper left", "lower right", "lower left")
+MAP_AXES = ("ne", "en")
+# single-hue blue ramp (steps 250 ... 700 of the reference sequential ramp):
+# light = low nRMS, dark = high; the light end is not lighter than step 250 so
+# that a site stays visible on the white page
+_MAP_RAMP = ("#86b6ef", "#5598e7", "#2a78d6", "#1c5cab", "#104281", "#0d366b")
+_MAP_INK = "#1a1a1a"       # ring of the current site
+_MAP_NEUTRAL = "0.62"      # sites without a colour code (observed only)
+
+
+def site_map_data(info: Dict[int, dict], *, axes: str = "ne") -> Optional[dict]:
+    """
+    Positions for the site map from the per-site table (see site_nrms): dict
+    with ids, h (horizontal) and v (vertical) in km (model coordinates as
+    stored in the results file) and nrms. axes "ne": site_y = east is
+    horizontal, site_x = north vertical; "en": site_x horizontal, site_y
+    vertical. Sites without a finite position are left out; None if none is
+    left.
+    """
+    ids = sorted(info)
+    x = np.array([info[s].get("x", np.nan) for s in ids], dtype=float)
+    y = np.array([info[s].get("y", np.nan) for s in ids], dtype=float)
+    nr = np.array([info[s].get("nrms", np.nan) for s in ids], dtype=float)
+    ok = np.isfinite(x) & np.isfinite(y)
+    if not ok.any():
+        return None
+    h, v = (y, x) if axes == "ne" else (x, y)
+    return dict(ids=np.asarray(ids)[ok], h=h[ok] / 1.0e3, v=v[ok] / 1.0e3, nrms=nr[ok],
+                axes=axes)
+
+
+def site_map_style(smap: dict, cfg: dict):
+    """
+    (cmap, norm) of the site map: the ramp of CURVES_MAP_CMAP (None = the blue
+    ramp), the scale of CURVES_MAP_NRMS_RANGE (None = smallest / largest site
+    nRMS). One scale for all figures, so the pages can be compared.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.colors import LinearSegmentedColormap, Normalize
+    if cfg["map_cmap"] is None:
+        cmap = LinearSegmentedColormap.from_list("nrms_blue", list(_MAP_RAMP))
+    else:
+        cmap = plt.get_cmap(cfg["map_cmap"])
+    if cfg["map_range"] is None:
+        fin = smap["nrms"][np.isfinite(smap["nrms"])]
+        lo, hi = (float(fin.min()), float(fin.max())) if fin.size else (0.0, 1.0)
+    else:
+        lo, hi = (float(v) for v in cfg["map_range"])
+    if not hi > lo:                         # one site, or all with the same nRMS
+        hi = lo + 1.0
+    return cmap, Normalize(vmin=lo, vmax=hi, clip=True)
+
+
+def _add_site_map(fig, panel_axes, slot, sid: int, site_map: dict, cfg: dict,
+                  obs_only: bool) -> None:
+    """
+    Draw the site map of one figure. All sites are points coloured by their
+    nRMS (grey, no colour bar, when only the observed data are drawn; hollow
+    where a site has no nRMS); the current site `sid` carries a larger marker
+    with a dark ring. Axes in km (model coordinates) if CURVES_MAP_TICKS, else
+    none. The block (map + colour bar) is the axes `slot` (placement "right" /
+    "left": own column of the figure) or an inset, CURVES_MAP_SIZE inches
+    square, in a corner of the first / last panel (the size is kept whatever
+    the layout makes of the panel).
+    """
+    from matplotlib.cm import ScalarMappable
+    from matplotlib.ticker import MaxNLocator
+    from matplotlib.transforms import Bbox
+
+    d, cmap, norm = site_map["data"], site_map["cmap"], site_map["norm"]
+    place = cfg["map_placement"]
+    colour = not obs_only
+    ticks = bool(cfg["map_ticks"])
+    h, v, nr = d["h"], d["v"], d["nrms"]
+
+    # window of the map [km]: the extent of the sites plus a margin
+    span = max(float(h.max() - h.min()), float(v.max() - v.min()))
+    if not span > 0.0:
+        span = 1.0                                         # one site: +-0.6 km
+    pad = 0.12 * span
+    xlim = [float(h.min()) - pad, float(h.max()) + pad]
+    ylim = [float(v.min()) - pad, float(v.max()) + pad]
+    wd, hd = xlim[1] - xlim[0], ylim[1] - ylim[0]
+    # equal scale in both directions, but the window is never flatter (or
+    # narrower) than 0.4 : 1: a profile gets white space around it instead of
+    # becoming a sliver with colliding tick labels
+    if hd < 0.4 * wd:
+        mid = 0.5 * (ylim[0] + ylim[1])
+        hd = 0.4 * wd
+        ylim = [mid - 0.5 * hd, mid + 0.5 * hd]
+    elif wd < 0.4 * hd:
+        mid = 0.5 * (xlim[0] + xlim[1])
+        wd = 0.4 * hd
+        xlim = [mid - 0.5 * wd, mid + 0.5 * wd]
+
+    # Geometry in inches inside the block, worked out at draw time from its
+    # real size: the map box has the aspect of the window (equal scale in
+    # both directions) and is centred in the room left by the tick labels and
+    # the colour bar; the colour bar sits next to it, its height from the
+    # map's (between half and all of the available height, so that it stays
+    # readable for a long thin profile).
+    lm, bm = (0.34, 0.28) if ticks else (0.06, 0.06)       # room for tick labels
+    tm = 0.20 if colour else 0.08                          # (colour bar title)
+    gap, strip, lab = 0.06, 0.07, 0.26
+    cz = (gap + strip + lab) if colour else 0.0            # colour bar zone
+    rm = 0.04
+
+    if slot is not None:                                   # own column
+        block = slot
+        block.set_axis_off()
+    else:                                                  # corner of a panel
+        parent = panel_axes[0] if "left" in place else panel_axes[-1]
+        block = parent.inset_axes([0.0, 0.0, 1.0, 1.0])
+        side_in = float(cfg["map_size"])
+        pad_in = 0.06
+        # square block; for a flat window only as high as its content needs
+        # (but not lower than 0.9 in, the room of the colour bar)
+        h_in = min(side_in, max(0.9, bm + tm + (side_in - lm - rm - cz) * hd / wd))
+
+        def _locator(ax_, renderer):                       # evaluated at draw time
+            pb = parent.get_window_extent(renderer)
+            w = min(side_in * fig.dpi, 0.9 * pb.width)
+            hb = min(h_in * fig.dpi, 0.9 * pb.height)
+            x0 = pb.x0 + pad_in * fig.dpi if "left" in place else pb.x1 - pad_in * fig.dpi - w
+            y0 = pb.y0 + pad_in * fig.dpi if "lower" in place else pb.y1 - pad_in * fig.dpi - hb
+            return Bbox.from_bounds(x0, y0, w, hb).transformed(fig.transSubfigure.inverted())
+
+        block.set_axes_locator(_locator)
+        block.set_in_layout(False)
+        block.set_zorder(10)
+        block.set_xticks([])
+        block.set_yticks([])
+        block.patch.set_facecolor("white")
+        block.patch.set_alpha(0.9)
+        for sp in block.spines.values():
+            sp.set_linewidth(0.5)
+            sp.set_edgecolor("0.6")
+
+    def _geometry(renderer):
+        bb = block.get_window_extent(renderer)
+        wi, hi = bb.width / fig.dpi, bb.height / fig.dpi
+        aw, ah = max(wi - lm - rm - cz, 0.2), max(hi - bm - tm, 0.2)
+        s = min(aw / wd, ah / hd)
+        w, hh = s * wd, s * hd
+        x0, y0 = lm + 0.5 * (aw - w), bm + 0.5 * (ah - hh)
+        hc = min(max(hh, 0.5 * ah), ah)
+        return bb, (x0, y0, w, hh), (x0 + w + gap, bm + 0.5 * (ah - hc), strip, hc)
+
+    def _locate(which: int):
+        def _loc(ax_, renderer):
+            bb, rmap, rcb = _geometry(renderer)
+            x0, y0, w, hh = rmap if which == 0 else rcb
+            return Bbox.from_bounds(bb.x0 + x0 * fig.dpi, bb.y0 + y0 * fig.dpi,
+                                    w * fig.dpi, hh * fig.dpi
+                                    ).transformed(fig.transSubfigure.inverted())
+        return _loc
+
+    block.set_gid("site_map_block")
+    ax = block.inset_axes([0.0, 0.0, 1.0, 1.0])
+    ax.set_axes_locator(_locate(0))
+    ax.set_gid("site_map")
+
+    ms = float(cfg["map_ms"])
+    cur = np.flatnonzero(d["ids"] == sid)
+    ci = int(cur[0]) if cur.size else -1
+    rest = np.ones(h.size, dtype=bool)
+    if ci >= 0:
+        rest[ci] = False
+    has = np.isfinite(nr)
+    sel = rest & has
+    if colour:
+        if sel.any():
+            ax.scatter(h[sel], v[sel], c=nr[sel], cmap=cmap, norm=norm, s=ms,
+                       edgecolors="0.25", linewidths=0.3, zorder=2)
+        hol = rest & ~has                                  # no nRMS: hollow
+        if hol.any():
+            ax.scatter(h[hol], v[hol], facecolors="none", edgecolors="0.45", s=ms,
+                       linewidths=0.6, zorder=2)
+    elif rest.any():
+        ax.scatter(h[rest], v[rest], c=_MAP_NEUTRAL, s=ms, edgecolors="0.25",
+                   linewidths=0.3, zorder=2)
+    if ci >= 0:                                            # the current site
+        fill = (cmap(norm(nr[ci])) if (colour and has[ci]) else _MAP_NEUTRAL)
+        ax.scatter([h[ci]], [v[ci]], c=[fill], s=4.0 * ms, edgecolors="white",
+                   linewidths=0.8, zorder=5)
+        ax.scatter([h[ci]], [v[ci]], facecolors="none", edgecolors=_MAP_INK,
+                   s=14.0 * ms, linewidths=1.0, zorder=6)
+
+    ax.set_xlim(*xlim)
+    ax.set_ylim(*ylim)
+    if ticks:
+        ax.set_xlabel("E [km]", fontsize=5.5, labelpad=1)     # east horizontal, north
+        ax.set_ylabel("N [km]", fontsize=5.5, labelpad=1)     # vertical in both frames
+        ax.xaxis.set_major_locator(MaxNLocator(3))
+        ax.yaxis.set_major_locator(MaxNLocator(3))
+        ax.tick_params(labelsize=5, length=2, width=0.5, pad=1.5)
+    else:
+        ax.set_xticks([])
+        ax.set_yticks([])
+    for sp in ax.spines.values():
+        sp.set_linewidth(0.5)
+    if colour:
+        cax = block.inset_axes([0.0, 0.0, 1.0, 1.0])
+        cax.set_axes_locator(_locate(1))
+        cax.set_gid("site_map_colorbar")
+        cb = fig.colorbar(ScalarMappable(norm=norm, cmap=cmap), cax=cax)
+        cb.locator = MaxNLocator(4)
+        cb.update_ticks()
+        cb.outline.set_linewidth(0.4)
+        cax.tick_params(labelsize=5, length=2, width=0.5, pad=1.5)
+        cax.set_title("nRMS", fontsize=5.5, pad=2)
+
+
 def plot_site_curves(sid: int, series: Dict[str, dict], info: dict, *, M: int,
                      layers: Sequence[str], cfg: dict, title_extra: str,
-                     dv, markers: dict, comp_class, rng):
+                     dv, markers: dict, comp_class, rng,
+                     site_map: Optional[dict] = None):
     """
     One figure for one site: a panel per quantity in cfg["what"] that has data.
     Returns the figure, or None if the site has nothing to draw.
+
+    site_map: None = no map; else dict(data=site_map_data(...), cmap, norm) from
+    run_curves (cfg["map_placement"], "map_size", ... say where and how).
     """
     import matplotlib.pyplot as plt
     import pandas as pd
@@ -1879,8 +2148,20 @@ def plot_site_curves(sid: int, series: Dict[str, dict], info: dict, *, M: int,
         return None
 
     nc = len(panels)
-    fig, axes = plt.subplots(1, nc, figsize=(cfg["panel_size"][0] * nc, cfg["panel_size"][1]),
-                             squeeze=False, constrained_layout=True)
+    slot = None                                   # own column of the site map
+    if site_map is not None and cfg["map_placement"] in ("right", "left"):
+        left = cfg["map_placement"] == "left"
+        msz = float(cfg["map_size"])
+        fig = plt.figure(figsize=(cfg["panel_size"][0] * nc + msz, cfg["panel_size"][1]),
+                         constrained_layout=True)
+        ratios = [cfg["panel_size"][0]] * nc
+        gs = fig.add_gridspec(1, nc + 1, width_ratios=[msz] + ratios if left else ratios + [msz])
+        j0 = 1 if left else 0
+        axes = np.array([[fig.add_subplot(gs[0, j0 + k]) for k in range(nc)]])
+        slot = fig.add_subplot(gs[0, 0 if left else nc])
+    else:
+        fig, axes = plt.subplots(1, nc, figsize=(cfg["panel_size"][0] * nc, cfg["panel_size"][1]),
+                                 squeeze=False, constrained_layout=True)
     obs_only = cfg["obs_only"]
     if obs_only:
         layers = []
@@ -1999,6 +2280,8 @@ def plot_site_curves(sid: int, series: Dict[str, dict], info: dict, *, M: int,
         site=who, sid=sid, nrms=("n/a" if obs_only else f"{info['nrms']:.2f}"))
     if _sup:
         fig.suptitle(_sup, fontsize=10)
+    if site_map is not None:
+        _add_site_map(fig, axes[0], slot, sid, site_map, cfg, obs_only)
     return fig
 
 
@@ -2057,6 +2340,27 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
     if not (cfg["wrap_style"] is None or isinstance(cfg["wrap_style"], (bool, dict))):
         print("femtic_misfit: curves: CURVES_PHASE_WRAP_STYLE must be None, False or a dict.")
         return 1
+    if cfg["map"]:
+        cfg["map_placement"] = str(cfg["map_placement"]).strip().lower()
+        if cfg["map_placement"] not in MAP_PLACEMENTS:
+            print(f"femtic_misfit: curves: CURVES_MAP_PLACEMENT must be one of "
+                  f"{MAP_PLACEMENTS}; got {cfg['map_placement']!r}.")
+            return 1
+        if str(cfg["map_axes"]).strip().lower() not in MAP_AXES:
+            print(f"femtic_misfit: curves: CURVES_MAP_AXES must be one of {MAP_AXES}.")
+            return 1
+        cfg["map_axes"] = str(cfg["map_axes"]).strip().lower()
+        try:
+            if not float(cfg["map_size"]) > 0.0 or not float(cfg["map_ms"]) > 0.0:
+                raise ValueError
+            if cfg["map_range"] is not None:
+                _mlo, _mhi = (float(v) for v in cfg["map_range"])
+                if not _mhi > _mlo:
+                    raise ValueError
+        except (TypeError, ValueError):
+            print("femtic_misfit: curves: CURVES_MAP_SIZE and CURVES_MAP_MARKER_SIZE must "
+                  "be > 0, CURVES_MAP_NRMS_RANGE None or (lo, hi) with hi > lo.")
+            return 1
     M = ds["M"]
     try:
         layers = resolve_layers(cfg["ens_mode"], M, cfg["max_curves"])
@@ -2092,6 +2396,27 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
         print("femtic_misfit: curves: no sites selected, nothing to plot.")
         return 0
 
+    site_map = None                               # optional map of the sites
+    if cfg["map"]:
+        smap = site_map_data(info, axes=cfg["map_axes"])
+        if smap is None:
+            print("femtic_misfit: curves: the results file has no site positions; "
+                  "no map (CURVES_MAP).")
+        else:
+            try:
+                cmap, norm = site_map_style(smap, cfg)
+            except ValueError as exc:
+                print(f"femtic_misfit: curves: CURVES_MAP_CMAP: {exc}")
+                return 1
+            site_map = dict(data=smap, cmap=cmap, norm=norm)
+            hz, vt = (("site_y (east)", "site_x (north)") if cfg["map_axes"] == "ne"
+                      else ("site_x (east)", "site_y (north)"))
+            print(f"femtic_misfit: curves: site map: {smap['ids'].size} of {len(info)} sites "
+                  f"with a position, placement {cfg['map_placement']!r}, horizontal = {hz}, "
+                  f"vertical = {vt}, model coordinates [km]"
+                  + ("; observed only: no colour code." if cfg["obs_only"] else
+                     f"; colour = site nRMS, {norm.vmin:.2f} ... {norm.vmax:.2f}."))
+
     exts = ["." + str(e).lstrip(".") for e in
             ((opts.PLOT_FORMATS,) if isinstance(opts.PLOT_FORMATS, str) else opts.PLOT_FORMATS)]
     explicit = cfg["sites"] is not None and not isinstance(cfg["sites"], (int, np.integer))
@@ -2117,7 +2442,7 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
             series = site_series(ds, sid, appres_deg=cfg["appres_deg"])
             fig = plot_site_curves(sid, series, info[sid], M=M, layers=layers, cfg=cfg,
                                    title_extra=title_extra, dv=dv, markers=markers,
-                                   comp_class=comp_class, rng=rng)
+                                   comp_class=comp_class, rng=rng, site_map=site_map)
             if fig is None:
                 print(f"femtic_misfit: curves: site {sid}: nothing to draw, skipped.")
                 continue

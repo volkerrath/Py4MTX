@@ -133,6 +133,14 @@ The defaults are those in the script; paths are shortened.
 | `CURVES_PHASE_WRAP_MODE` | `"direct"` | Phase curves that leave the +-180 deg window (a jump of more than half the window between two periods): the line is interrupted there and the two points are joined by a separate line. `"direct"` = straight line between the two points, `"short"` = the short way through the window edge, `"off"` = no handling (as before). Members, median and the observed error shading are cut the same way; percentile bands are cut where their edge jumps; in the density a member that jumps leaves out the grid points between the two periods |
 | `CURVES_PHASE_WRAP_STYLE` | `None` | Matplotlib line properties of the connection, merged over the dotted default (`data_viz.PHASE_WRAP_STYLE`), e.g. `{"linestyle": "--", "alpha": 0.5}`; colour, width and opacity of the curve are inherited. `None` = dotted; `False` = gap only, no connection |
 | `CURVES_PHASE_WRAP_RANGE` | `(-180.0, 180.0)` | The phase window; `(-3.14159, 3.14159)` for phases in radians |
+| `CURVES_MAP` | `False` | Small map of the sites in every "curves" figure: the current site marked, all sites coloured by their nRMS (see "Site map in the curves figures" in `femtic_misfit_readme.md`) |
+| `CURVES_MAP_PLACEMENT` | `'right'` | `"right"` / `"left"`: an own column next to the panels (the figure gets wider by `CURVES_MAP_SIZE`); `"upper right"`, `"upper left"`, `"lower right"`, `"lower left"`: inset in that corner of the last (right) / first (left) panel, on top of the curves |
+| `CURVES_MAP_SIZE` | `1.7` | Side of the map block (map and colour bar) [in]: width of the column, or size of the inset |
+| `CURVES_MAP_TICKS` | `True` | Ticks and labels in model coordinates [km]; `False` = none (frame only) |
+| `CURVES_MAP_AXES` | `'ne'` | Which results-file coordinate is which: `"ne"` = `site_x` north (vertical), `site_y` east (horizontal), the FEMTIC convention; `"en"` = `site_x` east, `site_y` north. The map always has east horizontal and north vertical |
+| `CURVES_MAP_CMAP` | `None` | `None` = single-hue blue ramp, light = low nRMS, dark = high; or the name of a Matplotlib colormap |
+| `CURVES_MAP_NRMS_RANGE` | `None` | `(lo, hi)` of the colour scale; `None` = smallest / largest site nRMS |
+| `CURVES_MAP_MARKER_SIZE` | `12.0` | Size of a site marker [pt^2]; the current site is 4 times larger, with a ring |
 
 ## Fit measures
 
@@ -245,6 +253,29 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### 2026-11-21b -- site map in the curves figures (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- "curves": optional small map of the sites in every figure, the current site marked, all sites coloured by their
+  nRMS on one colour scale for all pages; model coordinates in km or none; own column (`"right"`, `"left"`) or inset
+  in a corner of a panel. New settings `CURVES_MAP`, `CURVES_MAP_PLACEMENT`, `CURVES_MAP_SIZE`, `CURVES_MAP_TICKS`,
+  `CURVES_MAP_AXES`, `CURVES_MAP_CMAP`, `CURVES_MAP_NRMS_RANGE`, `CURVES_MAP_MARKER_SIZE`; new functions
+  `site_map_data`, `site_map_style` and `_add_site_map`; `plot_site_curves` got the keyword `site_map` (`None` = as
+  before). The axes of the map carry the `gid`s `site_map`, `site_map_colorbar` and `site_map_block`.
+- With `CURVES_MAP = False` (default) the output is unchanged: crossplot, histogram, Q-Q and curves figures and all
+  tables of a single run, an ensemble (bands, curves, density), observed only, and `.pdf` + `.png` together are
+  byte-identical to the previous version (png and text files compared; pdf files carry a date).
+- Checked with `scripts/general/test_femtic_misfit_map.py` (64 tests, stand-in for `femtic.read_results_data`,
+  no h5py): settings, positions and frames, colour scale, own column and corner insets (position, size,
+  inside the panel), marker colours from the nRMS, observed only, ticks on / off, profile window, end to end for a
+  single run and an ensemble, invalid settings, results without positions. The tests were run against deliberately
+  broken copies of the code (frame swapped, ring hidden, wrong colour, wrong side, no minimum window, scale
+  changed): each one is caught. The 25 `femtic_misfit` tests of `test_phase_wrap_plotters.py` still pass.
+  Looked at: single run and ensemble, all six placements, ticks on / off, a long thin profile, one site, a site
+  without position, `.png` and a page of a multi-page `.pdf`.
+- **Not run against real `results_iterN.h5` files** (no h5py here): the figures were rendered from synthetic data.
+  That `site_x` is north and `site_y` east in your files (`CURVES_MAP_AXES = "ne"`) is the FEMTIC convention, but
+  was not checked on a real file; the method prints which coordinate is horizontal, and if the map looks mirrored
+  or rotated, `CURVES_MAP_AXES = "en"` swaps the two.
 
 ### 2026-11-20 -- phase curves that leave the +-180 deg window (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
 - The interrupted line with a dotted connection (bands and density cut / skipped too) is done in `femtic_misfit.py` and

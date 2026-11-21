@@ -89,8 +89,9 @@ WRITE_ZONE_HEADER = True
 
 #WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas//"
 # WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/misti//"
-WORK_DIR = "/media/vrath/LargeBack/Ensembles/krafla2026/krafla_ens_fine/"
-WORK_DIR = "/home/vrath/ACTIVE/mt_processor/2022_25/"
+# WORK_DIR = "/media/vrath/LargeBack/Ensembles/krafla2026/krafla_ens_fine/"
+# WORK_DIR = "/home/vrath/ACTIVE/mt_processor/2022_25/"
+WORK_DIR = "/home/vrath/ACTIVE/mt_processor/edi_files/"
 EDI_DIR = WORK_DIR # + "/edi_files/"
 
 print(" Edifiles read from: %s" % EDI_DIR)

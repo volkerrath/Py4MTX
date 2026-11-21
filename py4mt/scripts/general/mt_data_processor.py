@@ -67,7 +67,9 @@ print(titstrng + "\n\n")
 # WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas/edi/"
 # WORK_DIR = "/home/vrath/MT_Data/waldim/edi_synth_iso/"
 ###WORK_DIR = "/home/vrath/MT_Data/Peru/Tacna/NEW/edis_26b/"
-WORK_DIR = "/home/vrath/MT_Data/TEST/edis_exp_interp/"
+# WORK_DIR = "/home/vrath/MT_Data/TEST/edis_exp_interp/"
+# WORK_DIR = "/home/vrath/ACTIVE/mt_processor/2022_25/"
+WORK_DIR = "/home/vrath/ACTIVE/mt_processor/edi_files/"
 if not os.path.isdir(WORK_DIR):
    sys.exit(" File: %s does not exist! EXit." % WORK_DIR)
 
@@ -80,7 +82,7 @@ COLL_NAME = "Review"
 
 # Tokens (comma separated): edi, npz, hdf, mat, ncd, observe
 #   "observe" = one FEMTIC observe.dat for all stations (see the OBSERVE block)
-OUT_FILES = "edi, npz"
+OUT_FILES = "edi, npz, observe"
 STAT_FILE = True
 STAT_UPPER = True
 
@@ -157,7 +159,7 @@ if SET_ERRORS:
     }
 
 
-INTERPOLATE = False
+INTERPOLATE = True
 if INTERPOLATE:
     # ONE preset frequency grid for the whole survey (inversions are parallelised
     # per frequency).  Two ways to define it - set ONE of them, the other None:
@@ -188,12 +190,12 @@ if INTERPOLATE:
     #       data_dict["extrapolated"]).  Give 1/x for "less than 1/x of a decade",
     #       e.g. 1.0/6.0 = one grid step at 6 per decade; 0.0 = no extrapolation.
     interp_pars = {
-        "freq_per_dec":   6,           # points per decade (None if n_freq is used)
-        "n_freq":         None,        # exactly this many frequencies (None if freq_per_dec is used)
+        "freq_per_dec":   4,           # points per decade (None if n_freq is used)
+        "n_freq":         None,   #20,        # exactly this many frequencies (None if freq_per_dec is used)
         "freq_range":     "survey",
         "anchor":         1.0,         # Hz; a grid point (..., 0.1, 1, 10, ...); not used with n_freq
         "interp_method":  "gcvspline",
-        "extrap_decades": 0.0,
+        "extrap_decades": 0.1,
     }
 
 ESTIMATE_ERRORS = False

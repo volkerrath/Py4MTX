@@ -57,6 +57,19 @@ local site.dat, any case, and/or site ids) writes one file per site and format
 
 Changelog
 ---------
+2026-11-21b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            "curves": optional small map of the sites in every figure, the
+            current site marked, all sites coloured by their nRMS (one
+            colour scale for all pages; grey and no colour bar with
+            CURVES_OBSERVED_ONLY). New settings CURVES_MAP (False),
+            CURVES_MAP_PLACEMENT ("right" | "left" = own column; "upper
+            right" | "upper left" | "lower right" | "lower left" = inset in
+            a corner of the last / first panel), CURVES_MAP_SIZE,
+            CURVES_MAP_TICKS (model coordinates in km, or none),
+            CURVES_MAP_AXES, CURVES_MAP_CMAP, CURVES_MAP_NRMS_RANGE and
+            CURVES_MAP_MARKER_SIZE. With CURVES_MAP = False the output is
+            unchanged. The work is done in femtic_misfit.py of the same date
+            (see its changelog).
 2026-11-20  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             phase curves that leave the +-180 deg window are interrupted
             and the two points joined by a dotted line (bands and density
@@ -303,6 +316,27 @@ CURVES_PHASE_WRAP_STYLE: Union[None, bool, Dict[str, Any]] = None
 CURVES_PHASE_WRAP_RANGE: Tuple[float, float] = (-180.0, 180.0)
                                        # phase window; (-3.14159, 3.14159) if the
                                        # phases are in radians
+
+# small map of the sites in every figure (current site marked, all sites
+# coloured by their nRMS, the same colour scale on every page)
+CURVES_MAP: bool = False           # True = draw the map
+CURVES_MAP_PLACEMENT: str = "right"   # "right" | "left": an own column next to the
+                                   # panels (the figure gets wider by CURVES_MAP_SIZE);
+                                   # "upper right" | "upper left" | "lower right" |
+                                   # "lower left": inset in the corner of the last
+                                   # (right) / first (left) panel, on top of the
+                                   # curves (do not put the legend there)
+CURVES_MAP_SIZE: float = 1.7       # [in] side of the map block (map and colour bar)
+CURVES_MAP_TICKS: bool = True      # True = ticks and labels in model coordinates
+                                   # [km]; False = no ticks, no labels (frame only)
+CURVES_MAP_AXES: str = "ne"        # "ne": site_x = north (vertical), site_y = east
+                                   # (horizontal), the FEMTIC convention; "en":
+                                   # site_x = east, site_y = north
+CURVES_MAP_CMAP: Optional[str] = None   # None = single-hue blue ramp, light = low
+                                   # nRMS, dark = high; or a Matplotlib colormap
+CURVES_MAP_NRMS_RANGE: Optional[Tuple[float, float]] = None   # (lo, hi) of the colour
+                                   # scale; None = smallest / largest nRMS of the sites
+CURVES_MAP_MARKER_SIZE: float = 12.0   # [pt^2] of a site (the current one is larger)
 
 # ---------------------------------------------------------------------------
 # Run

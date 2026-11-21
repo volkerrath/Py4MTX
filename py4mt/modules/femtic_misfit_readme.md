@@ -139,6 +139,14 @@ The defaults of `Settings` (neutral; the scripts set their own).
 | `CURVES_PHASE_WRAP_MODE` | `"direct"` | Phase curves that leave the +-180 deg window (a jump of more than half the window between two periods): the line is interrupted there and the two points are joined by a separate line. `"direct"` = straight line between the two points, `"short"` = the short way through the window edge, `"off"` = no handling (as before). Members, median and the observed error shading are cut the same way; percentile bands are cut where their edge jumps; in the density a member that jumps leaves out the grid points between the two periods |
 | `CURVES_PHASE_WRAP_STYLE` | `None` | Matplotlib line properties of the connection, merged over the dotted default (`data_viz.PHASE_WRAP_STYLE`), e.g. `{"linestyle": "--", "alpha": 0.5}`; colour, width and opacity of the curve are inherited. `None` = dotted; `False` = gap only, no connection |
 | `CURVES_PHASE_WRAP_RANGE` | `(-180.0, 180.0)` | The phase window; `(-3.14159, 3.14159)` for phases in radians |
+| `CURVES_MAP` | `False` | Small map of the sites in every "curves" figure: the current site marked, all sites coloured by their nRMS (see "Site map in the curves figures") |
+| `CURVES_MAP_PLACEMENT` | `'right'` | `"right"` / `"left"`: an own column next to the panels (the figure gets wider by `CURVES_MAP_SIZE`); `"upper right"`, `"upper left"`, `"lower right"`, `"lower left"`: inset in that corner of the last (right) / first (left) panel, on top of the curves |
+| `CURVES_MAP_SIZE` | `1.7` | Side of the map block (map and colour bar) [in]: width of the column, or size of the inset |
+| `CURVES_MAP_TICKS` | `True` | Ticks and labels in model coordinates [km]; `False` = none (frame only) |
+| `CURVES_MAP_AXES` | `'ne'` | Which results-file coordinate is which: `"ne"` = `site_x` north (vertical), `site_y` east (horizontal), the FEMTIC convention; `"en"` = `site_x` east, `site_y` north. The map always has east horizontal and north vertical |
+| `CURVES_MAP_CMAP` | `None` | `None` = single-hue blue ramp, light = low nRMS, dark = high; or the name of a Matplotlib colormap |
+| `CURVES_MAP_NRMS_RANGE` | `None` | `(lo, hi)` of the colour scale; `None` = smallest / largest site nRMS |
+| `CURVES_MAP_MARKER_SIZE` | `12.0` | Size of a site marker [pt^2]; the current site is 4 times larger, with a ring |
 
 ## Method (Baba 2023)
 
@@ -285,6 +293,37 @@ on. Consequences:
 - `make_settings`: defaults are copies (changing one list does not change the
   next call), unknown names raise `KeyError`, there is no `RUN_MODE`.
 
+## Site map in the curves figures
+
+`CURVES_MAP = True` adds a small map of the sites to every "curves" figure (it is off by default, and then
+all output is as before).
+
+- **What it shows.** All sites of the data set (not only those in `CURVES_SITES`) as points, the site of the figure
+  marked by a larger marker with a dark ring. The colour is the site nRMS, the same number as in the title and in
+  `<prefix>_site_nrms.txt` (conventional RMS1, all data types of a position pooled; for an ensemble against the
+  ensemble mean or `REF_MEMBER`). The colour scale is the same on every page (smallest / largest site nRMS, or
+  `CURVES_MAP_NRMS_RANGE`), so the pages can be compared; set a range such as `(0.5, 3.0)` if one outlier
+  squeezes the rest. The default ramp is one hue (blue), light for a small and dark for a large nRMS, and starts
+  at a medium blue so that a good site is still visible on the white page.
+- **Coordinates.** `site_x` / `site_y` as stored in the results file: model coordinates in metres relative to the
+  model origin, shown in km (not UTM). Equal scale in both directions; the window is never flatter (or narrower)
+  than 0.4 : 1, so that a profile gets white space around it instead of becoming a sliver. `CURVES_MAP_TICKS =
+  False` draws the frame only, without any ticks or labels.
+- **Placement.** `"right"` / `"left"` give the map its own column, `CURVES_MAP_SIZE` inches wide, next to the
+  panels. The four corner names put it as an inset into the last (right) or first (left) panel; it is drawn on top
+  of the curves with a white backdrop and keeps its size in inches whatever the panel size. Do not put the
+  legend (`CURVES_LEGEND_LOC`) into the same corner; the default `"below"` is out of the way. The inset is
+  `CURVES_MAP_SIZE` square, and lower for a flat window (a profile).
+- **Observed only.** With `CURVES_OBSERVED_ONLY` there is no nRMS in the title and none in the map: the points
+  are grey, there is no colour bar, the current site is still marked.
+- **Sites without data for the map.** A site without a finite position (for example HTF / NMT rows, which carry no
+  station position) is left out; if the current site is one of them, the map is drawn without the marker. If no
+  site has a position, there is a message and no map; the figures themselves are written as usual. A site without
+  an nRMS is drawn as a hollow circle.
+- **Checks.** `CURVES_MAP_PLACEMENT`, `CURVES_MAP_AXES`, `CURVES_MAP_CMAP`, `CURVES_MAP_SIZE`,
+  `CURVES_MAP_MARKER_SIZE` and `CURVES_MAP_NRMS_RANGE` are checked when the method starts (message, return code 1);
+  while `CURVES_MAP` is `False` they are not looked at.
+
 ## Reference
 
 Baba, K. (2023): A simple method to evaluate the uncertainty of
@@ -293,6 +332,29 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### 2026-11-21b -- site map in the curves figures (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- "curves": optional small map of the sites in every figure, the current site marked, all sites coloured by their
+  nRMS on one colour scale for all pages; model coordinates in km or none; own column (`"right"`, `"left"`) or inset
+  in a corner of a panel. New settings `CURVES_MAP`, `CURVES_MAP_PLACEMENT`, `CURVES_MAP_SIZE`, `CURVES_MAP_TICKS`,
+  `CURVES_MAP_AXES`, `CURVES_MAP_CMAP`, `CURVES_MAP_NRMS_RANGE`, `CURVES_MAP_MARKER_SIZE`; new functions
+  `site_map_data`, `site_map_style` and `_add_site_map`; `plot_site_curves` got the keyword `site_map` (`None` = as
+  before). The axes of the map carry the `gid`s `site_map`, `site_map_colorbar` and `site_map_block`.
+- With `CURVES_MAP = False` (default) the output is unchanged: crossplot, histogram, Q-Q and curves figures and all
+  tables of a single run, an ensemble (bands, curves, density), observed only, and `.pdf` + `.png` together are
+  byte-identical to the previous version (png and text files compared; pdf files carry a date).
+- Checked with `scripts/general/test_femtic_misfit_map.py` (64 tests, stand-in for `femtic.read_results_data`,
+  no h5py): settings, positions and frames, colour scale, own column and corner insets (position, size,
+  inside the panel), marker colours from the nRMS, observed only, ticks on / off, profile window, end to end for a
+  single run and an ensemble, invalid settings, results without positions. The tests were run against deliberately
+  broken copies of the code (frame swapped, ring hidden, wrong colour, wrong side, no minimum window, scale
+  changed): each one is caught. The 25 `femtic_misfit` tests of `test_phase_wrap_plotters.py` still pass.
+  Looked at: single run and ensemble, all six placements, ticks on / off, a long thin profile, one site, a site
+  without position, `.png` and a page of a multi-page `.pdf`.
+- **Not run against real `results_iterN.h5` files** (no h5py here): the figures were rendered from synthetic data.
+  That `site_x` is north and `site_y` east in your files (`CURVES_MAP_AXES = "ne"`) is the FEMTIC convention, but
+  was not checked on a real file; the method prints which coordinate is horizontal, and if the map looks mirrored
+  or rotated, `CURVES_MAP_AXES = "en"` swaps the two.
 
 ### 2026-11-20 -- phase curves that leave the +-180 deg window (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
 - "curves": a phase curve that jumps by more than 180 deg between two periods is interrupted there and the two points

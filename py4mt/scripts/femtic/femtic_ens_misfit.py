@@ -43,10 +43,25 @@ https://doi.org/10.1186/s40623-023-01832-5
 Usage
 -----
     python femtic_ens_misfit.py                         # settings below
-    python femtic_ens_misfit.py "./ens/member_*/"       # paths from the command line
-    python femtic_ens_misfit.py ./m01/ ./m02/ ./m03/
+    python femtic_ens_misfit.py "ens/member_*/"         # paths from the command line
+    python femtic_ens_misfit.py m01/ m02/ m03/
+    python femtic_ens_misfit.py -w /data/ens "member_*/"   # another WORK_DIR
 
 Quote globs so the shell does not expand them (the script expands them).
+
+Working directory
+-----------------
+All paths refer to WORK_DIR: RUN_PATHS, OUT_DIR, NRMS_RESULTS, NRMS_CSV,
+NRMS_HIST_FILE, CURVES_SITE_DAT and the paths on the command line are taken
+relative to WORK_DIR; an absolute path (or one that starts with ~) is used as
+given. WORK_DIR is the setting below, or -w / --work-dir DIR on the command line
+(which replaces it); None or "" = the current directory. It must exist (else
+return code 2). The current directory is WORK_DIR during the run (and is
+restored afterwards), so the last place of the "auto" site.dat search is
+WORK_DIR. Two things are not paths into the data and stay as they were: a
+relative PLOT_DIR is a sub-directory of the OUTPUT directory, not of WORK_DIR,
+and PY4MTX_ROOT (environment variable; where the code is) is not touched.
+
 Output: one set of figures and tables, prefix OUT_PREFIX (None: ensemble_M<M>),
 written into the directory <common parent directory of the members>/<OUT_PREFIX>/,
 made if it does not exist (OUT_DIR, if set, is used as given instead;
@@ -59,6 +74,36 @@ local site.dat, any case, and/or site ids) writes one file per site and format
 
 Changelog
 ---------
+2026-11-21b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            "curves": optional small map of the sites in every figure, the
+            current site marked, all sites coloured by their nRMS (one
+            colour scale for all pages; grey and no colour bar with
+            CURVES_OBSERVED_ONLY). New settings CURVES_MAP (False),
+            CURVES_MAP_PLACEMENT ("right" | "left" = own column; "upper
+            right" | "upper left" | "lower right" | "lower left" = inset in
+            a corner of the last / first panel), CURVES_MAP_SIZE,
+            CURVES_MAP_TICKS (model coordinates in km, or none),
+            CURVES_MAP_AXES, CURVES_MAP_CMAP, CURVES_MAP_NRMS_RANGE and
+            CURVES_MAP_MARKER_SIZE. With CURVES_MAP = False the output is
+            unchanged. The work is done in femtic_misfit.py of the same date
+            (see its changelog).
+2026-11-21  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            all paths refer to a WORK_DIR (new setting, as in femtic_clean.py):
+            relative RUN_PATHS, OUT_DIR, NRMS_RESULTS, NRMS_CSV, NRMS_HIST_FILE,
+            CURVES_SITE_DAT and command-line paths are taken from it, absolute
+            ones as given. New option -w / --work-dir DIR (replaces WORK_DIR).
+            The script changes into WORK_DIR for the run, so the "auto" site.dat
+            search ends there instead of in wherever the script was started.
+            CHANGED: paths on the command line are no longer relative to the
+            current directory but to WORK_DIR. The paths in the settings block
+            are written relative to WORK_DIR (the ensemble directory
+            krafla_ens_fine, the parent of the members); femtic_misfit.py is
+            unchanged. RUN_PATHS resolves to the same members as before.
+            CHANGED: OUT_DIR is "results/" under WORK_DIR (was the
+            krafla_ens_fine_paired/results/ directory, now the commented
+            alternative); NRMS_RESULTS (was a file in annecy2026) is None, so
+            the method "nrms" is skipped, and CURVES_SITE_DAT (same) is
+            "auto"; set both to files of this ensemble.
 2026-11-20  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             phase curves that leave the +-180 deg window are interrupted
             and the two points joined by a dotted line (bands and density
@@ -102,6 +147,7 @@ Changelog
 """
 from __future__ import annotations
 
+import argparse
 import os
 import sys
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
@@ -121,12 +167,22 @@ import femtic_misfit as fm  # noqa: E402
 # ---------------------------------------------------------------------------
 # User configuration
 # ---------------------------------------------------------------------------
+# --- working directory ---
+# Every relative path below (RUN_PATHS, OUT_DIR, NRMS_RESULTS, NRMS_CSV,
+# NRMS_HIST_FILE, CURVES_SITE_DAT) and every path on the command line is taken
+# relative to WORK_DIR; absolute paths (and ~) are used as given. None or "" =
+# the current directory. -w / --work-dir DIR on the command line replaces it.
+# WORK_DIR: Optional[str] = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_fine/krafla_ens_fine_paired/"
+# WORK_DIR: Optional[str] = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_fine/krafla_ens_fine/"
+WORK_DIR: Optional[str] = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_ens/"
+                                # the ensemble directory: the parent of the members
+
 # --- what to run ---
 # All entries of RUN_PATHS together form ONE ensemble: the chosen iteration of
 # every run is one member (members must share the same data rows).
 RUN_PATHS: List[str] = [
-    r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/ann*/"
-    ]        # run dirs, results files, or globs (overridden by argv)
+    r"kra*/"
+    ]        # run dirs, results files, or globs, relative to WORK_DIR (overridden by argv)
 
 ITERATION: Union[str, int] = "best"      # "best" | "last" | integer
 ITER_PATTERN: str = "results_iter*.h5"   # searched in each run directory
@@ -159,14 +215,17 @@ SITE_MERGE_TOL: float = 1.0           # [m] positions closer than this are the s
 
 # --- output ---
 OUT_DIR: Optional[str] = (
-    "/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/results256/"
+    "results/"
+    # "../krafla_ens_fine_paired/results/"
 )
 # None      # None -> into the directory <common parent of the member
                                    # directories>/<OUT_PREFIX>/ (made if missing);
-                                   # or a path, used as given (as here: no
-                                   # OUT_PREFIX sub-directory; set None to get it)
-OUT_PREFIX: Optional[str] = "Misfits"  # None -> derived from the ensemble
+                                   # or a path (relative to WORK_DIR), used as
+                                   # given (as here: no OUT_PREFIX sub-directory;
+                                   # set None to get it)
+OUT_PREFIX: Optional[str] = "KraflaMisfits"  # None -> derived from the ensemble
                                    # (ensemble_M<M>); also the name of the
+                                   
                                    # output directory while OUT_DIR is None
 OUT_PREFIX_DIR: bool = True     # False: with OUT_DIR None write into the common
                                 # parent itself (no OUT_PREFIX sub-directory)
@@ -175,9 +234,9 @@ PLOT_DPI: int = 300
 PLOT_DIR: Optional[str] = None  # where the figures go (tables stay in
                             # the output directory). None = same directory
                             # as the tables; a relative name = sub-directory
-                            # of the output directory (per run); an absolute
-                            # path = that one directory for all figures
-                            # (file names stay distinct via the prefix)
+                            # of the OUTPUT directory (per run; not of WORK_DIR);
+                            # an absolute path = that one directory for all
+                            # figures (file names stay distinct via the prefix)
 WRITE_STATS: bool = True
 FIT_MEASURES: bool = True   # overall table of fit measures (per data type
                             # and pooled) -> <prefix>_fit_measures.txt
@@ -213,7 +272,7 @@ CROSSPLOT_CBAR_SHRINK: float = 0.85   # length / side of the panel grid
 
 # --- residual histograms ---
 HIST_BAND_AXIS: str = "frequency"   # "frequency" | "period"
-HIST_BANDS_PER_DECADE: int = 2
+HIST_BANDS_PER_DECADE: int = 1
 HIST_BY_COMPONENT: bool = False     # False: one figure per data type
                                     # (components pooled, as in Baba 2023)
 HIST_LIMIT: float = 10.0            # histogram range +/- (values outside
@@ -240,24 +299,24 @@ QQ_PANEL_SIZE: float = 3.0
 # RUN_MODE / RUN_PATHS are not used by this method. Output: <OUT_DIR or the
 # directory of NRMS_RESULTS>/<OUT_PREFIX or the ensemble prefix>_nrms_hist.<ext>
 # (figure directory: PLOT_DIR; formats and DPI: PLOT_FORMATS, PLOT_DPI).
-NRMS_RESULTS: Optional[str] = (
-    "/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
-    "results/annecy_rto_orig-err_results.npz"
-)   # results .npz of femtic_ens_post.py (holds the nRMS table of ALL scanned
-    # members, <P>_nrms_table); None = use NRMS_CSV only
+NRMS_RESULTS: Optional[str] ="results/krafla_rto_ref_results.npz" # e.g. "results/<name>.npz"
+    # results .npz of femtic_ens_post.py (holds the nRMS table of ALL scanned
+    # members, <P>_nrms_table); relative to WORK_DIR; None = use NRMS_CSV only
+    # (with both None the method "nrms" is skipped, with a message)
 NRMS_NPZ_PREFIX: Optional[str] = None   # key prefix inside the .npz; None = the
                                         # file's only ensemble
 NRMS_CSV: Optional[str] = None   # fallback for results files written before
                                  # 2026-11-08 (no table inside): the CSV
-                                 # <ENSEMBLE_PREFIX>_nrms.csv of femtic_ens_post.py.
-                                 # If neither gives a table, only the accepted
-                                 # members of the .npz are shown
+                                 # <ENSEMBLE_PREFIX>_nrms.csv of femtic_ens_post.py
+                                 # (relative to WORK_DIR). If neither gives a
+                                 # table, only the accepted members of the .npz
+                                 # are shown
 NRMS_MAX: Optional[float] = None   # acceptance threshold line; None = the
                                    # value stored in the .npz (NRMS_MAX of
                                    # femtic_ens_post.py), none if absent
 NRMS_BINS: Union[int, str] = "auto"   # an int, or a numpy rule ("auto", "fd", ...)
-NRMS_HIST_FILE: Optional[str] = None   # extension-less output path;
-                                       # None = <figure dir>/<prefix>_nrms_hist
+NRMS_HIST_FILE: Optional[str] = None   # extension-less output path (relative to
+                                       # WORK_DIR); None = <figure dir>/<prefix>_nrms_hist
 NRMS_TICK_FONTSIZE: int = 16
 NRMS_LABEL_FONTSIZE: int = 16
 NRMS_TITLE_FONTSIZE: Optional[int] = None   # None = Matplotlib's default title size
@@ -269,15 +328,13 @@ CURVES_WHAT: Tuple[str, ...] = ("rho", "phase", "tipper")  # + "pt"
 CURVES_COMPS: str = (
     "xx, xy, yx, yy"  # impedance components (rho and phase panels)
 )
-CURVES_SITE_DAT: Optional[str] = (
-    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_rto_orig-err/templates/site.dat"
-)
+CURVES_SITE_DAT: Optional[str] = "auto"   # or e.g. "templates/site.dat"
 # "auto"   # site.dat from mt_make_sitelist.py
 # (name,lat,lon,elev,sitenum,E,N): gives the
 # site names (None = no names). "auto" = the
 # local site.dat: looked for in the results
 # directory and up to two levels above, then
-# in the current working directory; or a path
+# in WORK_DIR; or a path (relative to WORK_DIR)
 CURVES_NAME_CASE: Optional[str] = None   # site names in the figure titles and the
 # file names: None = as in site.dat, "upper"
 # or "lower". With a name the title reads
@@ -367,22 +424,110 @@ CURVES_PHASE_WRAP_RANGE: Tuple[float, float] = (-180.0, 180.0)
                                        # phase window; (-3.14159, 3.14159) if the
                                        # phases are in radians
 
+# small map of the sites in every figure (current site marked, all sites
+# coloured by their nRMS, the same colour scale on every page)
+CURVES_MAP: bool = True           # True = draw the map
+CURVES_MAP_PLACEMENT: str = "left"   # "right" | "left": an own column next to the
+                                   # panels (the figure gets wider by CURVES_MAP_SIZE);
+                                   # "upper right" | "upper left" | "lower right" |
+                                   # "lower left": inset in the corner of the last
+                                   # (right) / first (left) panel, on top of the
+                                   # curves (do not put the legend there)
+CURVES_MAP_SIZE: float = 3.2       # [in] side of the map block (map and colour bar)
+CURVES_MAP_TICKS: bool = True      # True = ticks and labels in model coordinates
+                                   # [km]; False = no ticks, no labels (frame only)
+CURVES_MAP_AXES: str = "ne"        # "ne": site_x = north (vertical), site_y = east
+                                   # (horizontal), the FEMTIC convention; "en":
+                                   # site_x = east, site_y = north
+CURVES_MAP_CMAP: Optional[str] = "jet" #None   # None = single-hue blue ramp, light = low
+                                   # nRMS, dark = high; or a Matplotlib colormap
+CURVES_MAP_NRMS_RANGE: Optional[Tuple[float, float]] = None   # (lo, hi) of the colour
+                                   # scale; None = smallest / largest nRMS of the sites
+CURVES_MAP_MARKER_SIZE: float = 10.0   # [pt^2] of a site (the current one is larger)
+
 # ---------------------------------------------------------------------------
 # Run
 # ---------------------------------------------------------------------------
-def settings() -> "fm.SimpleNamespace":
-    """The uppercase settings of this script as a femtic_misfit settings object."""
+def resolve_work_dir(work_dir: Optional[str] = None) -> str:
+    """
+    Absolute WORK_DIR: `work_dir` if given, else the setting WORK_DIR; None or
+    "" = the current directory. ~ is expanded; a relative name is taken from
+    the current directory.
+    """
+    wd = WORK_DIR if work_dir is None else work_dir
+    return os.path.abspath(os.path.expanduser(str(wd or ".")))
+
+
+def anchor(path: str, work_dir: str) -> str:
+    """
+    `path` with ~ expanded; a relative path is joined to `work_dir`, an absolute
+    one is returned as it is. Not normalized, so that a glob pattern and a
+    trailing "/" (a glob that matches directories only) are kept.
+    """
+    p = os.path.expanduser(str(path))
+    return p if os.path.isabs(p) else os.path.join(work_dir, p)
+
+
+def settings(work_dir: Optional[str] = None) -> "fm.SimpleNamespace":
+    """
+    The uppercase settings of this script as a femtic_misfit settings object,
+    every path of them anchored at WORK_DIR (`work_dir`, else the setting).
+    PLOT_DIR is passed on unchanged: a relative one is a sub-directory of the
+    output directory (see femtic_misfit.resolve_plot_dir).
+    """
+    wd = resolve_work_dir(work_dir)
     ours = {k: v for k, v in globals().items() if k in fm.SETTING_NAMES}
     stray = [k for k in globals() if k.isupper() and k not in fm.SETTING_NAMES
-             and k not in ("PY4MTX_ROOT",)]
+             and k not in ("PY4MTX_ROOT", "WORK_DIR")]
     if stray:
         print(f"femtic_ens_misfit: ignoring names that are no setting of "
               f"femtic_misfit: {stray}")
+
+    runs = ours.get("RUN_PATHS") or []
+    if isinstance(runs, str):                    # one path given as a plain string
+        runs = [runs]
+    ours["RUN_PATHS"] = [anchor(p, wd) for p in runs]
+    for key in ("OUT_DIR", "NRMS_RESULTS", "NRMS_CSV", "NRMS_HIST_FILE"):
+        if ours.get(key):
+            ours[key] = anchor(ours[key], wd)
+    site = ours.get("CURVES_SITE_DAT")
+    if site and site != "auto":                  # "auto": searched for by the engine
+        ours["CURVES_SITE_DAT"] = anchor(site, wd)
     return fm.make_settings(**ours)
 
 
 def main(argv: Sequence[str]) -> int:
-    return fm.run_ensemble(settings(), argv)
+    """
+    Run the ensemble misfit diagnostics with all paths taken from WORK_DIR.
+    Return code: 0 success, 1 no usable member / unreadable file, 2 usage error
+    (WORK_DIR missing).
+    """
+    ap = argparse.ArgumentParser(
+        prog="femtic_ens_misfit.py",
+        description="Data-misfit diagnostics for an ensemble of FEMTIC runs. "
+                    "All paths are taken relative to WORK_DIR.")
+    ap.add_argument("paths", nargs="*", metavar="PATH",
+                    help="run directories, results files or quoted globs, relative to "
+                         "WORK_DIR (replace RUN_PATHS)")
+    ap.add_argument("-w", "--work-dir", default=None, metavar="DIR",
+                    help="base of all relative paths (replaces WORK_DIR; default: the "
+                         "setting WORK_DIR, or the current directory if that is None)")
+    args = ap.parse_args(list(argv))
+
+    wd = resolve_work_dir(args.work_dir)
+    if not os.path.isdir(wd):
+        print(f"femtic_ens_misfit: WORK_DIR is not a directory: {wd}", file=sys.stderr)
+        return 2
+    print(f"femtic_ens_misfit: WORK_DIR = {wd}")
+
+    opts = settings(wd)
+    paths = [anchor(p, wd) for p in args.paths]
+    cwd = os.getcwd()
+    os.chdir(wd)               # the engine's last-resort "auto" site.dat search uses it
+    try:
+        return fm.run_ensemble(opts, paths)
+    finally:
+        os.chdir(cwd)
 
 
 if __name__ == "__main__":
