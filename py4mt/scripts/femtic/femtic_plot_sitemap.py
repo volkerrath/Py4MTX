@@ -7,7 +7,8 @@ femtic_plot_sitemap.py
 Site map of a FEMTIC run, or of a whole ensemble, on a DEM (SRTM) background:
 every site is an icon (marker) coloured by its normalized RMS misfit (nRMS), for
 frequency bands and data components. For an ensemble the colour is a statistic
-of the member nRMS at the site.
+of the member nRMS at the site. Profile lines and other polylines (faults, coast
+lines, ...) can be drawn on the maps.
 
 What it does
 ------------
@@ -50,7 +51,8 @@ What it does
    one row per site, one column per selection) and _summary.txt (global nRMS
    and the spread of the site values per selection); for an ensemble also
    _members.csv (one row per member) and _ens_stats.csv (mean, median, std,
-   min, max over the members per selection and site).
+   min, max over the members per selection and site); for profiles
+   _profiles.csv and _profile_sites.csv (see "Profiles and lines").
 
 Ensemble
 --------
@@ -66,6 +68,24 @@ scale from 0) or a percentile "pNN" ("p90"). MEMBER_NRMS_MAX leaves out members
 with a larger nRMS of the iteration. A member that cannot be read is skipped
 with a warning (and listed in _members.csv); with one member left or only one
 found, the output is that of a single run.
+
+Profiles and lines
+------------------
+PROFILES (cross-section lines) and LINES (faults, coast lines, caldera rims,
+...) are lists of dicts (the keys are listed at the settings and in the readme)
+that are drawn on every map. Positions are given in `coords`: "lonlat" (default),
+"latlon", "utm" (easting, northing in m, in the UTM zone of site.dat, which is
+found by comparing the easting / northing of the sites with their lat / lon) or
+"model" (x, y in m of the FEMTIC model, as site_x, site_y of the results file;
+needs the sites assigned by position). Lines are given by points or read from a
+file: text (GMT multi-segment, two columns), GeoJSON, KML or KMZ (the last three
+always lon, lat). A profile is given by points, a file, start and end, or
+centre, azimuth and length_km; ticks_km marks the distance along it, width_km
+gives it a swath: the sites within width / 2 of the profile (not beyond its ends)
+get a ring on the map and are listed with their distance along and across the
+profile and their nRMS in _profile_sites.csv. Distances are flat-earth km on a
+sphere (the scale of the map), about 0.3 % less east-west than on the WGS84
+ellipsoid at mid latitudes; use profiles of up to a few 100 km.
 
 Selections
 ----------
@@ -105,6 +125,8 @@ Usage
     python femtic_plot_sitemap.py -w /data/ens     # ensemble root: median of the members
     python femtic_plot_sitemap.py -w /data/ens --stat std   # spread of the members
     python femtic_plot_sitemap.py --runs "kra*/" --stat p90 # members by glob, 90th percentile
+    python femtic_plot_sitemap.py --profile "A-A'" -16.82 65.70 -16.74 65.74   # profile line
+    python femtic_plot_sitemap.py --line gis/faults.txt    # polylines (text, GeoJSON, KML)
 
 All relative paths of the settings refer to WORK_DIR. Return code 0 on
 success, 1 if the data could not be read or nothing could be plotted, 2 for a
@@ -113,7 +135,7 @@ wrong usage (WORK_DIR missing).
 @author vrath
 @project py4mt
 @created 2026-11-21
-@modified 2026-11-21
+@modified 2026-11-22
 
 AI-GENERATED CODE NOTICE
 -------------------------
@@ -135,6 +157,12 @@ Notice      : This code is AI-generated. Review and test it before any
               there. The download from the server has NOT been run (no
               network where it was written; the URL pattern is the one of
               the AWS documentation), nor has the GeoTIFF reader.
+              The profiles and lines (2026-11-22) were tested with synthetic
+              data (UTM transform against a numerical meridian arc and the
+              100 real Krafla site.dat positions; projection of the sites
+              against a plain loop; readers with hand-made text, GeoJSON,
+              KML and KMZ files) and run on the real Krafla results; the
+              readers have NOT been tried on files from GIS programs.
 
 Reference
 ---------
@@ -163,6 +191,18 @@ Changelog
             {stat}), colour bar label and a sequential scale (CMAP_SPREAD) for
             the std; command line --runs, --stat. Output of a single run
             unchanged.
+2026-11-22  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            profile lines and other polylines on the maps. PROFILES (points,
+            file, start + end, or centre + azimuth + length_km; swath with the
+            sites in it, ticks with distances, end labels) and LINES (points,
+            segments, text / GMT, GeoJSON, KML, KMZ; polygons with fill),
+            coordinates lonlat, latlon, utm (own Kruger series, zone from
+            site.dat) or model (frame and shift of the site assignment);
+            legend with the labelled items (LEGEND_LOC); the map extent can
+            include the profiles (MAP_INCLUDE_PROFILES); new tables
+            _profiles.csv and _profile_sites.csv; command line --profile,
+            --line, --no-overlays. Without PROFILES and LINES the output is
+            unchanged.
 """
 from __future__ import annotations
 
@@ -177,6 +217,7 @@ import math
 import os
 import re
 import sys
+import inspect
 import urllib.error
 import urllib.request
 import warnings
@@ -184,6 +225,7 @@ import zipfile
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
+import rasterio
 
 # ---------------------------------------------------------------------------
 # py4mt environment: make the modules importable (femtic_misfit.py, femtic.py)
@@ -196,6 +238,16 @@ if PY4MTX_ROOT:
             sys.path.insert(0, _pth)
 
 import femtic_misfit as fm  # noqa: E402
+import util as utl
+from version import versionstrg
+
+# ---------------------------------------------------------------------------
+# Header
+# ---------------------------------------------------------------------------
+version, _ = versionstrg()
+fname = inspect.getfile(inspect.currentframe())
+titstrng = utl.print_title(version=version, fname=fname, out=False)
+print(titstrng + "\n\n")
 
 # ---------------------------------------------------------------------------
 # User configuration
@@ -287,6 +339,29 @@ NRMS_REFERENCE: Optional[float] = 1.0   # target nRMS = centre colour; None = li
 NRMS_VMIN: Optional[float] = None     # colour limits; None = from the data ("std": 0)
 NRMS_VMAX: Optional[float] = None
 
+# --- profiles and polylines ---
+# Profile lines (cross-section lines) and other polylines / polygons (faults, coast
+# lines, caldera rims, ...) on the maps; lists of dicts, see the readme.
+#   profile: name, one of points | file | start + end | center + azimuth + length_km,
+#            coords, width_km (swath), ticks_km, tick_labels, labels, label, color, lw, ls
+#   line:    label, one of file | points | segments, coords, closed, fill, alpha,
+#            color, lw, ls, halo
+#   coords:  "lonlat" (default), "latlon", "utm" (easting, northing of the site.dat zone)
+#            or "model" (x, y in m of the FEMTIC model); GeoJSON and KML are always lon, lat
+PROFILES: Sequence[dict] = []         # e.g. [dict(name="A-A'", start=(-16.80, 65.68), end=(-16.70, 65.72), width_km=4.0, ticks_km=5.0)]
+LINES: Sequence[dict] = []            # e.g. [dict(label="Faults", file="gis/faults.txt", color="tab:red")]
+PROFILE_COLOR: str = "black"
+PROFILE_LW: float = 1.8
+PROFILE_FONTSIZE: float = 9.0         # end labels (the distance labels are 2 pt smaller)
+PROFILE_SWATH_ALPHA: float = 0.15     # shading of the swath (width_km of the profile)
+PROFILE_MARK_SITES: bool = True       # open circles around the sites in the swath
+LINE_COLOR: str = "tab:green"
+LINE_LW: float = 1.2
+LINE_HALO: bool = True                # white outline under the lines
+MAP_INCLUDE_PROFILES: bool = True     # MAP_EXTENT_MODE "sites": the profiles are inside the map
+OVERLAY_STRICT: bool = False          # True: a profile / line that cannot be made stops the script
+LEGEND_LOC: Optional[str] = "upper left"   # legend (no-data icon, labelled profiles and lines); None = none
+
 # --- figures and output ---
 PAGE_BY: str = "band"                 # one figure per "band" (panels: components), per "component"
                                       # (panels: bands), per "none" (one map each), or "all" (one figure)
@@ -360,9 +435,14 @@ def settings(work_dir: Optional[str] = None, **overrides: Any) -> Dict[str, Any]
         cfg["RUN_PATHS"] = [anchor(p, wd) for p in ([runs] if isinstance(runs, str) else runs)]
     else:
         cfg["RUN_PATHS"] = None
+    for key in ("PROFILES", "LINES"):                 # copies, with the files anchored
+        items = cfg[key]
+        items = [items] if isinstance(items, dict) else (list(items) if items else [])
+        cfg[key] = [dict(it, file=anchor(it["file"], wd)) if isinstance(it, dict) and it.get("file")
+                    else (dict(it) if isinstance(it, dict) else it) for it in items]
     return cfg
 
-
+3
 def check_settings(cfg: Dict[str, Any]) -> None:
     """Raise ValueError for a setting that cannot work (before any data is read)."""
     def one_of(key: str, allowed: Sequence[Any]) -> None:
@@ -396,6 +476,8 @@ def check_settings(cfg: Dict[str, Any]) -> None:
     parse_stat(cfg["ENS_STAT"])
     if cfg["MEMBER_NRMS_MAX"] is not None and not float(cfg["MEMBER_NRMS_MAX"]) > 0:
         raise ValueError("MEMBER_NRMS_MAX must be > 0 (or None)")
+    one_of("LEGEND_LOC", _LEGEND_LOCS)
+    check_overlay_specs(cfg)
 
 
 # ---------------------------------------------------------------------------
@@ -1313,6 +1395,657 @@ def to_frame(frame: dict, lon: Any, lat: Any) -> Tuple[np.ndarray, np.ndarray]:
 
 
 # ---------------------------------------------------------------------------
+# Overlays: profile lines and other polylines
+# ---------------------------------------------------------------------------
+class OverlayError(ValueError):
+    """A profile or line that cannot be used (file, coordinates, geometry)."""
+
+
+_WGS84_A = 6378137.0
+_WGS84_F = 1.0 / 298.257223563
+_UTM_K0 = 0.9996
+_UTM_TOL_M = 25.0                  # site.dat easting / northing must agree with lat / lon to this (median)
+_COORDS = ("lonlat", "latlon", "utm", "model")
+_PROFILE_KEYS = ("name", "points", "file", "start", "end", "center", "azimuth", "length_km",
+                 "coords", "width_km", "ticks_km", "tick_labels", "labels", "label", "color",
+                 "lw", "ls")
+_LINE_KEYS = ("label", "file", "points", "segments", "coords", "closed", "fill", "alpha",
+              "color", "lw", "ls", "halo")
+_LEGEND_LOCS = (None, "best", "upper right", "upper left", "lower left", "lower right", "right",
+                "center left", "center right", "lower center", "upper center", "center")
+_MAX_TICKS = 2000
+_PROFILE_TICK_FRAC = 0.012         # length of a tick: this fraction of the width of the map
+_END_TOL_KM = 0.01                 # a site this close beyond the end of a profile still counts (10 m)
+
+
+def _krueger(n: float) -> Tuple[tuple, tuple, tuple]:
+    """Series coefficients (alpha, beta, delta) of the Krueger transverse Mercator, to n**4."""
+    a = (n / 2 - 2 * n**2 / 3 + 5 * n**3 / 16 + 41 * n**4 / 180,
+         13 * n**2 / 48 - 3 * n**3 / 5 + 557 * n**4 / 1440,
+         61 * n**3 / 240 - 103 * n**4 / 140,
+         49561 * n**4 / 161280)
+    b = (n / 2 - 2 * n**2 / 3 + 37 * n**3 / 96 - n**4 / 360,
+         n**2 / 48 + n**3 / 15 - 437 * n**4 / 1440,
+         17 * n**3 / 480 - 37 * n**4 / 840,
+         4397 * n**4 / 161280)
+    d = (2 * n - 2 * n**2 / 3 - 2 * n**3 + 116 * n**4 / 45,
+         7 * n**2 / 3 - 8 * n**3 / 5 - 227 * n**4 / 45,
+         56 * n**3 / 15 - 136 * n**4 / 35,
+         4279 * n**4 / 630)
+    return a, b, d
+
+
+def utm_forward(lat: Any, lon: Any, zone: int, north: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    UTM (easting, northing) in m of (lat, lon) in degrees, WGS84, for `zone`
+    (central meridian 6 * zone - 183 deg); `north` False = southern hemisphere
+    (false northing 10000 km). Kruger series to 4th order (sub-millimetre inside
+    the zone and some degrees beyond), no external library.
+    """
+    n = _WGS84_F / (2.0 - _WGS84_F)
+    big_a = _WGS84_A / (1.0 + n) * (1.0 + n**2 / 4.0 + n**4 / 64.0)
+    al = _krueger(n)[0]
+    e = 2.0 * math.sqrt(n) / (1.0 + n)
+    phi = np.radians(np.asarray(lat, float))
+    lam = np.radians(np.asarray(lon, float) - (6.0 * int(zone) - 183.0))
+    t = np.sinh(np.arctanh(np.sin(phi)) - e * np.arctanh(e * np.sin(phi)))
+    xi0 = np.arctan2(t, np.cos(lam))
+    eta0 = np.arcsinh(np.sin(lam) / np.hypot(t, np.cos(lam)))
+    xi, eta = xi0.copy(), eta0.copy()
+    for j, aj in enumerate(al, start=1):
+        xi = xi + aj * np.sin(2 * j * xi0) * np.cosh(2 * j * eta0)
+        eta = eta + aj * np.cos(2 * j * xi0) * np.sinh(2 * j * eta0)
+    return (500000.0 + _UTM_K0 * big_a * eta,
+            (0.0 if north else 1.0e7) + _UTM_K0 * big_a * xi)
+
+
+def utm_inverse(east: Any, north_m: Any, zone: int, north: bool = True) -> Tuple[np.ndarray, np.ndarray]:
+    """(lon, lat) in degrees of the UTM (easting, northing) in m; inverse of utm_forward."""
+    n = _WGS84_F / (2.0 - _WGS84_F)
+    big_a = _WGS84_A / (1.0 + n) * (1.0 + n**2 / 4.0 + n**4 / 64.0)
+    _, be, de = _krueger(n)
+    xi0 = (np.asarray(north_m, float) - (0.0 if north else 1.0e7)) / (_UTM_K0 * big_a)
+    eta0 = (np.asarray(east, float) - 500000.0) / (_UTM_K0 * big_a)
+    xi, eta = xi0.copy(), eta0.copy()
+    for j, bj in enumerate(be, start=1):
+        xi = xi - bj * np.sin(2 * j * xi0) * np.cosh(2 * j * eta0)
+        eta = eta - bj * np.cos(2 * j * xi0) * np.sinh(2 * j * eta0)
+    chi = np.arcsin(np.sin(xi) / np.cosh(eta))
+    phi = chi.copy()
+    for j, dj in enumerate(de, start=1):
+        phi = phi + dj * np.sin(2 * j * chi)
+    lam = np.arctan2(np.sinh(eta), np.cos(xi))
+    return np.degrees(lam) + (6.0 * int(zone) - 183.0), np.degrees(phi)
+
+
+def utm_zone_of(lon: float) -> int:
+    """UTM zone (1 .. 60) of a longitude in degrees (no Norway / Svalbard exceptions)."""
+    return int(math.floor((float(lon) + 180.0) / 6.0)) % 60 + 1
+
+
+def make_geo(sites: Sequence[Dict[str, Any]], st: Optional[dict] = None) -> dict:
+    """
+    Georeferencing of the overlays: dict(zone, north, resid, frame, shift).
+    zone / north = the UTM zone and hemisphere in which the easting / northing
+    of the site.dat sites are the UTM coordinates of their lat / lon (the one
+    with the smallest median distance, `resid` in m), zone None if no zone fits
+    within 25 m (then "utm" and "model" coordinates cannot be used). frame /
+    shift = those of the assignment of the site ids by position (assign_sites
+    stats `st`: "x=north, y=east" or "x=east, y=north", and the shift (sx, sy)
+    in m that turns model coordinates into UTM), "" and NaN otherwise.
+    """
+    geo: Dict[str, Any] = dict(zone=None, north=True, resid=float("nan"), frame="",
+                               shift=(float("nan"), float("nan")))
+    if st:
+        sh = st.get("shift", geo["shift"])
+        geo["frame"] = str(st.get("frame", "") or "")
+        geo["shift"] = (float(sh[0]), float(sh[1]))
+    if not sites:
+        return geo
+    lat = np.array([s["lat"] for s in sites], float)
+    lon = np.array([s["lon"] for s in sites], float)
+    east = np.array([s["easting"] for s in sites], float)
+    north = np.array([s["northing"] for s in sites], float)
+    ok = np.isfinite(lat) & np.isfinite(lon) & np.isfinite(east) & np.isfinite(north)
+    if not ok.any():
+        return geo
+    lat, lon, east, north = lat[ok], lon[ok], east[ok], north[ok]
+    zones = set()
+    for lo in (lon.min(), lon.max(), lon.mean()):
+        z0 = utm_zone_of(lo)
+        for dz in (-1, 0, 1):
+            zones.add((z0 - 1 + dz) % 60 + 1)
+    best = None
+    for z in sorted(zones):
+        for nh in (True, False):
+            e, n = utm_forward(lat, lon, z, nh)
+            r = float(np.median(np.hypot(e - east, n - north)))
+            if best is None or r < best[0]:
+                best = (r, z, nh)
+    geo["resid"] = best[0]
+    if best[0] <= _UTM_TOL_M:
+        geo["zone"], geo["north"] = best[1], best[2]
+    return geo
+
+
+def to_lonlat(x: Any, y: Any, coords: str, geo: dict) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    (lon, lat) in degrees of the coordinates (x, y) given in `coords`: "lonlat"
+    (lon, lat), "latlon" (lat, lon), "utm" (easting, northing in m, zone of
+    site.dat) or "model" (x, y in m of the FEMTIC model, as site_x, site_y of
+    the results file). OverlayError if the coordinates cannot be converted or
+    are not finite or not on the globe.
+    """
+    if coords not in _COORDS:
+        raise OverlayError(f"coords = {coords!r}: one of {list(_COORDS)}")
+    x = np.atleast_1d(np.asarray(x, float))
+    y = np.atleast_1d(np.asarray(y, float))
+    if not (np.all(np.isfinite(x)) and np.all(np.isfinite(y))):
+        raise OverlayError("coordinates are not finite")
+    if coords == "lonlat":
+        lon, lat = x, y
+    elif coords == "latlon":
+        lon, lat = y, x
+    else:
+        if geo.get("zone") is None:
+            res = geo.get("resid", float("nan"))
+            raise OverlayError(
+                f"coords = {coords!r} needs the UTM easting / northing of site.dat; they do not "
+                "agree with its lat / lon in any zone"
+                + (f" (median distance {res:.0f} m)" if np.isfinite(res) else ""))
+        if coords == "utm":
+            east, north = x, y
+        else:
+            sx, sy = geo.get("shift", (float("nan"), float("nan")))
+            fr = geo.get("frame", "")
+            if not (np.isfinite(sx) and np.isfinite(sy)) or fr not in ("x=north, y=east",
+                                                                       "x=east, y=north"):
+                raise OverlayError("coords = \"model\" needs the sites assigned by position "
+                                   "(SITE_MATCH = \"coords\" or \"auto\" with site coordinates)")
+            if fr == "x=north, y=east":
+                north, east = x + sx, y + sy
+            else:
+                east, north = x + sx, y + sy
+        lon, lat = utm_inverse(east, north, geo["zone"], geo["north"])
+    if np.any(np.abs(lat) > 90.0) or np.any(np.abs(lon) > 180.0):
+        raise OverlayError(f"lon / lat out of range with coords = {coords!r} "
+                           "(lonlat and latlon mixed up?)")
+    return lon, lat
+
+
+def local_km(lon: Any, lat: Any, lon0: float, lat0: float) -> Tuple[np.ndarray, np.ndarray]:
+    """(east, north) in km of (lon, lat) from (lon0, lat0), flat earth at the latitude lat0."""
+    kx = _KM_PER_DEG * math.cos(math.radians(lat0))
+    return ((np.asarray(lon, float) - lon0) * kx, (np.asarray(lat, float) - lat0) * _KM_PER_DEG)
+
+
+def local_lonlat(x: Any, y: Any, lon0: float, lat0: float) -> Tuple[np.ndarray, np.ndarray]:
+    """(lon, lat) of the local (east, north) in km from (lon0, lat0); inverse of local_km."""
+    kx = _KM_PER_DEG * math.cos(math.radians(lat0))
+    return lon0 + np.asarray(x, float) / kx, lat0 + np.asarray(y, float) / _KM_PER_DEG
+
+
+# --- readers: text (GMT multi-segment), GeoJSON, KML / KMZ ---
+def read_text_polylines(path: str) -> List[dict]:
+    """
+    Polylines of a text file: two numbers per line (the first two columns; comma,
+    semicolon or white space), segments separated by a line that starts with ">"
+    (GMT multi-segment) or by a blank line; "#" and "%" start a comment, lines
+    that are no numbers are skipped. Returns [dict(xy=(N, 2) array, closed)];
+    closed if the first and the last point are equal (N >= 4). Segments of
+    fewer than 2 points are dropped.
+    """
+    parts: List[dict] = []
+    cur: List[Tuple[float, float]] = []
+
+    def flush() -> None:
+        if len(cur) >= 2:
+            xy = np.array(cur, float)
+            parts.append(dict(xy=xy, closed=bool(len(cur) >= 4 and np.array_equal(xy[0], xy[-1]))))
+        cur.clear()
+
+    with open(path, "r", errors="replace") as fh:
+        for ln in fh:
+            s = ln.strip()
+            if not s or s.startswith(">"):
+                flush()
+                continue
+            if s[0] in "#%":
+                continue
+            tok = s.replace(",", " ").replace(";", " ").split()
+            try:
+                a, b = float(tok[0]), float(tok[1])
+            except (ValueError, IndexError):
+                continue
+            if math.isfinite(a) and math.isfinite(b):
+                cur.append((a, b))
+    flush()
+    return parts
+
+
+def read_geojson_polylines(path: str) -> List[dict]:
+    """
+    Lines and polygon rings of a GeoJSON file (FeatureCollection, Feature, a
+    geometry or a GeometryCollection): LineString, MultiLineString, Polygon,
+    MultiPolygon; points are ignored. Coordinates are lon, lat. Returns
+    [dict(xy, closed)] as read_text_polylines (rings are closed).
+    """
+    import json
+    with open(path, "r", encoding="utf-8", errors="replace") as fh:
+        obj = json.load(fh)
+    parts: List[dict] = []
+
+    def add(coords: Any, closed: bool) -> None:
+        try:
+            xy = np.array([[float(c[0]), float(c[1])] for c in coords], float)
+        except (TypeError, ValueError, IndexError):
+            return
+        if xy.shape[0] >= 2 and np.all(np.isfinite(xy)):
+            parts.append(dict(xy=xy, closed=closed))
+
+    def walk(g: Any) -> None:
+        if not isinstance(g, dict):
+            return
+        t = g.get("type")
+        if t == "FeatureCollection":
+            for f in g.get("features") or []:
+                walk(f)
+        elif t == "Feature":
+            walk(g.get("geometry"))
+        elif t == "GeometryCollection":
+            for h in g.get("geometries") or []:
+                walk(h)
+        elif t == "LineString":
+            add(g.get("coordinates") or [], False)
+        elif t == "MultiLineString":
+            for c in g.get("coordinates") or []:
+                add(c, False)
+        elif t == "Polygon":
+            for r in g.get("coordinates") or []:
+                add(r, True)
+        elif t == "MultiPolygon":
+            for p in g.get("coordinates") or []:
+                for r in p:
+                    add(r, True)
+
+    walk(obj)
+    return parts
+
+
+def read_kml_polylines(path: str) -> List[dict]:
+    """
+    LineString and LinearRing (polygon boundaries; closed) elements of a KML or
+    KMZ file (the first .kml of the archive, doc.kml preferred). Coordinates are
+    lon, lat[, alt]. Returns [dict(xy, closed)] as read_text_polylines.
+    """
+    import xml.etree.ElementTree as ET
+    try:
+        if path.lower().endswith(".kmz"):
+            with zipfile.ZipFile(path) as zf:
+                kml = [n for n in zf.namelist() if n.lower().endswith(".kml")]
+                if not kml:
+                    raise ValueError("no .kml in the archive")
+                data = zf.read("doc.kml" if "doc.kml" in kml else kml[0])
+            root = ET.fromstring(data)
+        else:
+            root = ET.parse(path).getroot()
+    except (ET.ParseError, zipfile.BadZipFile) as exc:
+        raise ValueError(f"not a readable KML / KMZ file: {exc}") from exc
+    parts: List[dict] = []
+    for el in root.iter():
+        tag = el.tag.rsplit("}", 1)[-1] if isinstance(el.tag, str) else ""
+        if tag not in ("LineString", "LinearRing"):
+            continue
+        for c in el:
+            if isinstance(c.tag, str) and c.tag.rsplit("}", 1)[-1] == "coordinates" and c.text:
+                pts = []
+                for tok in c.text.split():
+                    v = tok.split(",")
+                    try:
+                        pts.append((float(v[0]), float(v[1])))
+                    except (ValueError, IndexError):
+                        continue
+                xy = np.array(pts, float)
+                if xy.shape[0] >= 2 and np.all(np.isfinite(xy)):
+                    parts.append(dict(xy=xy, closed=(tag == "LinearRing")))
+    return parts
+
+
+def read_geometry_file(path: str) -> Tuple[List[dict], bool]:
+    """
+    (parts, geographic) of a polyline file by its extension: .geojson / .json,
+    .kml / .kmz (coordinates always lon, lat: geographic = True), anything else is
+    text (GMT multi-segment; the coordinates are those of `coords`). OSError and
+    ValueError for a file that cannot be read.
+    """
+    low = str(path).lower()
+    if low.endswith((".geojson", ".json")):
+        return read_geojson_polylines(path), True
+    if low.endswith((".kml", ".kmz")):
+        return read_kml_polylines(path), True
+    return read_text_polylines(path), False
+
+
+# --- profiles and lines ---
+def _as_points(pts: Any, what: str) -> np.ndarray:
+    """(N, 2) float array of a sequence of pairs; OverlayError if it is none."""
+    try:
+        a = np.array([[float(p[0]), float(p[1])] for p in pts], float)
+    except (TypeError, ValueError, IndexError) as exc:
+        raise OverlayError(f"{what}: a sequence of (a, b) pairs is needed") from exc
+    if a.ndim != 2 or a.shape[1] != 2:
+        raise OverlayError(f"{what}: a sequence of (a, b) pairs is needed")
+    return a
+
+
+def _read_parts(spec: dict, geo: dict) -> List[dict]:
+    """Parts [dict(lon, lat, closed)] of the file of `spec`; coords as given, or lon / lat."""
+    path = str(spec["file"])
+    try:
+        raw, geographic = read_geometry_file(path)
+    except (OSError, ValueError, zipfile.BadZipFile) as exc:
+        raise OverlayError(f"{path}: {exc}") from exc
+    if not raw:
+        raise OverlayError(f"{path}: no polyline found")
+    coords = "lonlat" if geographic else spec.get("coords", "lonlat")
+    out = []
+    for p in raw:
+        try:
+            lon, lat = to_lonlat(p["xy"][:, 0], p["xy"][:, 1], coords, geo)
+        except OverlayError as exc:
+            raise OverlayError(f"{path}: {exc}") from exc
+        out.append(dict(lon=lon, lat=lat, closed=bool(p["closed"])))
+    return out
+
+
+def default_end_labels(name: str) -> Tuple[str, str]:
+    """End labels of a profile from its name: "A-A'" -> ("A", "A'"), "P1" -> ("P1", "P1'")."""
+    m = re.match(r"^\s*([^-]+?)\s*-\s*([^-]+?)\s*$", str(name))
+    return (m.group(1), m.group(2)) if m else (str(name), str(name) + "'")
+
+
+def prepare_profile(spec: dict, geo: dict, index: int = 0) -> dict:
+    """
+    One profile from its spec (see PROFILES): the vertices in lon / lat and in
+    km (flat earth around their mean position, origin lon0 / lat0), cumulative
+    distance cum, length, the swath polygons (lon / lat) if width_km > 0, and
+    the style entries of the spec. OverlayError if the geometry cannot be made.
+    """
+    name = str(spec.get("name") or f"P{index + 1}")
+    coords = spec.get("coords", "lonlat")
+    try:
+        if "points" in spec:
+            a = _as_points(spec["points"], "points")
+            lon, lat = to_lonlat(a[:, 0], a[:, 1], coords, geo)
+            source = "points"
+        elif "file" in spec and spec["file"]:
+            parts = _read_parts(spec, geo)
+            if len(parts) > 1:
+                _say(f"WARNING: profile {name!r}: {spec['file']} holds {len(parts)} polylines; "
+                     "the first is used.")
+            lon, lat = parts[0]["lon"], parts[0]["lat"]
+            source = str(spec["file"])
+        elif "start" in spec:
+            a = _as_points([spec["start"], spec["end"]], "start / end")
+            lon, lat = to_lonlat(a[:, 0], a[:, 1], coords, geo)
+            source = "start, end"
+        else:
+            c = _as_points([spec["center"]], "center")
+            c_lon, c_lat = to_lonlat(c[:, 0], c[:, 1], coords, geo)
+            half = 0.5 * float(spec["length_km"])
+            az = math.radians(float(spec["azimuth"]))
+            kx = _KM_PER_DEG * math.cos(math.radians(float(c_lat[0])))
+            lon = float(c_lon[0]) + np.array([-half, half]) * math.sin(az) / kx
+            lat = float(c_lat[0]) + np.array([-half, half]) * math.cos(az) / _KM_PER_DEG
+            source = "center, azimuth, length_km"
+    except KeyError as exc:
+        raise OverlayError(f"missing {exc}") from exc
+    lon0, lat0 = float(np.mean(lon)), float(np.mean(lat))
+    x, y = local_km(lon, lat, lon0, lat0)
+    keep = np.ones(x.size, bool)                        # no zero-length segments
+    keep[1:] = np.hypot(np.diff(x), np.diff(y)) > 1e-6
+    lon, lat, x, y = lon[keep], lat[keep], x[keep], y[keep]
+    if x.size < 2:
+        raise OverlayError("a profile needs two different points")
+    seg = np.hypot(np.diff(x), np.diff(y))
+    cum = np.r_[0.0, np.cumsum(seg)]
+    width = float(spec.get("width_km") or 0.0)
+    ticks = spec.get("ticks_km")
+    ticks = float(ticks) if ticks else None
+    if ticks is not None and cum[-1] / ticks > _MAX_TICKS:
+        raise OverlayError(f"ticks_km = {ticks:g} gives more than {_MAX_TICKS} ticks on "
+                           f"{cum[-1]:.1f} km")
+    lab = spec.get("labels")
+    if lab is False:
+        labels = None
+    elif lab is None:
+        labels = default_end_labels(name)
+    else:
+        labels = (str(lab[0]), str(lab[1]))
+    prof = dict(kind="profile", name=name, source=source, labels=labels, lon=lon, lat=lat,
+                x=x, y=y, lon0=lon0, lat0=lat0, cum=cum, length=float(cum[-1]), width=width,
+                ticks_km=ticks, tick_labels=bool(spec.get("tick_labels", True)),
+                color=spec.get("color"), lw=spec.get("lw"), ls=spec.get("ls", "-"),
+                label=spec.get("label"))
+    prof["swath"] = profile_swath(prof) if width > 0 else []
+    return prof
+
+
+def profile_swath(prof: dict, n_circle: int = 24) -> List[np.ndarray]:
+    """
+    The swath of a profile as (N, 2) lon / lat polygons that all have the same
+    orientation: one rectangle of the width per segment, and a disc at every
+    inner vertex (rounded corners); together they are the set of points within
+    width / 2 of the profile, without end caps.
+    """
+    w2 = 0.5 * float(prof["width"])
+    x, y = prof["x"], prof["y"]
+    polys: List[np.ndarray] = []
+    for i in range(x.size - 1):
+        d = np.array([x[i + 1] - x[i], y[i + 1] - y[i]])
+        nrm = np.array([-d[1], d[0]]) / np.hypot(*d) * w2
+        a, b = np.array([x[i], y[i]]), np.array([x[i + 1], y[i + 1]])
+        polys.append(np.array([a - nrm, b - nrm, b + nrm, a + nrm]))
+    ang = np.linspace(0.0, 2.0 * np.pi, n_circle, endpoint=False)
+    circ = np.c_[np.cos(ang), np.sin(ang)] * w2
+    for i in range(1, x.size - 1):
+        polys.append(circ + np.array([x[i], y[i]]))
+    out = []
+    for p in polys:
+        lo, la = local_lonlat(p[:, 0], p[:, 1], prof["lon0"], prof["lat0"])
+        out.append(np.c_[lo, la])
+    return out
+
+
+def project_on_profile(prof: dict, lon: Any, lat: Any) -> dict:
+    """
+    Position of points relative to a profile: along (km from the start, along the
+    polyline), offset (km, signed distance to the polyline, positive to the right
+    of the direction start -> end), dist (|offset|) and inside (within width / 2
+    of the polyline, and not beyond the start or the end of it; all False
+    without a width). Flat earth around the profile (local_km).
+    """
+    x, y = local_km(lon, lat, prof["lon0"], prof["lat0"])
+    px, py = prof["x"], prof["y"]
+    ax_, ay_ = px[:-1, None], py[:-1, None]
+    dx, dy = (px[1:] - px[:-1])[:, None], (py[1:] - py[:-1])[:, None]
+    l2 = dx * dx + dy * dy
+    vx, vy = x[None, :] - ax_, y[None, :] - ay_
+    t_raw = (vx * dx + vy * dy) / l2
+    t = np.clip(t_raw, 0.0, 1.0)
+    dist = np.hypot(vx - t * dx, vy - t * dy)
+    k = np.argmin(dist, axis=0)
+    cols = np.arange(x.size)
+    dist_k, t_k, traw_k = dist[k, cols], t[k, cols], t_raw[k, cols]
+    seg_len = np.sqrt(l2[:, 0])
+    along = prof["cum"][k] + t_k * seg_len[k]
+    cross = dx[k, 0] * vy[k, cols] - dy[k, 0] * vx[k, cols]
+    offset = np.where(cross > 0.0, -dist_k, dist_k)
+    if prof["width"] > 0:
+        nseg = px.size - 1
+        past = (traw_k - np.clip(traw_k, 0.0, 1.0)) * seg_len[k]       # km beyond the segment
+        beyond = ((k == 0) & (past < -_END_TOL_KM)) | ((k == nseg - 1) & (past > _END_TOL_KM))
+        inside = (dist_k <= 0.5 * prof["width"] * (1.0 + 1e-9)) & ~beyond
+    else:
+        inside = np.zeros(x.size, bool)
+    return dict(along=along, offset=offset, dist=dist_k, inside=inside)
+
+
+def project_profiles(profiles: Sequence[dict], lon: np.ndarray, lat: np.ndarray) -> List[dict]:
+    """
+    The profiles with the projection of the sites (lon, lat): proj (project_on_profile),
+    order (indices of the sites inside the swath, by increasing along) and ring (their
+    lon, lat).
+    """
+    out = []
+    lon, lat = np.asarray(lon, float), np.asarray(lat, float)
+    for p in profiles:
+        pr = project_on_profile(p, lon, lat)
+        idx = np.flatnonzero(pr["inside"])
+        idx = idx[np.argsort(pr["along"][idx], kind="stable")]
+        out.append(dict(p, proj=pr, order=idx, ring=(lon[idx], lat[idx])))
+    return out
+
+
+def profile_tick_points(prof: dict, spacing: float) -> dict:
+    """
+    Positions s = 0, spacing, 2 * spacing, ... <= length on a profile: s (km), x, y (km,
+    local frame of the profile) and the unit direction ux, uy of the segment.
+    """
+    s = np.minimum(np.arange(int(math.floor(prof["length"] / float(spacing) + 1e-9)) + 1)
+                   * float(spacing), prof["length"])
+    nseg = prof["x"].size - 1
+    i = np.clip(np.searchsorted(prof["cum"], s, side="right") - 1, 0, nseg - 1)
+    dx = prof["x"][i + 1] - prof["x"][i]
+    dy = prof["y"][i + 1] - prof["y"][i]
+    ln = np.hypot(dx, dy)
+    ux, uy = dx / ln, dy / ln
+    t = np.minimum(s - prof["cum"][i], ln)
+    return dict(s=s, x=prof["x"][i] + t * ux, y=prof["y"][i] + t * uy, ux=ux, uy=uy)
+
+
+def prepare_line(spec: dict, geo: dict) -> dict:
+    """
+    One line (polylines and polygons) from its spec (see LINES): parts =
+    [dict(lon, lat, closed)] and the style entries. OverlayError if the geometry
+    cannot be made.
+    """
+    coords = spec.get("coords", "lonlat")
+    if spec.get("file"):
+        parts = _read_parts(spec, geo)
+    else:
+        if "points" in spec:
+            groups = [spec["points"]]
+        else:
+            groups = list(spec["segments"])
+        parts = []
+        for g in groups:
+            a = _as_points(g, "points")
+            if a.shape[0] < 2:
+                raise OverlayError("a polyline needs two points")
+            lon, lat = to_lonlat(a[:, 0], a[:, 1], coords, geo)
+            parts.append(dict(lon=lon, lat=lat, closed=False))
+    if spec.get("closed") is not None:
+        for p in parts:
+            p["closed"] = bool(spec["closed"])
+    return dict(kind="line", label=spec.get("label"), parts=parts, color=spec.get("color"),
+                lw=spec.get("lw"), ls=spec.get("ls", "-"), fill=spec.get("fill"),
+                alpha=spec.get("alpha"), halo=spec.get("halo"),
+                n_vertices=int(sum(p["lon"].size for p in parts)))
+
+
+def prepare_overlays(cfg: Dict[str, Any], geo: dict) -> Tuple[List[dict], List[dict]]:
+    """
+    (profiles, lines) of the settings PROFILES and LINES. An item that cannot be made
+    is skipped with a warning (OverlayError for the first one if OVERLAY_STRICT).
+    """
+    strict = bool(cfg.get("OVERLAY_STRICT"))
+    profiles: List[dict] = []
+    lines: List[dict] = []
+    for i, spec in enumerate(cfg.get("PROFILES") or []):
+        what = f"profile {str(spec.get('name') or 'P' + str(i + 1))!r}"
+        try:
+            profiles.append(prepare_profile(spec, geo, i))
+        except OverlayError as exc:
+            if strict:
+                raise OverlayError(f"{what}: {exc}") from exc
+            _say(f"WARNING: {what} skipped: {exc}")
+    for i, spec in enumerate(cfg.get("LINES") or []):
+        what = f"line {str(spec.get('label') or spec.get('file') or '#' + str(i + 1))!r}"
+        try:
+            lines.append(prepare_line(spec, geo))
+        except OverlayError as exc:
+            if strict:
+                raise OverlayError(f"{what}: {exc}") from exc
+            _say(f"WARNING: {what} skipped: {exc}")
+    return profiles, lines
+
+
+def check_overlay_specs(cfg: Dict[str, Any]) -> None:
+    """ValueError for PROFILES / LINES entries that cannot work (keys, options, numbers)."""
+    def number(spec: dict, key: str, what: str, sign: str = "pos") -> None:
+        v = spec.get(key)
+        if v is None:
+            return
+        try:
+            f = float(v)
+        except (TypeError, ValueError):
+            raise ValueError(f"{what}: {key} = {v!r} is not a number") from None
+        need = {"pos": "> 0", "nonneg": ">= 0", "any": "finite"}[sign]
+        bad = (not math.isfinite(f) or (sign == "pos" and f <= 0.0)
+               or (sign == "nonneg" and f < 0.0))
+        if bad:
+            raise ValueError(f"{what}: {key} = {v!r} must be {need}")
+
+    for key, allowed in (("PROFILES", _PROFILE_KEYS), ("LINES", _LINE_KEYS)):
+        specs = cfg.get(key) or []
+        if not isinstance(specs, (list, tuple)):
+            raise ValueError(f"{key} must be a list of dicts")
+        for i, spec in enumerate(specs):
+            what = f"{key}[{i}]"
+            if not isinstance(spec, dict):
+                raise ValueError(f"{what} must be a dict")
+            bad = [k for k in spec if k not in allowed]
+            if bad:
+                raise ValueError(f"{what}: unknown key {bad[0]!r}; allowed: {list(allowed)}")
+            if spec.get("coords", "lonlat") not in _COORDS:
+                raise ValueError(f"{what}: coords = {spec.get('coords')!r} must be one of "
+                                 f"{list(_COORDS)}")
+            number(spec, "lw", what)
+            if key == "PROFILES":
+                modes = [m for m, on in (
+                    ("points", "points" in spec),
+                    ("file", bool(spec.get("file"))),
+                    ("start + end", "start" in spec or "end" in spec),
+                    ("center + azimuth + length_km",
+                     any(k in spec for k in ("center", "azimuth", "length_km")))) if on]
+                if len(modes) != 1:
+                    raise ValueError(f"{what}: exactly one of points, file, start + end, center + "
+                                     f"azimuth + length_km is needed (found {modes or 'none'})")
+                if modes[0] == "start + end" and not ("start" in spec and "end" in spec):
+                    raise ValueError(f"{what}: start and end are both needed")
+                if modes[0].startswith("center") and not all(
+                        k in spec for k in ("center", "azimuth", "length_km")):
+                    raise ValueError(f"{what}: center, azimuth and length_km are all needed")
+                number(spec, "length_km", what)
+                number(spec, "azimuth", what, "any")
+                number(spec, "width_km", what, "nonneg")
+                number(spec, "ticks_km", what)
+                lab = spec.get("labels")
+                if lab is not None and lab is not False and not (
+                        isinstance(lab, (list, tuple)) and len(lab) == 2):
+                    raise ValueError(f"{what}: labels must be False or two texts (start, end)")
+            else:
+                modes = [m for m in ("file", "points", "segments") if spec.get(m)]
+                if len(modes) != 1:
+                    raise ValueError(f"{what}: exactly one of file, points, segments is needed "
+                                     f"(found {modes or 'none'})")
+                number(spec, "alpha", what, "nonneg")
+                if spec.get("alpha") is not None and float(spec["alpha"]) > 1.0:
+                    raise ValueError(f"{what}: alpha = {spec['alpha']!r} must be <= 1")
+
+
+# ---------------------------------------------------------------------------
 # Colours
 # ---------------------------------------------------------------------------
 def make_norm(values: np.ndarray, *, vmin: Optional[float], vmax: Optional[float],
@@ -1371,15 +2104,143 @@ def _slug(s: str) -> str:
 # ---------------------------------------------------------------------------
 # Plot
 # ---------------------------------------------------------------------------
+def _overlay_style(item: dict, cfg: Dict[str, Any]) -> Tuple[str, float]:
+    """(colour, line width) of a profile or line: its own entries, else the settings."""
+    if item["kind"] == "profile":
+        return (item.get("color") or cfg.get("PROFILE_COLOR", "black"),
+                float(item.get("lw") or cfg.get("PROFILE_LW", 1.8)))
+    return (item.get("color") or cfg.get("LINE_COLOR", "tab:green"),
+            float(item.get("lw") or cfg.get("LINE_LW", 1.2)))
+
+
+def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, Any]) -> None:
+    """
+    Draws the lines and the profiles on the map `ax` (limits already set): lines
+    (and polygon fills) below the sites, profiles with swath, ticks, distance
+    labels, end labels and rings around the sites in the swath. `overlays` =
+    dict(profiles=[...], lines=[...]) as made by prepare_overlays / project_profiles.
+    """
+    if not overlays:
+        return
+    from matplotlib import patheffects
+    from matplotlib.collections import LineCollection
+    from matplotlib.patches import PathPatch
+    from matplotlib.path import Path
+    x0, x1 = ax.get_xlim()
+    kx_plot = frame["kx"] if frame["display"] == "latlon" else 1.0
+    map_km = abs(x1 - x0) * kx_plot                       # width of the map [km]
+
+    for ln in overlays.get("lines") or []:
+        color, lw = _overlay_style(ln, cfg)
+        halo = cfg.get("LINE_HALO", True) if ln.get("halo") is None else bool(ln["halo"])
+        pe = [patheffects.withStroke(linewidth=lw + 1.6, foreground="white")] if halo else []
+        alpha = 0.25 if ln.get("alpha") is None else float(ln["alpha"])
+        for part in ln["parts"]:
+            px, py = to_frame(frame, part["lon"], part["lat"])
+            if part["closed"]:
+                px, py = np.r_[px, px[0]], np.r_[py, py[0]]
+            if ln.get("fill") and part["closed"]:
+                ax.fill(px, py, facecolor=ln["fill"], edgecolor="none", alpha=alpha, zorder=2.5)
+            ax.plot(px, py, color=color, lw=lw, ls=ln.get("ls") or "-", zorder=3,
+                    path_effects=pe, solid_joinstyle="round")
+
+    fs = float(cfg.get("PROFILE_FONTSIZE", 9.0))
+    for pr in overlays.get("profiles") or []:
+        color, lw = _overlay_style(pr, cfg)
+        pe = [patheffects.withStroke(linewidth=lw + 1.6, foreground="white")]
+        halo_t = [patheffects.withStroke(linewidth=2.0, foreground="white")]
+        if pr.get("swath"):
+            verts: List[np.ndarray] = []
+            codes: List[int] = []
+            for poly in pr["swath"]:
+                qx, qy = to_frame(frame, poly[:, 0], poly[:, 1])
+                verts.append(np.c_[np.r_[qx, qx[0]], np.r_[qy, qy[0]]])
+                codes += [Path.MOVETO] + [Path.LINETO] * (len(qx) - 1) + [Path.CLOSEPOLY]
+            ax.add_patch(PathPatch(Path(np.vstack(verts), codes), facecolor=color,
+                                   edgecolor="none", alpha=float(cfg.get("PROFILE_SWATH_ALPHA", 0.15)),
+                                   zorder=2))
+        px, py = to_frame(frame, pr["lon"], pr["lat"])
+        ax.plot(px, py, color=color, lw=lw, ls=pr.get("ls") or "-", zorder=4, path_effects=pe,
+                solid_capstyle="butt", solid_joinstyle="round")
+        if pr.get("ticks_km"):
+            tp = profile_tick_points(pr, pr["ticks_km"])
+            h = 0.5 * _PROFILE_TICK_FRAC * map_km
+            a_lon, a_lat = local_lonlat(tp["x"] + h * tp["uy"], tp["y"] - h * tp["ux"],
+                                        pr["lon0"], pr["lat0"])
+            b_lon, b_lat = local_lonlat(tp["x"] - h * tp["uy"], tp["y"] + h * tp["ux"],
+                                        pr["lon0"], pr["lat0"])
+            ax1, ay1 = to_frame(frame, a_lon, a_lat)
+            bx1, by1 = to_frame(frame, b_lon, b_lat)
+            segs = [[(ax1[k], ay1[k]), (bx1[k], by1[k])] for k in range(ax1.size)]
+            ax.add_collection(LineCollection(segs, colors=color, linewidths=max(lw * 0.8, 0.8),
+                                             zorder=4, path_effects=pe))
+            if pr.get("tick_labels", True):
+                c_lon, c_lat = local_lonlat(tp["x"], tp["y"], pr["lon0"], pr["lat0"])
+                cx, cy = to_frame(frame, c_lon, c_lat)
+                for k in range(cx.size):
+                    ax.annotate(f"{tp['s'][k]:g}", (cx[k], cy[k]),
+                                xytext=(-8.0 * tp["uy"][k], 8.0 * tp["ux"][k]),
+                                textcoords="offset points", ha="center", va="center",
+                                fontsize=fs - 2.0, color=color, zorder=6.5, path_effects=halo_t,
+                                annotation_clip=True)
+        if pr.get("labels"):
+            ends = ((px[0], py[0], -1.0, pr["labels"][0],
+                     pr["x"][1] - pr["x"][0], pr["y"][1] - pr["y"][0]),
+                    (px[-1], py[-1], 1.0, pr["labels"][1],
+                     pr["x"][-1] - pr["x"][-2], pr["y"][-1] - pr["y"][-2]))
+            for vx, vy, sgn, txt, dxk, dyk in ends:
+                nrm = math.hypot(dxk, dyk)
+                ax.annotate(txt, (vx, vy), xytext=(sgn * 10.0 * dxk / nrm, sgn * 10.0 * dyk / nrm),
+                            textcoords="offset points", ha="center", va="center", fontsize=fs,
+                            fontweight="bold", color=color, zorder=6.5, path_effects=halo_t)
+        ring = pr.get("ring")
+        if cfg.get("PROFILE_MARK_SITES", True) and ring is not None and len(ring[0]):
+            rx, ry = to_frame(frame, ring[0], ring[1])
+            ax.scatter(rx, ry, s=1.9 * float(cfg["SITE_SIZE"]), marker="o", facecolors="none",
+                       edgecolors=color, linewidths=1.0, zorder=4.5)
+
+
+def overlay_handles(overlays: Optional[dict], cfg: Dict[str, Any]) -> list:
+    """Legend handles of the profiles and lines that have a label (profiles first)."""
+    from matplotlib.lines import Line2D
+    out = []
+    if not overlays:
+        return out
+    for kind in ("profiles", "lines"):
+        for it in overlays.get(kind) or []:
+            if it.get("label"):
+                color, lw = _overlay_style(it, cfg)
+                out.append(Line2D([], [], color=color, lw=lw, ls=it.get("ls") or "-",
+                                  label=str(it["label"])))
+    return out
+
+
+def overlay_outside(items: Sequence[dict], bbox: Sequence[float]) -> List[str]:
+    """Names of the profiles / lines whose bounding box does not touch the map `bbox`."""
+    out = []
+    for it in items:
+        if it["kind"] == "profile":
+            lon, lat, name = it["lon"], it["lat"], it["name"]
+        else:
+            lon = np.concatenate([p["lon"] for p in it["parts"]])
+            lat = np.concatenate([p["lat"] for p in it["parts"]])
+            name = str(it.get("label") or "line")
+        if (lon.max() < bbox[0] or lon.min() > bbox[1] or lat.max() < bbox[2]
+                or lat.min() > bbox[3]):
+            out.append(name)
+    return out
+
+
 def draw_panel(ax, *, frame: dict, bbox: Tuple[float, float, float, float], relief: Optional[dict],
                relief_extent: Optional[Tuple[float, float, float, float]],
                lon: np.ndarray, lat: np.ndarray, values: np.ndarray,
                names: Optional[Sequence[str]], cmap, norm, cfg: Dict[str, Any],
-               credit: Optional[str] = None):
+               credit: Optional[str] = None, overlays: Optional[dict] = None):
     """
     One map: relief, then the sites as icons coloured by `values` (NaN = open
-    icon, no data). Returns the scatter of the coloured icons (None if there is
-    none). bbox = (lon_min, lon_max, lat_min, lat_max) of the map.
+    icon, no data), and the profiles and lines of `overlays` (draw_overlays).
+    Returns the scatter of the coloured icons (None if there is none). bbox =
+    (lon_min, lon_max, lat_min, lat_max) of the map.
     """
     from matplotlib import patheffects
     from matplotlib.ticker import MaxNLocator
@@ -1417,6 +2278,7 @@ def draw_panel(ax, *, frame: dict, bbox: Tuple[float, float, float, float], reli
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
     ax.set_aspect(frame["aspect"])
+    draw_overlays(ax, frame=frame, overlays=overlays, cfg=cfg)
     if cfg["MAP_GRID"]:
         ax.grid(True, color="0.5", lw=0.4, alpha=0.6)
     fs = float(cfg["TICK_FONTSIZE"])
@@ -1495,11 +2357,13 @@ def plot_page(page: Sequence[dict], *, site_lon: np.ndarray, site_lat: np.ndarra
               bbox: Tuple[float, float, float, float], relief: Optional[dict],
               relief_extent: Optional[Tuple[float, float, float, float]], norm, extend: str,
               cfg: Dict[str, Any], title: str, credit: Optional[str],
-              cbar_label: str = "nRMS"):
+              cbar_label: str = "nRMS", overlays: Optional[dict] = None):
     """
     One figure with the maps of the selections of `page`; returns the figure. The
     second line of a panel title is s["sub"] if the selection has one (ensemble),
-    else the global nRMS and n.
+    else the global nRMS and n. `overlays` (profiles, lines) are drawn in every
+    panel; the legend (LEGEND_LOC, first panel) holds the no-data icon and the
+    profiles and lines that have a label.
     """
     import matplotlib.pyplot as plt
     n = len(page)
@@ -1518,7 +2382,7 @@ def plot_page(page: Sequence[dict], *, site_lon: np.ndarray, site_lat: np.ndarra
         any_open = any_open or bool(np.isnan(vals).any())
         draw_panel(ax, frame=frame, bbox=bbox, relief=relief, relief_extent=relief_extent,
                    lon=site_lon, lat=site_lat, values=vals, names=site_names, cmap=cmap,
-                   norm=norm, cfg=cfg, credit=credit)
+                   norm=norm, cfg=cfg, credit=credit, overlays=overlays)
         sub = s.get("sub") or f"global nRMS = {s['nrms']:.2f}, n = {s['n']}"
         ax.set_title(f"{s['band']} | {s['comp']}\n{sub}", fontsize=float(cfg["TICK_FONTSIZE"]) + 1)
     for k in range(n, nr * nc):
@@ -1531,11 +2395,15 @@ def plot_page(page: Sequence[dict], *, site_lon: np.ndarray, site_lat: np.ndarra
     if ref is not None and norm.vmin <= ref <= norm.vmax:
         (cb.ax.axhline if loc in ("right", "left") else cb.ax.axvline)(
             ref, color="black", lw=0.8, ls="--")
+    handles = []
     if any_open:
         from matplotlib.lines import Line2D
-        used[0].legend(handles=[Line2D([], [], ls="", marker=cfg["SITE_MARKER"], mfc="none",
-                                       mec=cfg["SITE_NODATA_EDGECOLOR"], label="no data")],
-                       loc="upper left", fontsize=float(cfg["TICK_FONTSIZE"]) - 1,
+        handles.append(Line2D([], [], ls="", marker=cfg["SITE_MARKER"], mfc="none",
+                              mec=cfg["SITE_NODATA_EDGECOLOR"], label="no data"))
+    handles += overlay_handles(overlays, cfg)
+    leg_loc = cfg.get("LEGEND_LOC", "upper left")
+    if handles and leg_loc:
+        used[0].legend(handles=handles, loc=leg_loc, fontsize=float(cfg["TICK_FONTSIZE"]) - 1,
                        framealpha=0.8)
     if title:
         fig.suptitle(title, fontsize=float(cfg["TICK_FONTSIZE"]) + 3)
@@ -1628,6 +2496,61 @@ def write_ens_stats(stem: str, rows: Sequence[dict], sels: Sequence[dict],
                 w.writerow([s["band"], s["comp"], r["name"], f"{r['lat']:.6f}", f"{r['lon']:.6f}",
                             int(cnt[j])] + [_fmt(vals[k][j]) for k in kinds])
     return p
+
+
+def overlay_summary(profiles: Sequence[dict], lines: Sequence[dict]) -> List[str]:
+    """Text lines about the profiles (length, swath, sites in it) and lines, for the summary."""
+    out = []
+    for p in profiles:
+        txt = f"profile {p['name']}: {p['length']:.1f} km, {p['lon'].size} vertices"
+        if p["width"] > 0:
+            n = int(p["proj"]["inside"].sum()) if "proj" in p else 0
+            txt += f", swath {p['width']:g} km wide with {n} sites"
+        out.append(txt)
+    for ln in lines:
+        nm = ln.get("label") or "(no label)"
+        out.append(f"line {nm}: {len(ln['parts'])} parts, {ln['n_vertices']} vertices")
+    return out
+
+
+def write_profile_tables(stem: str, profiles: Sequence[dict], rows: Sequence[dict],
+                         used: np.ndarray, sels: Sequence[dict]) -> List[str]:
+    """
+    <stem>_profiles.csv: one row per profile (name, vertices, length_km, width_km,
+    n_sites in the swath, lon / lat of the start and the end, source).
+    <stem>_profile_sites.csv (profiles with a swath): the sites in the swath, by
+    profile and increasing distance: profile, site, lat, lon, along_km (from the
+    start), offset_km (positive to the right of the direction start -> end) and the
+    nRMS of every selection of `sels`. `profiles` = project_profiles result, `rows`
+    = the sites of site.dat (name, lat, lon), `used` = their indices behind the
+    projection.
+    """
+    paths = []
+    p1 = f"{stem}_profiles.csv"
+    with open(p1, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["profile", "vertices", "length_km", "width_km", "n_sites", "lon_start",
+                    "lat_start", "lon_end", "lat_end", "source"])
+        for p in profiles:
+            w.writerow([p["name"], p["lon"].size, f"{p['length']:.3f}", f"{p['width']:g}",
+                        len(p["order"]), f"{p['lon'][0]:.6f}", f"{p['lat'][0]:.6f}",
+                        f"{p['lon'][-1]:.6f}", f"{p['lat'][-1]:.6f}", p["source"]])
+    paths.append(p1)
+    if any(p["width"] > 0 for p in profiles):
+        p2 = f"{stem}_profile_sites.csv"
+        with open(p2, "w", newline="") as fh:
+            w = csv.writer(fh)
+            w.writerow(["profile", "site", "lat", "lon", "along_km", "offset_km"]
+                       + [f"{s['band']} | {s['comp']}" for s in sels])
+            for p in profiles:
+                for k in p["order"]:
+                    j = int(used[k])
+                    r = rows[j]
+                    w.writerow([p["name"], r["name"], f"{r['lat']:.6f}", f"{r['lon']:.6f}",
+                                f"{p['proj']['along'][k]:.3f}", f"{p['proj']['offset'][k]:.3f}"]
+                               + [_fmt(s["nrms_site"][j]) for s in sels])
+        paths.append(p2)
+    return paths
 
 
 def format_summary(sels: Sequence[dict], *, header: Sequence[str]) -> str:
@@ -1833,11 +2756,27 @@ def run(cfg: Dict[str, Any]) -> int:
         if s not in plot_sels:
             _say(f"selection {s['band']} | {s['comp']}: no data at a site, no map.")
 
+    # --- profiles and lines ---
+    lon_s = np.array([site_rows[j]["lon"] for j in used])
+    lat_s = np.array([site_rows[j]["lat"] for j in used])
+    profiles: List[dict] = []
+    lines: List[dict] = []
+    if cfg["PROFILES"] or cfg["LINES"]:
+        try:
+            profiles, lines = prepare_overlays(cfg, make_geo(sites, st))
+        except OverlayError as exc:
+            print(f"{_TAG} {exc}", file=sys.stderr)
+            return 1
+        profiles = project_profiles(profiles, lon_s, lat_s)
+    overlays = dict(profiles=profiles, lines=lines) if (profiles or lines) else None
+
     # --- output: tables ---
     out_dir = cfg["OUTPUT_DIR"]
     os.makedirs(out_dir, exist_ok=True)
     stem = os.path.join(out_dir, cfg["OUTPUT_BASENAME"])
     files = write_site_tables(stem, site_rows, sels, used)
+    if profiles:
+        files += write_profile_tables(stem, profiles, site_rows, used, sels)
     if ens:
         rms_k = np.array([m["res"]["rms"] for m in kept], float)
         its = [int(m["res"]["iter"]) for m in kept]
@@ -1865,6 +2804,7 @@ def run(cfg: Dict[str, Any]) -> int:
         files.append(write_members_table(stem, every, sels))
     if ens:
         files.append(write_ens_stats(stem, site_rows, sels, used))
+    header += overlay_summary(profiles, lines)
     txt = format_summary(sels, header=header)
     with open(stem + "_summary.txt", "w") as fh:
         fh.write(txt)
@@ -1872,10 +2812,12 @@ def run(cfg: Dict[str, Any]) -> int:
     print(txt)
 
     # --- basemap ---
-    lon_s = np.array([site_rows[j]["lon"] for j in used])
-    lat_s = np.array([site_rows[j]["lat"] for j in used])
+    ext_lon, ext_lat = lon_s, lat_s
+    if cfg["MAP_INCLUDE_PROFILES"] and profiles:
+        ext_lon = np.concatenate([lon_s] + [p["lon"] for p in profiles])
+        ext_lat = np.concatenate([lat_s] + [p["lat"] for p in profiles])
     try:
-        bbox = map_extent(lon_s, lat_s, mode=cfg["MAP_EXTENT_MODE"], box=cfg["MAP_BOX"],
+        bbox = map_extent(ext_lon, ext_lat, mode=cfg["MAP_EXTENT_MODE"], box=cfg["MAP_BOX"],
                           center=cfg["MAP_CENTER"], size_km=cfg["MAP_SIZE_KM"],
                           margin_frac=cfg["MAP_MARGIN_FRAC"],
                           margin_min_km=cfg["MAP_MARGIN_MIN_KM"])
@@ -1886,6 +2828,9 @@ def run(cfg: Dict[str, Any]) -> int:
     if not inside.all():
         _say(f"WARNING: {int(np.count_nonzero(~inside))} of {inside.size} sites lie outside the "
              "map (not shown; see the tables).")
+    out_of_map = overlay_outside(list(profiles) + list(lines), bbox)
+    if out_of_map:
+        _say(f"WARNING: outside the map (not shown): {', '.join(out_of_map)}.")
     frame = make_frame(cfg["DISPLAY_COORDS"], 0.5 * (bbox[0] + bbox[1]), 0.5 * (bbox[2] + bbox[3]))
     relief = None
     relief_extent = None
@@ -1946,7 +2891,8 @@ def run(cfg: Dict[str, Any]) -> int:
         fig = plot_page(page_sels, site_lon=lon_s, site_lat=lat_s,
                         site_names=[site_rows[j]["name"] for j in used], frame=frame, bbox=bbox,
                         relief=relief, relief_extent=relief_extent, norm=norm, extend=extend,
-                        cfg=pcfg, title=title, credit=credit, cbar_label=cbar_label)
+                        cfg=pcfg, title=title, credit=credit, cbar_label=cbar_label,
+                        overlays=overlays)
         files += save_figure(fig, f"{stem}_{tag}", cfg["OUTPUT_FORMATS"], cfg["DPI"])
         figs.append(fig)
     _say(f"{len(files)} files in {out_dir}:")
@@ -1960,7 +2906,7 @@ def run(cfg: Dict[str, Any]) -> int:
 
 
 def main(argv: Sequence[str]) -> int:
-    """Command line: -w / --work-dir, -i / --iteration, --dem, --runs, --stat."""
+    """Command line: -w, -i, --dem, --runs, --stat, --profile, --line, --no-overlays."""
     ap = argparse.ArgumentParser(
         prog="femtic_plot_sitemap.py",
         description="Site map of a FEMTIC run or ensemble: nRMS per site, band and component on "
@@ -1977,8 +2923,33 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--stat", default=None, metavar="STAT",
                     help="statistic over the members: mean, median, min, max, std or pNN "
                          "(replaces ENS_STAT)")
+    ap.add_argument("--profile", nargs=5, action="append", default=None,
+                    metavar=("NAME", "LON1", "LAT1", "LON2", "LAT2"),
+                    help="a profile line from (LON1, LAT1) to (LON2, LAT2), in degrees; can be "
+                         "repeated (added to PROFILES)")
+    ap.add_argument("--line", action="append", default=None, metavar="FILE",
+                    help="a polyline file (text / GMT with lon lat columns, GeoJSON, KML, KMZ); "
+                         "can be repeated (added to LINES)")
+    ap.add_argument("--no-overlays", action="store_true",
+                    help="no profiles and lines (empties PROFILES and LINES)")
     args = ap.parse_args(list(argv))
     over: Dict[str, Any] = {}
+    if args.no_overlays:
+        if args.profile or args.line:
+            ap.error("--no-overlays cannot be combined with --profile or --line")
+        over["PROFILES"] = []
+        over["LINES"] = []
+    if args.profile:
+        new = []
+        for name, *num in args.profile:
+            try:
+                lon1, lat1, lon2, lat2 = (float(v) for v in num)
+            except ValueError:
+                ap.error("--profile: LON1 LAT1 LON2 LAT2 must be numbers")
+            new.append(dict(name=name, start=(lon1, lat1), end=(lon2, lat2)))
+        over["PROFILES"] = list(PROFILES) + new
+    if args.line:
+        over["LINES"] = list(LINES) + [dict(file=f, label=os.path.basename(f)) for f in args.line]
     if args.iteration is not None:
         if args.iteration in ("best", "last"):
             over["ITERATION"] = args.iteration

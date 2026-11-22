@@ -6,11 +6,13 @@ and data components. For an ensemble (`WORK_DIR` = the ensemble root with the
 member directories and `templates/`) the colour is a statistic of the member
 nRMS at the site (median by default; mean, min, max, a percentile or the std).
 The DEM is made of SRTM-format tiles that are downloaded by default (and
-cached); a DEM file or no DEM are the alternatives.
+cached); a DEM file or no DEM are the alternatives. Profile lines (cross-section
+lines, with swath, distance ticks and the sites in the swath) and other polylines
+or polygons (faults, coast lines, caldera rims, ...) can be drawn on the maps.
 
 Same layout as the other FEMTIC scripts: a CONFIG block of UPPERCASE settings
 at the top of the script, `WORK_DIR` as the base of all relative paths,
-`-w` / `-i` / `--dem` / `--runs` / `--stat` on the command line, `settings()` /
+`-w` / `-i` / `--dem` / `--runs` / `--stat` / `--profile` / `--line` on the command line, `settings()` /
 `run()` for use from other code. For a plot of the one nRMS per site (all bands, all components) see
 also `femtic_plot_nrms.py`; this script adds the bands x components selections,
 the tables and the DEM download.
@@ -60,10 +62,14 @@ the tables and the DEM download.
    may differ between members); the nRMS of a site is the statistic `ENS_STAT`
    over the members that have a value there, and the global nRMS of a selection
    is the same statistic over the global nRMS of the members.
-6. **Basemap** (see "DEM source" below) and **figures**: one figure per page
-   (`PAGE_BY`), one panel per selection, one colour scale for all pages.
-7. **Tables**: nRMS and number of values per site and selection, a summary and,
-   for an ensemble, one table of the members and one of the statistics.
+6. **Profiles and lines** (if `PROFILES` / `LINES` are set, see "Profiles and
+   lines"): converted to lon / lat, the sites projected on every profile.
+7. **Basemap** (see "DEM source" below) and **figures**: one figure per page
+   (`PAGE_BY`), one panel per selection, one colour scale for all pages; the
+   lines and profiles are drawn on every panel.
+8. **Tables**: nRMS and number of values per site and selection, a summary and,
+   for an ensemble, one table of the members and one of the statistics; for the
+   profiles one table of the profiles and one of the sites in their swath.
 
 ---
 
@@ -78,6 +84,11 @@ python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 -i last
 python femtic_plot_sitemap.py -w /data/krafla --dem none                  # median of all members
 python femtic_plot_sitemap.py -w /data/krafla --stat std                  # spread of the members
 python femtic_plot_sitemap.py -w /data/krafla --stat p90 --runs "krafla_rto_1*"
+
+# profiles and polylines (lon lat); PROFILES / LINES in the script give more options
+python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --profile "A-A'" -16.83 65.69 -16.73 65.73
+python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --line gis/faults.txt --line gis/rim.geojson
+python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --no-overlays   # the settings are ignored
 ```
 
 or set `WORK_DIR` and the other settings in the CONFIG block, or from Python:
@@ -240,6 +251,137 @@ components) stretch it, set `NRMS_VMAX` (for the Krafla data 3.0 shows the struc
 
 ---
 
+## Profiles and lines
+
+`PROFILES` (cross-section lines) and `LINES` (faults, coast lines, caldera rims,
+...) are lists of dicts in the CONFIG block; they are drawn on every map, on top
+of the DEM and below the site icons.
+
+```python
+PROFILES = [
+    dict(name="A-A'", start=(-16.83, 65.69), end=(-16.73, 65.73),
+         width_km=4.0, ticks_km=2.0, label="Section A"),
+    dict(name="B-B'", center=(-16.78, 65.71), azimuth=90.0, length_km=6.0,
+         width_km=1.0, ticks_km=1.0, color="tab:red"),
+    dict(name="C-C'", file="gis/profile_c.txt", coords="utm", width_km=2.0),
+]
+LINES = [
+    dict(label="Faults", file="gis/faults.txt", color="tab:red", ls="--"),
+    dict(label="Caldera rim", file="gis/rim.geojson", color="tab:orange",
+         fill="orange", alpha=0.15),
+    dict(label="Coast", points=[(-16.9, 65.6), (-16.7, 65.65), (-16.5, 65.7)]),
+]
+```
+
+**Profile keys** (exactly one way to give the geometry)
+
+| Key | Meaning |
+|---|---|
+| `name` | name; the end labels follow from it (`"A-A'"` gives `A` and `A'`; a name without a hyphen `"P1"` gives `P1` and `P1'`); default `P1`, `P2`, ... |
+| `points` | `[(a, b), ...]`, at least two different points (a polyline with bends is allowed) |
+| `file` | text, GeoJSON, KML or KMZ file (see below); several parts in the file: the first one is the profile, with a warning |
+| `start`, `end` | the two end points `(a, b)` |
+| `center`, `azimuth`, `length_km` | all three: centre `(a, b)`, direction in degrees clockwise from north (in the local km frame of the profile), length [km] |
+| `coords` | `"lonlat"` (default), `"latlon"`, `"utm"` or `"model"` for `points`, `start`, `end`, `center` and a text `file` (see below) |
+| `width_km` | width of the swath [km]; `0` / not given = no swath |
+| `ticks_km` | spacing of the distance ticks along the profile [km] (a tick at 0, at every multiple, none at the end unless it is a multiple); at most 2000 ticks |
+| `tick_labels` | `True` (default): the distance is written at every tick |
+| `labels` | `False` = no end labels, or two texts `("A", "A'")`; default from `name` |
+| `label` | legend text; without it the profile is not in the legend |
+| `color`, `lw`, `ls` | colour, line width, line style; defaults `PROFILE_COLOR`, `PROFILE_LW`, `"-"` |
+
+**Line keys** (exactly one of `file`, `points`, `segments`)
+
+| Key | Meaning |
+|---|---|
+| `label` | legend text; without it the line is not in the legend |
+| `file` | text, GeoJSON, KML or KMZ file |
+| `points` | one polyline `[(a, b), ...]` |
+| `segments` | a list of polylines `[[(a, b), ...], ...]` |
+| `coords` | as for the profiles (not for GeoJSON, KML, KMZ) |
+| `closed` | `True` / `False` overrides the closing of all parts; default: a ring in a GeoJSON polygon or a KML `LinearRing`, or a text segment with equal first and last point (4 or more points) |
+| `fill`, `alpha` | colour of the fill of closed parts and its opacity (default 0.25); no fill without `fill` |
+| `color`, `lw`, `ls` | defaults `LINE_COLOR`, `LINE_LW`, `"-"` |
+| `halo` | white outline under the line; default `LINE_HALO` |
+
+**Coordinates (`coords`)**
+
+| Value | Meaning |
+|---|---|
+| `"lonlat"` | longitude, latitude in degrees (default) |
+| `"latlon"` | latitude, longitude in degrees |
+| `"utm"` | easting, northing in m, in the UTM zone of `site.dat`. The zone and the hemisphere are found by comparing the easting / northing of the sites with their lat / lon (median distance of the best zone, at most 25 m; for the 100 Krafla sites 0.05 m). The transform is a Krueger series of 4th order on WGS84 (no `pyproj` needed) |
+| `"model"` | x, y in m of the FEMTIC model, as `site_x`, `site_y` of the results file; needs the sites assigned by position (`SITE_MATCH = "coords"`, or `"auto"` with site coordinates): the shift and the frame found there are used |
+
+GeoJSON, KML and KMZ files are always lon, lat (as the formats say); `coords` is
+ignored for them. Coordinates that are not on the globe (lat beyond 90, lon beyond
+180) are refused: the usual cause is `lonlat` and `latlon` mixed up.
+
+**Files**
+
+- Text: two numbers per line (the first two columns; separated by spaces, commas
+  or semicolons); a line that starts with `>` (GMT multi-segment) or a blank line
+  ends a segment; `#` and `%` start comments; lines that are no numbers are
+  skipped; segments of one point are dropped.
+- GeoJSON (`.geojson`, `.json`): FeatureCollection, Feature, a geometry or a
+  GeometryCollection; LineString, MultiLineString, Polygon (all rings, also the
+  holes) and MultiPolygon are drawn, points are ignored.
+- KML / KMZ (`.kml`, `.kmz`; in a KMZ the `doc.kml`, else the first `.kml`):
+  every LineString and LinearRing (also the ones in a Polygon).
+- Shapefiles are not read; convert them to GeoJSON (`ogr2ogr -f GeoJSON`).
+
+**Swath and the sites**
+
+With `width_km > 0` the swath is the strip of this width around the profile
+(a polyline with bends: rectangles along the segments, round joins at the inner
+vertices, no caps at the ends). A site is in the swath if its distance to the
+profile is at most `width_km / 2` and its projection is not beyond the ends of the
+profile (10 m tolerance). The sites in the swath are marked by a ring on the map
+(`PROFILE_MARK_SITES`) and listed in `_profile_sites.csv`:
+
+| Column | Meaning |
+|---|---|
+| `along_km` | distance along the profile from its start to the foot of the site |
+| `offset_km` | signed distance across the profile; positive to the **right** of the direction start -> end |
+| nRMS | one column per selection (as in `_nrms.csv`), empty without data |
+
+Distances are flat-earth km on a sphere (R = 6371.0088 km; the scale of the map)
+around the mean position of the profile; east-west they are about 0.3 % shorter
+than on the WGS84 ellipsoid at mid latitudes. Use profiles of up to a few 100 km.
+
+**Errors**
+
+- A key that does not exist, a geometry given in two ways, a number that cannot
+  be (a negative width, an azimuth that is no number), `coords` or `LEGEND_LOC`
+  not in the list: `ValueError` from `settings()` (return code 2 on the command
+  line), before anything is read.
+- A problem with the data (a file that cannot be read or has no line, coordinates
+  out of range, `"utm"` or `"model"` without a zone or frame, fewer than two
+  different points): a warning and the profile or line is left out; with
+  `OVERLAY_STRICT = True` the script stops with return code 1 before any output.
+- A profile or line that lies outside the map is not drawn; the warning names it.
+
+**Settings**
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `PROFILES`, `LINES` | `[]`, `[]` | lists of dicts, see above |
+| `PROFILE_COLOR`, `PROFILE_LW` | `"black"`, `1.8` | |
+| `PROFILE_FONTSIZE` | `9.0` | end labels (the distance labels are 2 pt smaller) |
+| `PROFILE_SWATH_ALPHA` | `0.15` | opacity of the swath (one patch, so the overlap at the bends is not darker) |
+| `PROFILE_MARK_SITES` | `True` | rings around the sites in the swath |
+| `LINE_COLOR`, `LINE_LW`, `LINE_HALO` | `"tab:green"`, `1.2`, `True` | |
+| `MAP_INCLUDE_PROFILES` | `True` | `MAP_EXTENT_MODE = "sites"`: the extent includes the profiles (with the margin) |
+| `OVERLAY_STRICT` | `False` | `True`: a profile or line that cannot be made stops the script |
+| `LEGEND_LOC` | `"upper left"` | legend (icon "no data" and the labelled profiles and lines) in the first panel of a page: a matplotlib `loc` string, `None` = no legend |
+
+Command line: `--profile NAME LON1 LAT1 LON2 LAT2` (repeatable; lon / lat) and
+`--line FILE` (repeatable; the label is the file name) are added to `PROFILES`
+and `LINES` of the script; `--no-overlays` ignores both lists (and cannot be
+combined with the two options).
+
+---
+
 ## DEM source
 
 - Default: the "skadi" tile set of the AWS Terrain Tiles (public bucket
@@ -294,9 +436,12 @@ In `OUTPUT_DIR` (default `WORK_DIR/sitemap`):
 | `<OUTPUT_BASENAME>_summary.txt` | per selection: n, global nRMS, number of sites, min / median / max of the site values, values of rows without a site; ensemble: also the number of members `M` and the smallest and largest global nRMS of a member (`m_min`, `m_max`), and a header with the members found / used / above the limit / not readable and the iterations |
 | `<OUTPUT_BASENAME>_members.csv` | (more than one member found) one row per member in the order found: `member`, `path` (the results file), `iteration`, `nrms` (of the iteration), `used` (1 / 0), `note` (why not used), then the global nRMS of the member for every selection |
 | `<OUTPUT_BASENAME>_ens_stats.csv` | (ensemble) for every selection and site: `M`, mean, median, std, min, max of the member nRMS |
+| `<OUTPUT_BASENAME>_profiles.csv` | (profiles) one row per profile: `profile`, `vertices`, `length_km`, `width_km`, `n_sites` (in the swath), `lon_start`, `lat_start`, `lon_end`, `lat_end`, `source` (how the profile was given) |
+| `<OUTPUT_BASENAME>_profile_sites.csv` | (profiles with a swath) the sites in the swath, sorted by `along_km` for every profile: `profile`, `site`, `lat`, `lon`, `along_km`, `offset_km`, then the nRMS for every selection |
 
 Only sites with data are listed; sites of `site.dat` without data in the selection
-are drawn as open icons (legend "no data").
+are drawn as open icons (legend "no data"). The summary lists the profiles (length,
+vertices, swath and number of sites in it) and the lines (parts, vertices).
 
 Example (`_summary.txt`, Krafla RTO member, iteration 8; MT only; the ensemble
 summary has the extra columns described above):
@@ -321,8 +466,8 @@ all bands       Zdiag        8608  1.167    100  0.825   1.159  1.565           
 What was checked, and how. `h5py` and `rasterio` were not available and there was
 no network where the script was written.
 
-- **Unit and run tests**: `scripts/general/test_femtic_plot_sitemap.py`, 265
-  tests (about 30 s), on synthetic results files (the HDF5 reader replaced by a
+- **Unit and run tests**: `scripts/general/test_femtic_plot_sitemap.py`, 417
+  tests (about 50 s), on synthetic results files (the HDF5 reader replaced by a
   stand-in that returns the same structure) and synthetic tiles: names and URLs
   of tiles, the `.hgt` reader (both sizes, void values, the overlapping edge row
   and column), the mosaic and the cache, the download with a mocked `urlopen`
@@ -337,11 +482,26 @@ no network where the script was written.
   unreadable members (also the first), members with other site ids, without a
   site or without a selection, messages printed once, titles, colour scales and
   colours of the icons, settings and command line.
+  Profiles and lines: the UTM transform against an independent numerical meridian
+  arc (agreement about 5e-11 m) and against the 100 real Krafla `site.dat` rows;
+  the zone search, `"model"` coordinates in both frames; the readers (text, GeoJSON,
+  KML, KMZ, with comments, holes, broken files); the projection of the sites on
+  straight and bent profiles against a plain loop (along, offset, sign, ends,
+  round joins); the swath (one patch, same pixel value in the overlap); ticks;
+  the specs (every error path), drawing (z-order, styles, labels, rings,
+  legend), the tables, the summary, the extent, `run` and the command line.
 - **Mutation testing**: about 70 hand-made changes of the main logic (comparison
   signs, constants, indices, ordering, dropped checks) and 106 of the ensemble
   code; every one that changes the behaviour is caught by a test (two of the 106
   are equivalent: a one-value std is NaN anyway, and all-missing columns are NaN
-  anyway). The ones that survived the first rounds led to new tests.
+  anyway). For the profiles and lines 211 changes (UTM series and signs, zone
+  search, readers, profile geometry, swath, projection, ticks, specs, drawing,
+  tables, `run`, command line): 207 are caught; the last four have no effect on
+  the result (the `%` comment test of the text reader, because a line that starts
+  with `%` is no number anyway; the candidate zones taken from the extremes of
+  the longitudes, which the mean +- 1 zone covers; the `min` in the tick position,
+  which only removes a rounding error; `not overlays` against `overlays is None`
+  with an empty dict). The 24 that survived the first round led to new tests.
 - **Real data**: the script was run on the Krafla RTO member `krafla_rto_26`
   (iteration 8, 8608 data rows, 100 sites, 22 frequencies, MT only) with the real
   `templates/site.dat`; the HDF5 file was read with a libhdf5 reader written for the
@@ -359,7 +519,14 @@ no network where the script was written.
   agrees with the `.cnv` file, and the median and std maps and the tables were
   produced. This tests the reading, the aggregation and the figures on real
   data, not the statistics of a real RTO ensemble.
-- **Not tested**: the download from the real server (the sandbox proxy refused
+- **Real data, profiles**: on the Krafla member two profiles of the same line,
+  one given in lon / lat and one in UTM (zone 28 N found from `site.dat`, median
+  distance 0.05 m), gave the same 36 sites in a 2 km swath; a profile given by
+  centre, azimuth and length gave 14 sites in a 1 km swath; a polygon (text and
+  GeoJSON) and a two-part fault file were drawn with `DISPLAY_COORDS` `"km"` and
+  `"latlon"`, and the figures were looked at. The files were made for the test.
+- **Not tested**: the readers on files that come from GIS programs (QGIS, Google
+  Earth, `ogr2ogr`; only hand-made files); the download from the real server (the sandbox proxy refused
   s3.amazonaws.com; the URL pattern is the one of the AWS documentation), the
   GeoTIFF reader (needs `rasterio`), and a real DEM in the real-data run. The
   Krafla area (65.7 N) is north of the SRTM coverage, so the tiles there come from
@@ -374,7 +541,17 @@ no network where the script was written.
   ensemble mean, and no per-site test against the ensemble mean.
 - The members are read one after the other (no parallel reading); every member is
   read completely before its nRMS is computed, then dropped from memory.
-- Extents that cross the antimeridian are not supported.
+- Extents that cross the antimeridian are not supported (also not by the
+  overlays).
+- Profiles are straight lines or polylines in a flat-earth km frame, not great
+  circles or geodesics; distances differ from the ellipsoid by about 0.3 %
+  east-west. The sites are projected on the nearest segment, and the swath has
+  no end caps.
+- No shapefiles; KML is read with `xml.etree` (no protection against hostile
+  XML: do not read KML files of unknown origin); KML styles, names and
+  altitudes are ignored.
+- A profile in `"model"` coordinates needs the sites assigned by position; with
+  `SITE_MATCH = "id"` use `"lonlat"` or `"utm"`.
 - `modules/topo.py` has its own DEM download (USGS); it is not used here.
 - The colour scale is common to all pages and has no robust automatic limit; set
   `NRMS_VMAX` if outliers dominate.
@@ -387,5 +564,6 @@ no network where the script was written.
 |---|---|---|
 | 2026-11-21 | Claude Sonnet 5.5 (Anthropic) | Created. Per-site nRMS for bands x components as coloured icons on a shaded relief from SRTM-format tiles (download with a cache, or a DEM file, or none); tables and summary; `site.dat` searched in `TEMPLATES_DIR`, `WORK_DIR` and next to `WORK_DIR`; ids at one position get the co-located `site.dat` entries in the order of their numbers. AI-generated; review before use. Checked on synthetic data and on the Krafla RTO member (see "Verification performed"); the DEM download and the GeoTIFF reader were not run. |
 | 2026-11-21 | Claude Sonnet 5.5 (Anthropic) | A full ensemble is read: `WORK_DIR` = ensemble root (members and `templates/`), or `RUN_PATHS`; `ENS_STAT` (mean, median, min, max, std, percentile) over the members for every site and selection; `MEMBER_NRMS_MAX`; unreadable members are skipped; new tables `_members.csv`, `_ens_stats.csv`; ensemble summary, titles, colour bar label and a sequential scale for the std; `--runs`, `--stat`. Single-run output unchanged. AI-generated; review before use. Checked on synthetic ensembles and on a pseudo-ensemble of three real Krafla iterations. |
+| 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | Profile lines and other polylines: `PROFILES` (points, file, start + end, centre + azimuth + length; swath, ticks, end labels, the sites in the swath with `along_km` / `offset_km`) and `LINES` (points, segments, text / GMT, GeoJSON, KML, KMZ; polygons with fill); coordinates lonlat, latlon, utm (own Krueger series, zone found from `site.dat`) and model; legend (`LEGEND_LOC`); map extent with the profiles; new tables `_profiles.csv`, `_profile_sites.csv`; `--profile`, `--line`, `--no-overlays`. Without `PROFILES` and `LINES` the output is unchanged. AI-generated; review before use. Checked on synthetic data (417 tests) and on the real Krafla results; the readers were not tried on files from GIS programs. |
 
 Author: Volker Rath (DIAS)
