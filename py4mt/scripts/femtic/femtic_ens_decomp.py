@@ -34,6 +34,13 @@ Provenance:
                        positions 0 and 8, which fitted only the layout with
                        distortion columns. Needs the femtic.py of the same
                        date. AI-generated; review before production use.
+    2026-11-22  Claude Sonnet 5.5 (Anthropic)
+                       femtic_ens_decomp_summary.md now ends with the
+                       contents of the results .npz written (ENSEMBLE_RESULTS,
+                       PCA.npz): every key with shape and type
+                       (fem.append_results_contents(), femtic.py of the same
+                       date). Nothing else changes. AI-generated; review
+                       before production use.
 """
 
 import os
@@ -154,4 +161,6 @@ print(f"\nResults saved to {ENSEMBLE_RESULTS}")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)
+_summary_path = utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)
+# The contents of the results .npz written above (key, shape, type).
+fem.append_results_contents(ENSEMBLE_RESULTS, _summary_path, fname)

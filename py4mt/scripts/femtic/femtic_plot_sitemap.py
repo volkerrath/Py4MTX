@@ -4,7 +4,7 @@
 femtic_plot_sitemap.py
 ======================
 
-Site map of a FEMTIC run, or of a whole ensemble, on a DEM (SRTM) background:
+Site map of a FEMTIC run, or of a whole ensemble, on a DEM (Copernicus) background:
 every site is an icon (marker) coloured by its normalized RMS misfit (nRMS), for
 frequency bands and data components. For an ensemble the colour is a statistic
 of the member nRMS at the site. Profile lines and other polylines (faults, coast
@@ -37,11 +37,12 @@ What it does
    and all components is femtic_misfit.data_rms.
 4. Basemap: the extent comes from the user parameters (MAP_EXTENT_MODE: the
    sites plus a margin, a lon / lat box, or a centre and a size in km). The
-   DEM is made of SRTM-format tiles (1 x 1 degree, 16-bit .hgt) that are
-   downloaded into DEM_CACHE_DIR if they are not there yet (DEM_SOURCE =
-   "srtm", the default), or is read from a file (DEM_SOURCE = "file":
-   GeoTIFF with rasterio, or .npz with lon, lat, z), or left out ("none").
-   It is shown as a shaded relief.
+   DEM is the Copernicus DEM GLO-30 (DEM_SOURCE = "copernicus30", the default;
+   "copernicus90" for large maps): its 1 x 1 degree GeoTIFF tiles are
+   downloaded into DEM_CACHE_DIR if they are not there yet and read with
+   rasterio. Other sources: the AWS Terrain Tiles ("skadi"), tiles of your
+   own ("tiles"), one file ("file": GeoTIFF with rasterio, .npz with lon,
+   lat, z, or an .hgt tile), or none ("none"). It is shown as a shaded relief.
 5. One figure per page (PAGE_BY): the panels are the maps of the selections,
    the sites drawn as icons coloured by their nRMS (colour map CMAP_NRMS,
    limits NRMS_VMIN / NRMS_VMAX, one colour scale for all pages; values
@@ -86,6 +87,12 @@ get a ring on the map and are listed with their distance along and across the
 profile and their nRMS in _profile_sites.csv. Distances are flat-earth km on a
 sphere (the scale of the map), about 0.3 % less east-west than on the WGS84
 ellipsoid at mid latitudes; use profiles of up to a few 100 km.
+The end points may carry their label: start=(x, y, "A"), end=(x, y, "A'");
+PROFILE_END_MARKER adds a symbol there. Profiles and lines are cut at the map
+box made smaller by OVERLAY_CUT_MARGIN_KM (default 1 km), so that both ends of a
+cut profile are inside the map; the tick distances and the tables still refer to
+the whole profile (None = not cut). The map box itself does not depend on them
+(MAP_INCLUDE_PROFILES = False): what goes beyond it is cut at it.
 
 Selections
 ----------
@@ -104,22 +111,57 @@ DATATYPES  None = all data types, or a list of names, e.g. ["MT", "VTF"].
 
 DEM source
 ----------
-The default URL (DEM_URL_TEMPLATE) is the "skadi" tile set of the AWS Terrain
-Tiles (public bucket elevation-tiles-prod, no key, no login):
-https://s3.amazonaws.com/elevation-tiles-prod/skadi/N37/N37W105.hgt.gz. The
-tiles are in the SRTM .hgt format, but they are a composite: SRTM is the main
-source between about 56 S and 60 N, other sources are used elsewhere (high
-latitudes). The original NASA / USGS distribution of SRTM needs an Earthdata
-login. Tiles of other servers work if DEM_URL_TEMPLATE is changed (the
-placeholders are {name}, {NS}, {lat}, {EW}, {lon}); a tile that exists in
-DEM_CACHE_DIR (.hgt, .hgt.gz, .hgt.zip) is never downloaded again, so tiles
-can also be put there by hand. Check the attribution of the sources (the
-default credit line is DEM_CREDIT).
+DEM_SOURCE selects the elevation model of the relief:
+
+  "copernicus30"  Copernicus DEM GLO-30 (the default): global, 1 arc second
+                  (30 m; coarser in longitude at high latitudes), a surface
+                  model (it includes buildings and vegetation) with heights
+                  above the EGM2008 geoid. Cloud Optimized GeoTIFF tiles of
+                  the open data bucket copernicus-dem-30m on AWS (no key, no
+                  login), one file per 1 x 1 degree: https://copernicus-dem-30m
+                  .s3.amazonaws.com/Copernicus_DSM_COG_10_N65_00_W017_00_DEM/
+                  Copernicus_DSM_COG_10_N65_00_W017_00_DEM.tif. There are no
+                  tiles over the open ocean (the maps get DEM_FILL_MISSING
+                  there), and a few tiles of some countries are not public.
+  "copernicus90"  GLO-90 (3 arc seconds), bucket copernicus-dem-90m: for maps
+                  of a few 100 km, where GLO-30 needs more tiles than
+                  DEM_MAX_TILES.
+  "skadi"         The AWS Terrain Tiles (Mapzen), .hgt tiles of 1 arc second:
+                  a composite of several elevation data sets, not one model
+                  (the SRTM is the main source between about 60 N and 56 S,
+                  other sources are used at high latitudes, and coarse sources
+                  are interpolated). The former "srtm" setting. No rasterio.
+  "tiles"         Your own tiles: DEM_URL_TEMPLATE = a URL or a path (relative
+                  paths: from WORK_DIR) with the placeholders {name} (N65W017),
+                  {NS}, {lat}, {EW}, {lon}; GeoTIFF (.tif) or .hgt tiles.
+                  A path is used as it is (nothing is copied to the cache).
+  "file"          One file (DEM_FILE): GeoTIFF, .npz or an .hgt tile.
+  "none"          No relief.
+
+The tiles of a URL are downloaded once into DEM_CACHE_DIR and never again
+(tiles can also be put there by hand); DEM_DOWNLOAD = False uses only those.
+DEM_URL_TEMPLATE replaces the URL of the source (a mirror of the bucket).
+GeoTIFF files are read with rasterio, only the part inside the map, averaged
+down to about DEM_MAX_PIXELS pixels per side; a raster in a projected
+coordinate system (a national DEM, UTM) is warped to lon / lat first. The credit
+line of the maps (DEM_CREDIT = "auto") is the notice that the Copernicus
+licence asks for, or a note on the AWS Terrain Tiles; check the terms of any
+other source you use.
+
+Copernicus GLO-30 from Python (rasterio needed; the tiles of the map are
+downloaded once into DEM_CACHE_DIR):
+
+    import femtic_plot_sitemap as sm
+    cfg = sm.settings("/data/krafla/krafla_rto_26", DEM_SOURCE="copernicus30",
+                      DEM_CACHE_DIR="/data/dem_cache", DEM_STYLE="terrain")
+    sm.run(cfg)
 
 Usage
 -----
     python femtic_plot_sitemap.py                  # settings below
     python femtic_plot_sitemap.py -w /data/run01   # another WORK_DIR
+    python femtic_plot_sitemap.py --dem copernicus30   # Copernicus DEM GLO-30 (the default)
+    python femtic_plot_sitemap.py --dem copernicus90   # GLO-90, for large maps
     python femtic_plot_sitemap.py --dem none       # no DEM (no download)
     python femtic_plot_sitemap.py -i last          # last iteration
     python femtic_plot_sitemap.py -w /data/ens     # ensemble root: median of the members
@@ -163,9 +205,22 @@ Notice      : This code is AI-generated. Review and test it before any
               against a plain loop; readers with hand-made text, GeoJSON,
               KML and KMZ files) and run on the real Krafla results; the
               readers have NOT been tried on files from GIS programs.
+              The GeoTIFF tiles of the Copernicus DEM (2026-11-22, later the
+              same day) are read with rasterio, which was NOT installed where
+              this was written: the code was tested with a stand-in module that
+              imitates the few rasterio calls it makes (open, transform, read
+              of a window, WarpedVRT), not with rasterio itself, and the
+              download from the AWS bucket has NOT been run (the file names
+              are those of the bucket documentation and of listings of it),
+              and the warping of a raster in a projected system has not been
+              tried on a real file.
 
 Reference
 ---------
+Copernicus GLO-30 Digital Elevation Model, data record of OpenTopography:
+doi:10.5069/G9028PQB (data: ESA, DLR, Airbus Defence and Space; the notice of
+the licence is the default credit line of the maps).
+
 Farr, T. G., Rosen, P. A., Caro, E., Crippen, R., Duren, R., Hensley, S.,
 Kobrick, M., Paller, M., Rodriguez, E., Roth, L., Seal, D., Shaffer, S.,
 Shimada, J., Umland, J., Werner, M., Oskin, M., Burbank, D., Alsdorf, D.
@@ -203,6 +258,41 @@ Changelog
             _profiles.csv and _profile_sites.csv; command line --profile,
             --line, --no-overlays. Without PROFILES and LINES the output is
             unchanged.
+2026-11-22  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            the default DEM is the Copernicus DEM GLO-30 instead of the AWS
+            Terrain Tiles. DEM_SOURCE "copernicus30" (default), "copernicus90",
+            "skadi" (the former "srtm", now named for what the tiles are:
+            "srtm" is refused with a hint), "tiles" (own URL or path pattern,
+            GeoTIFF or .hgt), "file", "none". GeoTIFF tiles and files are read
+            with rasterio, windowed and averaged down to DEM_MAX_PIXELS; a
+            raster in a projected system is warped to lon / lat; tiles are
+            merged (also with different pixel sizes; ocean tiles are filled
+            over the map and a margin of three pixels only); credit line of the maps
+            = the licence notice, wrapped to the width of the panel;
+            DEM_URL_TEMPLATE is now None = the URL of the source;
+            DEM_CACHE_DIR default "dem_cache" (was "srtm_cache"; tiles of the
+            old cache can be copied there).
+2026-11-22  Claude Sonnet 5.5 (Anthropic), later: example lines for the
+            Copernicus GLO-30 in the CONFIG block, the Usage and the readme
+            (cache, colour relief, offline, own tile names, one GeoTIFF).
+2026-11-22  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            CBAR_LENGTH, CBAR_WIDTH [cm] set the size of the colour bar (the
+            length with the extension triangles; the figure is laid out without
+            drawing and the bar made again until it has the size; CBAR_SHRINK
+            as before without them; CBAR_SHRINK is checked, 0 < s <= 1).
+            Profiles and lines are cut at the map box made smaller by
+            OVERLAY_CUT_MARGIN_KM (default 1 km; None = not cut): both ends of
+            a cut profile are inside the map, the end labels stand at the cut
+            ends, the swath is flat there, rings and ticks follow, the ticks
+            keep the distances of the whole profile (tables unchanged; message
+            with the km shown). End labels in the start / end keys,
+            start=(x, y, "A"), end=(x, y, "A'"); PROFILE_END_MARKER marks the
+            ends with a symbol. Tests on synthetic data only.
+2026-11-22  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            MAP_INCLUDE_PROFILES now defaults to False: the map box (MAP_EXTENT_MODE
+            "sites": sites + margin) is not enlarged by profiles that go beyond it;
+            they are cut at that box (OVERLAY_CUT_MARGIN_KM). True restores the
+            earlier behaviour (box large enough for the profiles).
 """
 from __future__ import annotations
 
@@ -216,16 +306,17 @@ import io
 import math
 import os
 import re
+import shutil
 import sys
 import inspect
 import urllib.error
+import urllib.parse
 import urllib.request
 import warnings
 import zipfile
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
-import rasterio
 
 # ---------------------------------------------------------------------------
 # py4mt environment: make the modules importable (femtic_misfit.py, femtic.py)
@@ -255,8 +346,12 @@ print(titstrng + "\n\n")
 # --- working directory and input ---
 # Every relative path below is taken from WORK_DIR (an absolute path, or one
 # that starts with ~, is used as given). None or "" = the current directory.
-WORK_DIR: Optional[str] = "./"
-RESULTS_PATH: str = "."               # run directory (searched for ITER_PATTERN) or a results file
+# WORK_DIR: Optional[str] = "./"
+# RESULTS_PATH: str = "."               # run directory (searched for ITER_PATTERN) or a results file
+WORK_DIR: Optional[str] = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_ens/"
+RESULTS_PATH: str = WORK_DIR              # run directory (searched for ITER_PATTERN) or a results file
+
+
 ITERATION: Union[str, int] = "best"   # "best" (smallest nRMS), "last", or a number
 ITER_PATTERN: str = "results_iter*.h5"
 TEMPLATES_DIR: str = "templates"      # sub-directory of WORK_DIR with site.dat
@@ -271,7 +366,7 @@ DATATYPES: Optional[Sequence[str]] = None   # None = all, or e.g. ["MT", "VTF"]
 # RESULTS_PATH holds no results file, but sub-directories do, they are the
 # members. RUN_PATHS names the members explicitly. With one member only, the
 # ensemble settings have no effect.
-RUN_PATHS: Optional[Sequence[str]] = None   # run directories / results files / globs, e.g. ["kra*/"]
+RUN_PATHS: Optional[Sequence[str]] =  ["kra*/"] # None   # run directories / results files / globs, e.g. ["kra*/"]
 ENS_STAT: str = "median"              # per site over the members: "mean", "median", "min", "max",
                                       # "std" (spread) or "pNN" (percentile, e.g. "p90")
 MEMBER_NRMS_MAX: Optional[float] = None   # members with a larger nRMS of the iteration are left out
@@ -305,61 +400,96 @@ SCALE_BAR: bool = True
 SCALE_BAR_KM: Optional[float] = None  # None = a round length of about 1/5 of the width
 
 # --- DEM ---
-DEM_SOURCE: str = "srtm"              # "srtm" (tiles; cache, download), "file" (DEM_FILE), "none"
-DEM_URL_TEMPLATE: str = ("https://s3.amazonaws.com/elevation-tiles-prod/skadi/"
-                         "{NS}{lat:02d}/{name}.hgt.gz")
+# The relief is the hillshade of a digital elevation model. DEM_SOURCE:
+#   "copernicus30"  Copernicus DEM GLO-30 (30 m, a surface model, heights above EGM2008): the
+#                   Cloud Optimized GeoTIFF tiles of the AWS open data bucket copernicus-dem-30m,
+#                   downloaded into DEM_CACHE_DIR and read with rasterio
+#   "copernicus90"  Copernicus DEM GLO-90 (90 m; bucket copernicus-dem-90m): large maps
+#   "skadi"         AWS Terrain Tiles (Mapzen): a composite of several DEMs in .hgt tiles
+#                   (no rasterio needed)
+#   "tiles"         tiles of your own: DEM_URL_TEMPLATE = URL or path pattern, GeoTIFF or .hgt
+#   "file"          one DEM file, DEM_FILE: GeoTIFF (rasterio), .npz (lon, lat, z) or one .hgt tile
+#   "none"          no relief
+# Examples for the Copernicus DEM GLO-30 (copy the lines to the settings below):
+#   DEM_SOURCE = "copernicus30"                      # the default: download once into DEM_CACHE_DIR
+#   DEM_CACHE_DIR = "/data/dem_cache"                # a cache shared by all runs and maps
+#   DEM_STYLE = "terrain"; DEM_CMAP = "gist_earth"   # colour + shading instead of the grey hillshade
+#   DEM_MAX_PIXELS = 2400                            # finer relief of a small map (default 1600)
+#   DEM_DOWNLOAD = False                             # offline: only the tiles that are in DEM_CACHE_DIR,
+#                                                    # e.g. Copernicus_DSM_COG_10_N65_00_W017_00_DEM.tif
+#   DEM_SOURCE = "tiles"
+#   DEM_URL_TEMPLATE = "/data/cop30/Copernicus_DSM_COG_10_{NS}{lat:02d}_00_{EW}{lon:03d}_00_DEM.tif"   # own folder / names
+#   DEM_SOURCE = "file"; DEM_FILE = "/data/krafla_cop30.tif"   # one GeoTIFF (e.g. cut out with gdal_translate)
+DEM_SOURCE: str = "copernicus30"
+DEM_URL_TEMPLATE: Optional[str] = None   # None = the tiles of DEM_SOURCE; else a mirror, or the pattern of "tiles":
+                                         # placeholders {name} N65W017, {NS}, {lat}, {EW}, {lon}; a path (relative: to WORK_DIR) is no download
 DEM_DOWNLOAD: bool = True             # False: use only the tiles in DEM_CACHE_DIR
-DEM_CACHE_DIR: str = "srtm_cache"     # tiles are kept here (give an absolute path to share it between runs)
+DEM_CACHE_DIR: str = "dem_cache"      # downloaded tiles are kept here (give an absolute path to share it between runs)
 DEM_FILE: Optional[str] = None        # "file": GeoTIFF (needs rasterio), .npz (lon, lat, z) or one .hgt tile
 DEM_TIMEOUT: float = 60.0             # [s] per tile
 DEM_MAX_TILES: int = 16               # more tiles than this are refused (too large a map)
 DEM_MAX_PIXELS: int = 1600            # the DEM is thinned out to at most this many pixels per side
 DEM_FILL_MISSING: Optional[float] = 0.0   # elevation of tiles the server does not have (ocean); None = no value
 DEM_STRICT: bool = False              # True: a failed download stops the script (else: map without relief)
-DEM_STYLE: str = "hillshade"          # "hillshade" (grey) or "terrain" (colour + shading, DEM_CMAP)
+DEM_STYLE: str = "terrain"          # "hillshade" (grey) or "terrain" (colour + shading, DEM_CMAP)
 DEM_CMAP: str = "gist_earth"
 HILLSHADE_AZIMUTH: float = 315.0
 HILLSHADE_ALTITUDE: float = 45.0
 HILLSHADE_VERT_EXAG: float = 1.0
 BASEMAP_CMAP: str = "Greys"           # "hillshade": colours of the shading
 BASEMAP_ALPHA: float = 0.9
-DEM_CREDIT: Optional[str] = "auto"    # text at the lower right of every map: "auto", None or text
+DEM_CREDIT: Optional[str] = None    # text at the lower right of every map: "auto", None or text
 
 # --- icons ---
-SITE_MARKER: str = "^"
+SITE_MARKER: str = "o"
 SITE_SIZE: float = 80.0               # [pt^2]
 SITE_EDGECOLOR: str = "black"
 SITE_LW: float = 0.8
 SITE_NODATA_EDGECOLOR: str = "0.35"   # open icons: sites without data in the selection
 SITE_LABELS: bool = False             # site names next to the icons
 LABEL_FONTSIZE: float = 6.0
-CMAP_NRMS: str = "RdBu_r"             # diverging colour map, centred on NRMS_REFERENCE
+CMAP_NRMS: str = "jet"            # diverging colour map, centred on NRMS_REFERENCE
+# CMAP_NRMS: str = "RdBu_r"             # diverging colour map, centred on NRMS_REFERENCE
 CMAP_SPREAD: str = "YlOrRd"           # ENS_STAT = "std": sequential colour map, linear scale from 0
 NRMS_REFERENCE: Optional[float] = 1.0   # target nRMS = centre colour; None = linear scale
-NRMS_VMIN: Optional[float] = None     # colour limits; None = from the data ("std": 0)
-NRMS_VMAX: Optional[float] = None
+NRMS_VMIN: Optional[float] = 0.6     # colour limits; None = from the data ("std": 0)
+NRMS_VMAX: Optional[float] = 1.8
 
 # --- profiles and polylines ---
 # Profile lines (cross-section lines) and other polylines / polygons (faults, coast
 # lines, caldera rims, ...) on the maps; lists of dicts, see the readme.
 #   profile: name, one of points | file | start + end | center + azimuth + length_km,
 #            coords, width_km (swath), ticks_km, tick_labels, labels, label, color, lw, ls
+#            start / end: (a, b) or (a, b, "A") = with the label ("marker") of that end; without
+#            it labels = ("A", "A'") or, if there is none, the two halves of the name "A-A'"
 #   line:    label, one of file | points | segments, coords, closed, fill, alpha,
 #            color, lw, ls, halo
 #   coords:  "lonlat" (default), "latlon", "utm" (easting, northing of the site.dat zone)
 #            or "model" (x, y in m of the FEMTIC model); GeoJSON and KML are always lon, lat
-PROFILES: Sequence[dict] = []         # e.g. [dict(name="A-A'", start=(-16.80, 65.68), end=(-16.70, 65.72), width_km=4.0, ticks_km=5.0)]
+# PROFILES: Sequence[dict] = []         # e.g. [dict(name="A-A'", start=(-16.80, 65.68, "A"), end=(-16.70, 65.72, "A'"), width_km=4.0, ticks_km=5.0)]
+#                                       # UTM: coords="utm", start=(405000, 7291800, "A"), end=(424000, 7287800, "A'")
+PROFILES: Sequence[dict] = [
+    dict(name="A-A'", start=(405000, 7291800, "A"), end=(424000, 7287800, "A'"), coords="utm", 
+         width_km=1.0,) # ticks_km=5.0)
+    ]                       
 LINES: Sequence[dict] = []            # e.g. [dict(label="Faults", file="gis/faults.txt", color="tab:red")]
 PROFILE_COLOR: str = "black"
 PROFILE_LW: float = 1.8
 PROFILE_FONTSIZE: float = 9.0         # end labels (the distance labels are 2 pt smaller)
 PROFILE_SWATH_ALPHA: float = 0.15     # shading of the swath (width_km of the profile)
 PROFILE_MARK_SITES: bool = True       # open circles around the sites in the swath
+PROFILE_END_MARKER: Optional[str] = None   # symbol ("o", "s", "D", "^", ...) at the two ends of every profile
+                                      # (the ends of the cut part, see OVERLAY_CUT_MARGIN_KM); None = none
 LINE_COLOR: str = "tab:green"
 LINE_LW: float = 1.2
 LINE_HALO: bool = True                # white outline under the lines
-MAP_INCLUDE_PROFILES: bool = True     # MAP_EXTENT_MODE "sites": the profiles are inside the map
+MAP_INCLUDE_PROFILES: bool = False    # MAP_EXTENT_MODE "sites": False = the map box does not depend on the profiles:
+                                      # what goes beyond it is cut at it (OVERLAY_CUT_MARGIN_KM); True = the box is
+                                      # made large enough for the profiles
 OVERLAY_STRICT: bool = False          # True: a profile / line that cannot be made stops the script
+OVERLAY_CUT_MARGIN_KM: Optional[float] = 1.0   # profiles and lines are cut at the map box, made smaller by this
+                                      # margin [km] on every side, so that the ends of a cut profile (and its
+                                      # labels) are inside the map; None = not cut (the map edge clips them)
 LEGEND_LOC: Optional[str] = "upper left"   # legend (no-data icon, labelled profiles and lines); None = none
 
 # --- figures and output ---
@@ -369,13 +499,15 @@ PANEL_COLS: int = 2                   # panels per row
 PANEL_SIZE: Tuple[float, float] = (4.8, 4.4)   # [inch] of one panel
 TITLE: Optional[str] = "auto"         # "auto", None / "" (none) or text with {iter}, {nrms}, {M}, {stat}
 CBAR_LOCATION: Optional[str] = None   # None / "right", "left", "top", "bottom"
-CBAR_SHRINK: float = 0.8
+CBAR_SHRINK: float = 0.7              # length of the colour bar: fraction (0 .. 1] of the panels along it
+CBAR_LENGTH: Optional[float] = None   # [cm] length of the colour bar; None = CBAR_SHRINK x the panels
+CBAR_WIDTH: Optional[float] = None    # [cm] width (thickness); None = 1/20 of the length
 TICK_FONTSIZE: float = 8.0
 DPI: int = 200
 SHOW: bool = False
 OUTPUT_DIR: str = "sitemap"           # relative to WORK_DIR
 OUTPUT_BASENAME: str = "femtic_sitemap"
-OUTPUT_FORMATS: Sequence[str] = ["png"]
+OUTPUT_FORMATS: Sequence[str] = ["png", "pdf"]
 
 # ---------------------------------------------------------------------------
 # End of the configuration
@@ -387,7 +519,27 @@ _TAG = "femtic_plot_sitemap:"
 _EARTH_RADIUS_M = 6371008.8
 _KM_PER_DEG = _EARTH_RADIUS_M * math.pi / 180.0 / 1000.0     # one degree of latitude [km]
 _HGT_EXTENSIONS = (".hgt", ".hgt.gz", ".hgt.zip", ".SRTMGL1.hgt.zip", ".SRTMGL3.hgt.zip")
-_AWS_SKADI_PREFIX = "https://s3.amazonaws.com/elevation-tiles-prod/skadi/"
+_RASTER_EXTENSIONS = (".tif", ".tiff")
+_DEM_SOURCES = ("copernicus30", "copernicus90", "skadi", "tiles", "file", "none")
+_COP_NOTICE = ("produced using Copernicus WorldDEM-{n} \u00a9 DLR e.V. 2010-2014 and \u00a9 Airbus "
+               "Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union "
+               "and ESA; all rights reserved")
+# tiles of the DEM_SOURCEs: URL pattern ({name}, {NS}, {lat}, {EW}, {lon}) and the credit line of the maps
+_DEM_PRESETS: Dict[str, dict] = {
+    "copernicus30": dict(
+        template=("https://copernicus-dem-30m.s3.amazonaws.com/"
+                  "Copernicus_DSM_COG_10_{NS}{lat:02d}_00_{EW}{lon:03d}_00_DEM/"
+                  "Copernicus_DSM_COG_10_{NS}{lat:02d}_00_{EW}{lon:03d}_00_DEM.tif"),
+        credit="Relief: " + _COP_NOTICE.format(n=30)),
+    "copernicus90": dict(
+        template=("https://copernicus-dem-90m.s3.amazonaws.com/"
+                  "Copernicus_DSM_COG_30_{NS}{lat:02d}_00_{EW}{lon:03d}_00_DEM/"
+                  "Copernicus_DSM_COG_30_{NS}{lat:02d}_00_{EW}{lon:03d}_00_DEM.tif"),
+        credit="Relief: " + _COP_NOTICE.format(n=90)),
+    "skadi": dict(
+        template="https://s3.amazonaws.com/elevation-tiles-prod/skadi/{NS}{lat:02d}/{name}.hgt.gz",
+        credit="Relief: AWS Terrain Tiles (Mapzen), a composite of several elevation data sets"),
+}
 _PAGE_BY = ("band", "component", "none", "all")
 _CBAR_LOCATIONS = (None, "right", "left", "top", "bottom")
 
@@ -428,6 +580,8 @@ def settings(work_dir: Optional[str] = None, **overrides: Any) -> Dict[str, Any]
     for key in ("DEM_FILE",):
         if cfg[key]:
             cfg[key] = anchor(cfg[key], wd)
+    if cfg["DEM_URL_TEMPLATE"] and not is_url(cfg["DEM_URL_TEMPLATE"]):
+        cfg["DEM_URL_TEMPLATE"] = anchor(cfg["DEM_URL_TEMPLATE"], wd)        # path pattern
     if cfg["SITE_DAT"] and cfg["SITE_DAT"] != "auto":
         cfg["SITE_DAT"] = anchor(cfg["SITE_DAT"], wd)
     runs = cfg["RUN_PATHS"]
@@ -442,7 +596,7 @@ def settings(work_dir: Optional[str] = None, **overrides: Any) -> Dict[str, Any]
                     else (dict(it) if isinstance(it, dict) else it) for it in items]
     return cfg
 
-3
+
 def check_settings(cfg: Dict[str, Any]) -> None:
     """Raise ValueError for a setting that cannot work (before any data is read)."""
     def one_of(key: str, allowed: Sequence[Any]) -> None:
@@ -452,10 +606,34 @@ def check_settings(cfg: Dict[str, Any]) -> None:
     one_of("BAND_AXIS", ("period", "frequency"))
     one_of("MAP_EXTENT_MODE", ("sites", "box", "center"))
     one_of("DISPLAY_COORDS", ("latlon", "km"))
-    one_of("DEM_SOURCE", ("srtm", "file", "none"))
+    if cfg["DEM_SOURCE"] == "srtm":
+        raise ValueError("DEM_SOURCE = 'srtm' does not exist any more: use 'copernicus30' (the "
+                         "default), 'copernicus90', or 'skadi' (the AWS Terrain Tiles that 'srtm' "
+                         "meant)")
+    one_of("DEM_SOURCE", _DEM_SOURCES)
     one_of("DEM_STYLE", ("hillshade", "terrain"))
     one_of("PAGE_BY", _PAGE_BY)
     one_of("CBAR_LOCATION", _CBAR_LOCATIONS)
+    for key in ("CBAR_LENGTH", "CBAR_WIDTH"):
+        v = cfg[key]
+        if v is not None and not (isinstance(v, (int, float, np.integer, np.floating))
+                                  and not isinstance(v, bool) and np.isfinite(v) and v > 0):
+            raise ValueError(f"{key} = {v!r}: must be None or a number > 0 (cm)")
+    em = cfg["PROFILE_END_MARKER"]
+    if em is not None:
+        try:
+            from matplotlib.markers import MarkerStyle
+            MarkerStyle(em)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"PROFILE_END_MARKER = {em!r} is no matplotlib marker: {exc}") from None
+    mg = cfg["OVERLAY_CUT_MARGIN_KM"]
+    if mg is not None and not (isinstance(mg, (int, float, np.integer, np.floating))
+                               and not isinstance(mg, bool) and np.isfinite(mg) and mg >= 0):
+        raise ValueError(f"OVERLAY_CUT_MARGIN_KM = {mg!r}: must be None or a number >= 0 (km)")
+    sh = cfg["CBAR_SHRINK"]
+    if not (isinstance(sh, (int, float, np.integer, np.floating)) and not isinstance(sh, bool)
+            and 0.0 < sh <= 1.0):
+        raise ValueError(f"CBAR_SHRINK = {sh!r}: must be a number in (0, 1]")
     if cfg["MAP_EXTENT_MODE"] == "box":
         b = cfg["MAP_BOX"]
         if b is None or len(b) != 4 or not (b[0] < b[1] and b[2] < b[3]):
@@ -469,6 +647,10 @@ def check_settings(cfg: Dict[str, Any]) -> None:
             raise ValueError("MAP_SIZE_KM must be (width, height) in km, both > 0")
     if cfg["DEM_SOURCE"] == "file" and not cfg["DEM_FILE"]:
         raise ValueError("DEM_SOURCE = \"file\" needs DEM_FILE")
+    if cfg["DEM_SOURCE"] == "tiles" and not cfg["DEM_URL_TEMPLATE"]:
+        raise ValueError("DEM_SOURCE = \"tiles\" needs DEM_URL_TEMPLATE")
+    if cfg["DEM_SOURCE"] in ("copernicus30", "copernicus90", "skadi", "tiles"):
+        tile_kind(dem_template(cfg["DEM_SOURCE"], cfg["DEM_URL_TEMPLATE"]))      # ValueError
     if int(cfg["PANEL_COLS"]) < 1:
         raise ValueError("PANEL_COLS must be >= 1")
     if int(cfg["DEM_MAX_PIXELS"]) < 2:
@@ -1173,12 +1355,32 @@ def mosaic_tiles(tiles: Dict[Tuple[int, int], Optional[np.ndarray]], *,
     return dict(lon=lon, lat=lat, z=z)
 
 
-def load_dem_srtm(lon_min: float, lon_max: float, lat_min: float, lat_max: float, *,
-                  cache_dir: str, template: str, download: bool = True, timeout: float = 60.0,
-                  max_tiles: int = 16, fill: Optional[float] = 0.0,
-                  strict: bool = False) -> Optional[dict]:
+def _tile_report(status: Dict[Tuple[int, int], str], *, fill: Optional[float],
+                 strict: bool) -> List[Tuple[int, int]]:
     """
-    DEM of the box from SRTM-format tiles (see fetch_tile, mosaic_tiles). None if
+    Messages on the tiles that could not be had (warning, or RuntimeError if `strict`), and
+    on the ones that the server does not have; returns these (the open ocean).
+    """
+    bad = [k for k, st in status.items() if st.startswith("failed") or st == "absent"]
+    if bad:
+        txt = ("DEM tiles not available: "
+               + ", ".join(f"{tile_name(*k)} ({status[k]})" for k in bad))
+        if strict:
+            raise RuntimeError(txt)
+        _say("WARNING: " + txt + " -- no relief there.")
+    sea = [k for k, st in status.items() if st == "missing"]
+    if sea:
+        _say(f"{len(sea)} tile(s) not on the server (ocean?): "
+             + (f"set to {fill:g} m." if fill is not None else "no value."))
+    return sea
+
+
+def load_dem_hgt(lon_min: float, lon_max: float, lat_min: float, lat_max: float, *,
+                 cache_dir: str, template: str, download: bool = True, timeout: float = 60.0,
+                 max_tiles: int = 16, fill: Optional[float] = 0.0,
+                 strict: bool = False) -> Optional[dict]:
+    """
+    DEM of the box from tiles in the .hgt format (see fetch_tile, mosaic_tiles). None if
     no tile could be had. strict: a tile that failed to download (or is absent
     with download off) is an error, else a message and NaN there.
     """
@@ -1193,18 +1395,254 @@ def load_dem_srtm(lon_min: float, lon_max: float, lat_min: float, lat_max: float
                            download=download, timeout=timeout)
         got[(la, lo)], status[(la, lo)] = z, st
         _say(f"DEM tile {tile_name(la, lo)}: {st}.")
-    bad = [k for k, st in status.items() if st.startswith("failed") or st == "absent"]
-    if bad:
-        txt = ("DEM tiles not available: "
-               + ", ".join(f"{tile_name(*k)} ({status[k]})" for k in bad))
-        if strict:
-            raise RuntimeError(txt)
-        _say("WARNING: " + txt + " -- no relief there.")
-    sea = [k for k, st in status.items() if st == "missing"]
-    if sea:
-        _say(f"{len(sea)} tile(s) not on the server (ocean?): "
-             + (f"set to {fill:g} m." if fill is not None else "no value."))
+    sea = _tile_report(status, fill=fill, strict=strict)
     return mosaic_tiles(got, fill=fill, sea=sea)
+
+
+# --- DEM tiles as GeoTIFF files (rasterio) ---
+def is_url(text: str) -> bool:
+    """True for an http:// or https:// address (else: a path)."""
+    return str(text).lower().startswith(("http://", "https://"))
+
+
+def dem_template(source: str, template: Optional[str]) -> str:
+    """Tile pattern of the DEM source: `template` if given, else that of the preset of `source`."""
+    if template:
+        return str(template)
+    if source in _DEM_PRESETS:
+        return _DEM_PRESETS[source]["template"]
+    raise ValueError(f"DEM_SOURCE = {source!r} needs DEM_URL_TEMPLATE")
+
+
+def tile_kind(template: str) -> str:
+    """
+    "raster" (GeoTIFF tiles, read with rasterio) or "hgt" (.hgt, .hgt.gz, .hgt.zip tiles),
+    from the end of the tile name of `template`. ValueError for an unusable pattern
+    (a placeholder that does not exist, another file type).
+    """
+    try:
+        name = tile_url(template, 65, -17)
+    except (KeyError, IndexError, ValueError) as exc:
+        raise ValueError(f"DEM_URL_TEMPLATE {template!r}: {exc!r}; the placeholders are {{name}}, "
+                         "{NS}, {lat}, {EW}, {lon}") from exc
+    path = urllib.parse.urlsplit(name).path if is_url(name) else name
+    low = path.lower()
+    if low.endswith(_RASTER_EXTENSIONS):
+        return "raster"
+    if low.endswith((".hgt", ".hgt.gz", ".hgt.zip")):
+        return "hgt"
+    raise ValueError(f"DEM_URL_TEMPLATE {template!r}: the tiles have to be GeoTIFF (.tif, .tiff) "
+                     "or .hgt (.hgt, .hgt.gz, .hgt.zip) files")
+
+
+def _remove(path: str) -> None:
+    try:
+        os.remove(path)
+    except OSError:
+        pass
+
+
+def fetch_raster_tile(lat0: int, lon0: int, *, cache_dir: str, template: str, download: bool,
+                      timeout: float, refresh: bool = False) -> Tuple[Optional[str], str]:
+    """
+    The file of one raster tile. A path pattern is used as it is; a URL is looked up in
+    `cache_dir` (the file name is the last part of the URL), else downloaded into it.
+    Returns (path or None, status); status is "local", "cache", "downloaded", "missing"
+    (HTTP 403 / 404: the server has no such tile, as for the open ocean), "absent" (not in
+    the cache and download off, or a local file that is not there) or "failed (reason)".
+    `refresh`: ignore a file in the cache and load it again.
+    """
+    url = tile_url(template, lat0, lon0)
+    if not is_url(url):
+        path = os.path.expanduser(url)
+        return (path, "local") if os.path.isfile(path) else (None, "absent")
+    dest = os.path.join(cache_dir, os.path.basename(urllib.parse.urlsplit(url).path))
+    if not refresh and os.path.isfile(dest):
+        return dest, "cache"
+    if not download:
+        return None, "absent"
+    req = urllib.request.Request(url, headers={"User-Agent": "py4mt-femtic_plot_sitemap"})
+    try:
+        os.makedirs(cache_dir, exist_ok=True)
+        with urllib.request.urlopen(req, timeout=float(timeout)) as resp:
+            with open(dest + ".part", "wb") as fh:
+                shutil.copyfileobj(resp, fh, 1 << 20)
+        os.replace(dest + ".part", dest)
+    except urllib.error.HTTPError as exc:
+        _remove(dest + ".part")
+        return None, ("missing" if exc.code in (403, 404) else f"failed (HTTP {exc.code})")
+    except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
+        _remove(dest + ".part")
+        return None, f"failed ({exc})"
+    return dest, "downloaded"
+
+
+def _raster_errors() -> tuple:
+    """The exceptions of reading a damaged or unusable raster file."""
+    errs: tuple = (OSError, ValueError, RuntimeError)
+    try:
+        from rasterio.errors import RasterioError
+        errs += (RasterioError,)
+    except ImportError:
+        pass
+    return errs
+
+
+def read_raster_window(path: str, lon_min: float, lon_max: float, lat_min: float,
+                       lat_max: float, *, max_pixels: Optional[int] = None) -> Optional[dict]:
+    """
+    The part of a GeoTIFF that covers the box (plus a margin of two output pixels), read with
+    rasterio: dict(lon, lat, z) as mosaic_tiles (pixel centres; lon increasing, lat
+    decreasing; NaN = no data). The raster has to be north-up; a raster in a projected
+    coordinate system is warped to lon / lat (WGS 84) first. With `max_pixels` the window is
+    averaged down to at most about that many pixels per side. None if the raster does not
+    cover the box. ImportError without rasterio.
+    """
+    try:
+        import rasterio
+        from rasterio.enums import Resampling
+        from rasterio.windows import Window
+    except ImportError as exc:
+        raise ImportError("reading a GeoTIFF needs rasterio (not installed): install it (conda "
+                          "install -c conda-forge rasterio), or use DEM_SOURCE = \"skadi\" or an "
+                          ".npz file") from exc
+    with contextlib.ExitStack() as stack:
+        ds = stack.enter_context(rasterio.open(path))
+        if ds.crs is not None and not ds.crs.is_geographic:
+            from rasterio.vrt import WarpedVRT
+            ds = stack.enter_context(WarpedVRT(ds, crs="EPSG:4326", resampling=Resampling.bilinear))
+        tr = ds.transform
+        if tr.b != 0.0 or tr.d != 0.0 or not (tr.a > 0.0 > tr.e):
+            raise ValueError(f"{path}: the raster is rotated or not north-up")
+        width, height = int(ds.width), int(ds.height)
+
+        def span(lo: float, hi: float, origin: float, step: float, n: int) -> Tuple[int, int]:
+            a, b = sorted(((lo - origin) / step, (hi - origin) / step))
+            return max(int(math.floor(a)), 0), min(int(math.ceil(b)), n)
+
+        c0, c1 = span(lon_min, lon_max, tr.c, tr.a, width)
+        r0, r1 = span(lat_max, lat_min, tr.f, tr.e, height)
+        if c1 - c0 < 1 or r1 - r0 < 1:
+            return None
+        step = 1
+        if max_pixels:
+            step = max(1, int(math.ceil(max(c1 - c0, r1 - r0) / float(max_pixels))))
+        c0, c1 = max(c0 - 2 * step, 0), min(c1 + 2 * step, width)
+        r0, r1 = max(r0 - 2 * step, 0), min(r1 + 2 * step, height)
+        ncol, nrow = c1 - c0, r1 - r0
+        out_w, out_h = int(math.ceil(ncol / step)), int(math.ceil(nrow / step))
+        if out_w < 2 or out_h < 2:
+            return None
+        z = np.array(ds.read(1, window=Window(c0, r0, ncol, nrow), out_shape=(out_h, out_w),
+                             resampling=Resampling.average if step > 1 else Resampling.nearest),
+                     dtype=np.float32)
+        nodata = ds.nodata
+        if nodata is not None and np.isfinite(nodata):
+            z[z == np.float32(nodata)] = np.nan
+    dx, dy = tr.a * ncol / out_w, tr.e * nrow / out_h
+    lon = tr.c + c0 * tr.a + dx * (np.arange(out_w) + 0.5)
+    lat = tr.f + r0 * tr.e + dy * (np.arange(out_h) + 0.5)
+    return dict(lon=lon, lat=lat, z=z)
+
+
+def merge_dems(parts: Sequence[dict], *, fill_boxes: Sequence[Tuple[float, float, float, float]] = (),
+               fill: Optional[float] = 0.0) -> Optional[dict]:
+    """
+    One DEM from windows dict(lon, lat, z) of the same area (pixel centres, regular spacing;
+    the first valid value wins where they overlap). The grid has the coarsest spacing of the
+    windows (they are sampled by the nearest pixel). `fill_boxes` (lon_min, lon_max, lat_min,
+    lat_max) are given the value `fill` where the windows have no value (None = NaN); they
+    widen the grid in whole pixels, so that the pixels of the windows stay where they are.
+    None without a window.
+    """
+    if not parts:
+        return None
+    ext = [dem_extent(p) for p in parts]
+    step = [((p["lon"][-1] - p["lon"][0]) / (p["lon"].size - 1),
+             (p["lat"][0] - p["lat"][-1]) / (p["lat"].size - 1)) for p in parts]
+    dlon = max(st[0] for st in step)
+    dlat = max(st[1] for st in step)
+    boxes = [tuple(float(v) for v in b) for b in fill_boxes]
+    west, east = min(e[0] for e in ext), max(e[1] for e in ext)
+    south, north = min(e[2] for e in ext), max(e[3] for e in ext)
+    for b in boxes:                  # a box widens the grid in whole pixels (the pixels of the windows stay)
+        west -= dlon * max(0, math.ceil((west - b[0]) / dlon - 1e-6))
+        east += dlon * max(0, math.ceil((b[1] - east) / dlon - 1e-6))
+        south -= dlat * max(0, math.ceil((south - b[2]) / dlat - 1e-6))
+        north += dlat * max(0, math.ceil((b[3] - north) / dlat - 1e-6))
+    nx = max(2, int(round((east - west) / dlon)))
+    ny = max(2, int(round((north - south) / dlat)))
+    lon = west + dlon * (np.arange(nx) + 0.5)
+    lat = north - dlat * (np.arange(ny) + 0.5)
+    z = np.full((ny, nx), np.nan, dtype=np.float32)
+    for p, (w, e, s_, n), (px, py) in zip(parts, ext, step):
+        jj = np.nonzero((lon >= w) & (lon < e))[0]
+        ii = np.nonzero((lat > s_) & (lat <= n))[0]
+        if jj.size == 0 or ii.size == 0:
+            continue
+        sj = np.clip(np.floor((lon[jj] - w) / px).astype(int), 0, p["lon"].size - 1)
+        si = np.clip(np.floor((n - lat[ii]) / py).astype(int), 0, p["lat"].size - 1)
+        cur = z[np.ix_(ii, jj)]
+        z[np.ix_(ii, jj)] = np.where(np.isfinite(cur), cur, p["z"][np.ix_(si, sj)])
+    if fill is not None:
+        for w, e, s_, n in boxes:
+            jj = np.nonzero((lon >= w) & (lon < e))[0]
+            ii = np.nonzero((lat > s_) & (lat <= n))[0]
+            if jj.size and ii.size:
+                cur = z[np.ix_(ii, jj)]
+                z[np.ix_(ii, jj)] = np.where(np.isfinite(cur), cur, np.float32(fill))
+    return dict(lon=lon, lat=lat, z=z)
+
+
+def load_dem_raster(lon_min: float, lon_max: float, lat_min: float, lat_max: float, *,
+                    cache_dir: str, template: str, download: bool = True, timeout: float = 60.0,
+                    max_tiles: int = 16, fill: Optional[float] = 0.0, strict: bool = False,
+                    max_pixels: Optional[int] = None) -> Optional[dict]:
+    """
+    DEM of the box from GeoTIFF tiles (see fetch_raster_tile, read_raster_window,
+    merge_dems); a tile that the server does not have (the ocean) is set to `fill`. None if
+    no tile could be had. strict: a tile that failed to download or to read (or is absent) is
+    an error, else a message and NaN there.
+    """
+    tiles = tiles_for_extent(lon_min, lon_max, lat_min, lat_max)
+    if len(tiles) > int(max_tiles):
+        raise ValueError(f"the map needs {len(tiles)} DEM tiles (DEM_MAX_TILES = {int(max_tiles)}); "
+                         "make the map smaller or raise DEM_MAX_TILES")
+    errs = _raster_errors()
+    parts: List[dict] = []
+    status: Dict[Tuple[int, int], str] = {}
+    for la, lo in tiles:
+        kw = dict(cache_dir=cache_dir, template=template, download=download, timeout=timeout)
+        path, st = fetch_raster_tile(la, lo, **kw)
+        retry = path is not None and st == "cache" and download
+        while path is not None:
+            try:
+                win = read_raster_window(path, lon_min, lon_max, lat_min, lat_max,
+                                         max_pixels=max_pixels)
+            except errs as exc:
+                if retry:
+                    _say(f"WARNING: cannot read {path} ({exc}); loading it again.")
+                    retry = False
+                    path, st = fetch_raster_tile(la, lo, refresh=True, **kw)
+                    continue
+                path, st = None, f"failed (cannot read {path}: {exc})"
+                break
+            if win is not None:
+                parts.append(win)
+            break
+        status[(la, lo)] = st
+        _say(f"DEM tile {tile_name(la, lo)}: {st}.")
+    sea = _tile_report(status, fill=fill, strict=strict)
+    boxes = [(lo, lo + 1.0, la, la + 1.0) for la, lo in sea]
+    if not parts:
+        return None
+    if boxes:                          # no larger than the map and the margin of the windows (< 3 pixels)
+        pad_x = 3.0 * max((p["lon"][-1] - p["lon"][0]) / (p["lon"].size - 1) for p in parts)
+        pad_y = 3.0 * max((p["lat"][0] - p["lat"][-1]) / (p["lat"].size - 1) for p in parts)
+        boxes = [(max(b[0], lon_min - pad_x), min(b[1], lon_max + pad_x),
+                  max(b[2], lat_min - pad_y), min(b[3], lat_max + pad_y)) for b in boxes]
+        boxes = [b for b in boxes if b[0] < b[1] and b[2] < b[3]]
+    return merge_dems(parts, fill_boxes=boxes, fill=fill)
 
 
 def _tile_corner(path: str) -> Tuple[int, int]:
@@ -1231,35 +1669,25 @@ def _orient(lon: np.ndarray, lat: np.ndarray, z: np.ndarray) -> dict:
     return dict(lon=lon, lat=lat, z=np.ascontiguousarray(z))
 
 
-def load_dem_file(path: str) -> dict:
+def load_dem_file(path: str, box: Optional[Tuple[float, float, float, float]] = None,
+                  max_pixels: Optional[int] = None) -> dict:
     """
     DEM from a file: .npz (arrays lon, lat, z with z[lat, lon]), GeoTIFF (.tif /
-    .tiff; needs rasterio; north-up, geographic coordinates) or one SRTM tile
-    (.hgt, .hgt.gz, .hgt.zip, named like N37W105...). Returns dict(lon, lat, z)
+    .tiff; needs rasterio; only the part inside `box` = (lon_min, lon_max, lat_min, lat_max)
+    is read, averaged down to about `max_pixels` per side; see read_raster_window) or one
+    .hgt tile (.hgt, .hgt.gz, .hgt.zip, named like N37W105...). Returns dict(lon, lat, z)
     as mosaic_tiles does.
     """
     low = path.lower()
     if low.endswith(".npz"):
         with np.load(path) as d:
             return _orient(d["lon"], d["lat"], d["z"])
-    if low.endswith((".tif", ".tiff")):
-        try:
-            import rasterio
-        except ImportError as exc:
-            raise ImportError("reading a GeoTIFF needs rasterio (not installed); use an .npz "
-                              "file, SRTM tiles, or DEM_SOURCE = \"srtm\"") from exc
-        with rasterio.open(path) as src:
-            z = src.read(1).astype(np.float32)
-            tr = src.transform
-            if src.nodata is not None:
-                z[z == np.float32(src.nodata)] = np.nan
-            if src.crs is not None and not src.crs.is_geographic:
-                raise ValueError(f"{path}: the coordinates are not geographic (lon / lat)")
-            if tr.b != 0.0 or tr.d != 0.0:
-                raise ValueError(f"{path}: rotated raster")
-            lon = tr.c + tr.a * (np.arange(z.shape[1]) + 0.5)
-            lat = tr.f + tr.e * (np.arange(z.shape[0]) + 0.5)
-        return _orient(lon, lat, z)
+    if low.endswith(_RASTER_EXTENSIONS):
+        b = (-180.0, 180.0, -90.0, 90.0) if box is None else box
+        dem = read_raster_window(path, b[0], b[1], b[2], b[3], max_pixels=max_pixels)
+        if dem is None:
+            raise ValueError(f"{path}: the raster does not cover the map")
+        return dem
     if low.endswith((".hgt", ".hgt.gz", ".hgt.zip")):
         la, lo = _tile_corner(path)
         dem = mosaic_tiles({(la, lo): read_hgt_file(path)})
@@ -1758,6 +2186,18 @@ def _read_parts(spec: dict, geo: dict) -> List[dict]:
     return out
 
 
+def _end_point(p: Any, what: str) -> Tuple[Tuple[float, float], Optional[str]]:
+    """((a, b), label) of an end point of a profile: (a, b), or (a, b, "A") with the label of that
+    end (a third entry that is no text is ignored). OverlayError for anything else."""
+    try:
+        label = None
+        if len(p) >= 3 and isinstance(p[2], str) and p[2].strip():
+            label = p[2].strip()
+        return (float(p[0]), float(p[1])), label
+    except (TypeError, ValueError, IndexError) as exc:
+        raise OverlayError(f"{what}: (a, b) or (a, b, \"label\") is needed") from exc
+
+
 def default_end_labels(name: str) -> Tuple[str, str]:
     """End labels of a profile from its name: "A-A'" -> ("A", "A'"), "P1" -> ("P1", "P1'")."""
     m = re.match(r"^\s*([^-]+?)\s*-\s*([^-]+?)\s*$", str(name))
@@ -1773,6 +2213,7 @@ def prepare_profile(spec: dict, geo: dict, index: int = 0) -> dict:
     """
     name = str(spec.get("name") or f"P{index + 1}")
     coords = spec.get("coords", "lonlat")
+    end_labels: Tuple[Optional[str], Optional[str]] = (None, None)
     try:
         if "points" in spec:
             a = _as_points(spec["points"], "points")
@@ -1786,7 +2227,9 @@ def prepare_profile(spec: dict, geo: dict, index: int = 0) -> dict:
             lon, lat = parts[0]["lon"], parts[0]["lat"]
             source = str(spec["file"])
         elif "start" in spec:
-            a = _as_points([spec["start"], spec["end"]], "start / end")
+            (p0, l0), (p1, l1) = _end_point(spec["start"], "start"), _end_point(spec["end"], "end")
+            a = _as_points([p0, p1], "start / end")
+            end_labels = (l0, l1)
             lon, lat = to_lonlat(a[:, 0], a[:, 1], coords, geo)
             source = "start, end"
         else:
@@ -1818,10 +2261,9 @@ def prepare_profile(spec: dict, geo: dict, index: int = 0) -> dict:
     lab = spec.get("labels")
     if lab is False:
         labels = None
-    elif lab is None:
-        labels = default_end_labels(name)
-    else:
-        labels = (str(lab[0]), str(lab[1]))
+    else:                                  # a label in start / end, else labels, else from the name
+        base = default_end_labels(name) if lab is None else (str(lab[0]), str(lab[1]))
+        labels = (end_labels[0] or base[0], end_labels[1] or base[1])
     prof = dict(kind="profile", name=name, source=source, labels=labels, lon=lon, lat=lat,
                 x=x, y=y, lon0=lon0, lat0=lat0, cum=cum, length=float(cum[-1]), width=width,
                 ticks_km=ticks, tick_labels=bool(spec.get("tick_labels", True)),
@@ -2113,12 +2555,216 @@ def _overlay_style(item: dict, cfg: Dict[str, Any]) -> Tuple[str, float]:
             float(item.get("lw") or cfg.get("LINE_LW", 1.2)))
 
 
-def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, Any]) -> None:
+def clip_polyline(x: Any, y: Any, box: Sequence[float], cum: Optional[Any] = None) -> List[dict]:
+    """
+    The parts of the polyline (x, y) inside the rectangle box = (xa, xb, ya, yb)
+    (edges included), as a list of dict(x, y, s0, s1): the vertices of the part
+    and the distance along the polyline (in the units of x and y, or `cum`, the
+    cumulative lengths of the vertices) at its first and last point. A polyline
+    that leaves and enters again gives several parts; a part that touches the
+    rectangle in a point is dropped. Every segment is clipped with the Liang-
+    Barsky algorithm, the clipped segments that follow each other are joined.
+    """
+    xa, xb, ya, yb = (float(v) for v in box)
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+    cum = (np.r_[0.0, np.cumsum(np.hypot(np.diff(x), np.diff(y)))] if cum is None
+           else np.asarray(cum, float))
+    done: List[dict] = []
+    cur: Optional[List[Tuple[float, float, float]]] = None
+
+    def close() -> None:
+        if cur is not None and len(cur) >= 2 and cur[-1][2] - cur[0][2] > 1e-9:
+            a = np.array(cur)
+            done.append(dict(x=a[:, 0], y=a[:, 1], s0=float(a[0, 2]), s1=float(a[-1, 2])))
+
+    for i in range(x.size - 1):
+        x0, y0, dx, dy = x[i], y[i], x[i + 1] - x[i], y[i + 1] - y[i]
+        t0, t1, ok = 0.0, 1.0, True
+        for p, q in ((-dx, x0 - xa), (dx, xb - x0), (-dy, y0 - ya), (dy, yb - y0)):
+            if p == 0.0:
+                if q < 0.0:
+                    ok = False
+                    break
+                continue
+            r = q / p
+            if p < 0.0:
+                t0 = max(t0, r)
+            else:
+                t1 = min(t1, r)
+            if t0 > t1:
+                ok = False
+                break
+        if not ok:
+            close()
+            cur = None
+            continue
+        ln = cum[i + 1] - cum[i]
+        a = (x0 + t0 * dx, y0 + t0 * dy, cum[i] + t0 * ln)
+        b = (x0 + t1 * dx, y0 + t1 * dy, cum[i] + t1 * ln)
+        if cur is None or t0 != 0.0:                      # a new part (else: goes on from the vertex)
+            close()
+            cur = [a]
+        if abs(b[2] - cur[-1][2]) > 1e-12:                # no repeated points
+            cur.append(b)
+        if t1 < 1.0:                                      # leaves the rectangle in this segment
+            close()
+            cur = None
+    close()
+    return done
+
+
+def clip_polygon(x: Any, y: Any, box: Sequence[float]) -> Tuple[np.ndarray, np.ndarray]:
+    """The polygon (x, y) cut at the rectangle box = (xa, xb, ya, yb) (Sutherland-Hodgman);
+    empty arrays if nothing is left."""
+    xa, xb, ya, yb = (float(v) for v in box)
+    pts = list(zip(np.asarray(x, float), np.asarray(y, float)))
+    edges = ((lambda p: p[0] >= xa, lambda a, b: (xa, a[1] + (b[1] - a[1]) * (xa - a[0]) / (b[0] - a[0]))),
+             (lambda p: p[0] <= xb, lambda a, b: (xb, a[1] + (b[1] - a[1]) * (xb - a[0]) / (b[0] - a[0]))),
+             (lambda p: p[1] >= ya, lambda a, b: (a[0] + (b[0] - a[0]) * (ya - a[1]) / (b[1] - a[1]), ya)),
+             (lambda p: p[1] <= yb, lambda a, b: (a[0] + (b[0] - a[0]) * (yb - a[1]) / (b[1] - a[1]), yb)))
+    for inside, cross in edges:
+        if not pts:
+            break
+        out = []
+        prev = pts[-1]
+        for cur in pts:
+            if inside(cur):
+                if not inside(prev):
+                    out.append(cross(prev, cur))
+                out.append(cur)
+            elif inside(prev):
+                out.append(cross(prev, cur))
+            prev = cur
+        pts = out
+    if len(pts) < 3:
+        return np.empty(0), np.empty(0)
+    a = np.array(pts, float)
+    return a[:, 0], a[:, 1]
+
+
+def cut_box_lonlat(bbox: Sequence[float], margin_km: float) -> Tuple[float, float, float, float]:
+    """(lon_min, lon_max, lat_min, lat_max) of the map `bbox` made smaller by `margin_km` on every
+    side. OverlayError if the margin leaves nothing."""
+    dlat = float(margin_km) / _KM_PER_DEG
+    dlon = float(margin_km) / (_KM_PER_DEG * math.cos(math.radians(0.5 * (bbox[2] + bbox[3]))))
+    box = (bbox[0] + dlon, bbox[1] - dlon, bbox[2] + dlat, bbox[3] - dlat)
+    if not (box[0] < box[1] and box[2] < box[3]):
+        raise OverlayError(f"OVERLAY_CUT_MARGIN_KM = {margin_km:g} km is larger than the map allows")
+    return box
+
+
+def cut_profile(prof: dict, bbox: Optional[Sequence[float]], margin_km: Optional[float]) -> dict:
+    """
+    The profile `prof` cut at the map `bbox` (lon_min, lon_max, lat_min, lat_max) made smaller by
+    `margin_km` on every side: a copy with `pieces` = [dict(x, y, lon, lat, s0, s1)] (the parts
+    inside, x, y in km as prof["x"], s0 / s1 the distance from the start of the profile at their
+    ends, so the distances of the ticks stay those of the whole profile), `cut` (True if
+    anything was cut off) and, if it was cut, the swath of the parts (flat at the cut).
+    Without `margin_km` or `bbox` the profile is not cut. OverlayError if the margin leaves
+    no map.
+    """
+    whole = dict(x=prof["x"], y=prof["y"], lon=prof["lon"], lat=prof["lat"], s0=0.0,
+                 s1=prof["length"])
+    if margin_km is None or bbox is None:
+        return dict(prof, pieces=[whole], cut=False)
+    lo0, lo1, la0, la1 = cut_box_lonlat(bbox, margin_km)
+    xa, ya = local_km(lo0, la0, prof["lon0"], prof["lat0"])
+    xb, yb = local_km(lo1, la1, prof["lon0"], prof["lat0"])
+    pieces = clip_polyline(prof["x"], prof["y"], (float(xa), float(xb), float(ya), float(yb)),
+                           cum=prof["cum"])
+    for pc in pieces:
+        pc["lon"], pc["lat"] = local_lonlat(pc["x"], pc["y"], prof["lon0"], prof["lat0"])
+    if (len(pieces) == 1 and pieces[0]["s0"] <= 1e-9
+            and pieces[0]["s1"] >= prof["length"] - 1e-9):
+        return dict(prof, pieces=[whole], cut=False)
+    out = dict(prof, pieces=pieces, cut=True)
+    if prof["width"] > 0:
+        out["swath"] = [poly for pc in pieces for poly in profile_swath(
+            dict(x=pc["x"], y=pc["y"], width=prof["width"], lon0=prof["lon0"], lat0=prof["lat0"]))]
+    return out
+
+
+def cut_line(ln: dict, bbox: Optional[Sequence[float]], margin_km: Optional[float]) -> dict:
+    """
+    The line `ln` (polylines and polygons) cut at the map `bbox` made smaller by `margin_km`: a
+    copy with `drawn` = [dict(lon, lat, closed, fill = (lon, lat) of the polygon cut at the box
+    or None)], the polylines to draw. A closed part is cut as its outline, its fill as a polygon.
+    Without `margin_km` or `bbox` the parts are returned as they are.
+    """
+    if margin_km is None or bbox is None:
+        return dict(ln, drawn=[dict(lon=p["lon"], lat=p["lat"], closed=p["closed"], fill=None,
+                                    cut=False) for p in ln["parts"]])
+    box = cut_box_lonlat(bbox, margin_km)
+    rect = (box[0], box[1], box[2], box[3])
+    drawn: List[dict] = []
+    for part in ln["parts"]:
+        lon, lat = np.asarray(part["lon"], float), np.asarray(part["lat"], float)
+        if part["closed"]:
+            lon, lat = np.r_[lon, lon[0]], np.r_[lat, lat[0]]
+        pieces = clip_polyline(lon, lat, rect)
+        inside = (len(pieces) == 1 and pieces[0]["x"].size == lon.size
+                  and np.allclose(pieces[0]["x"], lon) and np.allclose(pieces[0]["y"], lat))
+        fill = None
+        if ln.get("fill") and part["closed"]:
+            fx, fy = clip_polygon(part["lon"], part["lat"], rect)
+            fill = (fx, fy)
+        if inside:
+            drawn.append(dict(lon=part["lon"], lat=part["lat"], closed=part["closed"], fill=fill,
+                              cut=False))
+            continue
+        for k, pc in enumerate(pieces):
+            drawn.append(dict(lon=pc["x"], lat=pc["y"], closed=False,
+                              fill=fill if k == 0 else None, cut=True))
+        if not pieces and fill is not None and fill[0].size:
+            drawn.append(dict(lon=np.empty(0), lat=np.empty(0), closed=False, fill=fill, cut=True))
+    return dict(ln, drawn=drawn)
+
+
+def cut_report(profiles: Sequence[dict], lines: Sequence[dict], bbox: Sequence[float],
+               margin_km: Optional[float]) -> List[str]:
+    """Messages about what the cut at the map box takes off: one per profile (the km kept of
+    its length) and per line that is cut."""
+    if margin_km is None:
+        return []
+    out: List[str] = []
+    for pr in profiles:
+        c = cut_profile(pr, bbox, margin_km)
+        if c["cut"]:
+            kept = sum(pc["s1"] - pc["s0"] for pc in c["pieces"])
+            out.append(f"profile {pr['name']!r} is cut at the map box (margin {float(margin_km):g} km): "
+                       f"{kept:.1f} of {pr['length']:.1f} km are shown.")
+    for ln in lines:
+        c = cut_line(ln, bbox, margin_km)
+        if any(d["cut"] for d in c["drawn"]):
+            out.append(f"line {str(ln.get('label') or 'line')!r} is cut at the map box "
+                       f"(margin {float(margin_km):g} km).")
+    return out
+
+
+def _cut_margin(cfg: Dict[str, Any], bbox: Optional[Sequence[float]]) -> Optional[float]:
+    """OVERLAY_CUT_MARGIN_KM if the map box can have it (else a message, said once, and None)."""
+    m = cfg.get("OVERLAY_CUT_MARGIN_KM")
+    if m is None or bbox is None:
+        return None
+    try:
+        cut_box_lonlat(bbox, m)
+    except OverlayError as exc:
+        _say_once(f"WARNING: {exc}: profiles and lines are not cut.")
+        return None
+    return float(m)
+
+
+def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, Any],
+                  bbox: Optional[Sequence[float]] = None) -> None:
     """
     Draws the lines and the profiles on the map `ax` (limits already set): lines
     (and polygon fills) below the sites, profiles with swath, ticks, distance
     labels, end labels and rings around the sites in the swath. `overlays` =
     dict(profiles=[...], lines=[...]) as made by prepare_overlays / project_profiles.
+    With `bbox` (the map box, lon / lat) and OVERLAY_CUT_MARGIN_KM they are cut at the
+    box made smaller by the margin (cut_profile, cut_line): the end labels stand at the
+    ends of the cut profile, the ticks keep the distances of the whole profile.
     """
     if not overlays:
         return
@@ -2129,23 +2775,32 @@ def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, A
     x0, x1 = ax.get_xlim()
     kx_plot = frame["kx"] if frame["display"] == "latlon" else 1.0
     map_km = abs(x1 - x0) * kx_plot                       # width of the map [km]
+    margin = _cut_margin(cfg, bbox)
 
-    for ln in overlays.get("lines") or []:
+    for ln0 in overlays.get("lines") or []:
+        ln = cut_line(ln0, bbox, margin)
         color, lw = _overlay_style(ln, cfg)
         halo = cfg.get("LINE_HALO", True) if ln.get("halo") is None else bool(ln["halo"])
         pe = [patheffects.withStroke(linewidth=lw + 1.6, foreground="white")] if halo else []
         alpha = 0.25 if ln.get("alpha") is None else float(ln["alpha"])
-        for part in ln["parts"]:
+        for part in ln["drawn"]:
             px, py = to_frame(frame, part["lon"], part["lat"])
             if part["closed"]:
                 px, py = np.r_[px, px[0]], np.r_[py, py[0]]
             if ln.get("fill") and part["closed"]:
                 ax.fill(px, py, facecolor=ln["fill"], edgecolor="none", alpha=alpha, zorder=2.5)
-            ax.plot(px, py, color=color, lw=lw, ls=ln.get("ls") or "-", zorder=3,
-                    path_effects=pe, solid_joinstyle="round")
+            elif part["fill"] is not None and part["fill"][0].size:     # the polygon cut at the box
+                fx, fy = to_frame(frame, part["fill"][0], part["fill"][1])
+                ax.fill(fx, fy, facecolor=ln["fill"], edgecolor="none", alpha=alpha, zorder=2.5)
+            if px.size:
+                ax.plot(px, py, color=color, lw=lw, ls=ln.get("ls") or "-", zorder=3,
+                        path_effects=pe, solid_joinstyle="round")
 
     fs = float(cfg.get("PROFILE_FONTSIZE", 9.0))
-    for pr in overlays.get("profiles") or []:
+    for pr0 in overlays.get("profiles") or []:
+        pr = cut_profile(pr0, bbox, margin)
+        if not pr["pieces"]:
+            continue                                       # nothing of it inside the map
         color, lw = _overlay_style(pr, cfg)
         pe = [patheffects.withStroke(linewidth=lw + 1.6, foreground="white")]
         halo_t = [patheffects.withStroke(linewidth=2.0, foreground="white")]
@@ -2159,11 +2814,17 @@ def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, A
             ax.add_patch(PathPatch(Path(np.vstack(verts), codes), facecolor=color,
                                    edgecolor="none", alpha=float(cfg.get("PROFILE_SWATH_ALPHA", 0.15)),
                                    zorder=2))
-        px, py = to_frame(frame, pr["lon"], pr["lat"])
-        ax.plot(px, py, color=color, lw=lw, ls=pr.get("ls") or "-", zorder=4, path_effects=pe,
-                solid_capstyle="butt", solid_joinstyle="round")
-        if pr.get("ticks_km"):
-            tp = profile_tick_points(pr, pr["ticks_km"])
+        for pc in pr["pieces"]:
+            px, py = to_frame(frame, pc["lon"], pc["lat"])
+            ax.plot(px, py, color=color, lw=lw, ls=pr.get("ls") or "-", zorder=4, path_effects=pe,
+                    solid_capstyle="butt", solid_joinstyle="round")
+        tp = profile_tick_points(pr, pr["ticks_km"]) if pr.get("ticks_km") else None
+        if tp is not None and pr["cut"]:                   # only the ticks on the parts that are left
+            keep = np.zeros(tp["s"].size, bool)
+            for pc in pr["pieces"]:
+                keep |= (tp["s"] >= pc["s0"] - 1e-6) & (tp["s"] <= pc["s1"] + 1e-6)
+            tp = {k: v[keep] for k, v in tp.items()}
+        if tp is not None and tp["s"].size:
             h = 0.5 * _PROFILE_TICK_FRAC * map_km
             a_lon, a_lat = local_lonlat(tp["x"] + h * tp["uy"], tp["y"] - h * tp["ux"],
                                         pr["lon0"], pr["lat0"])
@@ -2183,21 +2844,35 @@ def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, A
                                 textcoords="offset points", ha="center", va="center",
                                 fontsize=fs - 2.0, color=color, zorder=6.5, path_effects=halo_t,
                                 annotation_clip=True)
+        first, last = pr["pieces"][0], pr["pieces"][-1]          # the ends of what is shown
+        fx0, fy0 = to_frame(frame, first["lon"][:1], first["lat"][:1])
+        fx1, fy1 = to_frame(frame, last["lon"][-1:], last["lat"][-1:])
+        if cfg.get("PROFILE_END_MARKER"):
+            ax.plot([fx0[0], fx1[0]], [fy0[0], fy1[0]], ls="", marker=cfg["PROFILE_END_MARKER"],
+                    ms=6.0, mfc=color, mec="white", mew=0.8, zorder=6)
         if pr.get("labels"):
-            ends = ((px[0], py[0], -1.0, pr["labels"][0],
-                     pr["x"][1] - pr["x"][0], pr["y"][1] - pr["y"][0]),
-                    (px[-1], py[-1], 1.0, pr["labels"][1],
-                     pr["x"][-1] - pr["x"][-2], pr["y"][-1] - pr["y"][-2]))
+            ends = ((fx0[0], fy0[0], -1.0, pr["labels"][0],
+                     first["x"][1] - first["x"][0], first["y"][1] - first["y"][0]),
+                    (fx1[0], fy1[0], 1.0, pr["labels"][1],
+                     last["x"][-1] - last["x"][-2], last["y"][-1] - last["y"][-2]))
             for vx, vy, sgn, txt, dxk, dyk in ends:
-                nrm = math.hypot(dxk, dyk)
+                nrm = math.hypot(dxk, dyk) or 1.0
                 ax.annotate(txt, (vx, vy), xytext=(sgn * 10.0 * dxk / nrm, sgn * 10.0 * dyk / nrm),
                             textcoords="offset points", ha="center", va="center", fontsize=fs,
                             fontweight="bold", color=color, zorder=6.5, path_effects=halo_t)
         ring = pr.get("ring")
         if cfg.get("PROFILE_MARK_SITES", True) and ring is not None and len(ring[0]):
-            rx, ry = to_frame(frame, ring[0], ring[1])
-            ax.scatter(rx, ry, s=1.9 * float(cfg["SITE_SIZE"]), marker="o", facecolors="none",
-                       edgecolors=color, linewidths=1.0, zorder=4.5)
+            rlon, rlat = np.asarray(ring[0], float), np.asarray(ring[1], float)
+            if pr["cut"] and pr.get("proj") is not None and pr.get("order") is not None:
+                al = np.asarray(pr["proj"]["along"])[np.asarray(pr["order"], int)]
+                keep = np.zeros(al.size, bool)                  # only the sites along the parts left
+                for pc in pr["pieces"]:
+                    keep |= (al >= pc["s0"] - 1e-6) & (al <= pc["s1"] + 1e-6)
+                rlon, rlat = rlon[keep], rlat[keep]
+            if rlon.size:
+                rx, ry = to_frame(frame, rlon, rlat)
+                ax.scatter(rx, ry, s=1.9 * float(cfg["SITE_SIZE"]), marker="o", facecolors="none",
+                           edgecolors=color, linewidths=1.0, zorder=4.5)
 
 
 def overlay_handles(overlays: Optional[dict], cfg: Dict[str, Any]) -> list:
@@ -2278,7 +2953,7 @@ def draw_panel(ax, *, frame: dict, bbox: Tuple[float, float, float, float], reli
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
     ax.set_aspect(frame["aspect"])
-    draw_overlays(ax, frame=frame, overlays=overlays, cfg=cfg)
+    draw_overlays(ax, frame=frame, overlays=overlays, cfg=cfg, bbox=bbox)
     if cfg["MAP_GRID"]:
         ax.grid(True, color="0.5", lw=0.4, alpha=0.6)
     fs = float(cfg["TICK_FONTSIZE"])
@@ -2304,9 +2979,18 @@ def draw_panel(ax, *, frame: dict, bbox: Tuple[float, float, float, float], reli
         ax.text(xa + 0.5 * length, ya + 0.012 * (y1 - y0), f"{length_km:g} km", ha="center",
                 va="bottom", fontsize=fs - 1, zorder=7, path_effects=halo)
     if credit:
-        ax.text(0.99, 0.01, credit, transform=ax.transAxes, ha="right", va="bottom",
-                fontsize=5.0, color="0.15", zorder=7, path_effects=halo)
+        w_in = ax.figure.get_figwidth() * ax.get_position().width
+        ax.text(0.99, 0.01, wrap_credit(credit, w_in, 5.0), transform=ax.transAxes, ha="right",
+                va="bottom", multialignment="right", fontsize=5.0, color="0.15", zorder=7,
+                path_effects=halo)
     return sc
+
+
+def wrap_credit(text: str, width_in: float, fontsize: float) -> str:
+    """`text` broken into lines that fit (about) `width_in` inch at `fontsize` pt."""
+    import textwrap
+    n = max(20, int(0.9 * float(width_in) * 72.0 / (0.55 * float(fontsize))))
+    return "\n".join(textwrap.wrap(str(text), width=n)) if len(str(text)) > n else str(text)
 
 
 def build_pages(sels: Sequence[dict], page_by: str) -> List[Tuple[str, List[dict]]]:
@@ -2352,6 +3036,106 @@ def make_title(spec: Optional[str], *, iteration: int, nrms: float,
     return str(spec).format(iter=it, nrms=nrms, M=ens["M"], stat=words)
 
 
+_CBAR_ASPECT = 20.0                # matplotlib's default: length / width of a colour bar
+_CBAR_TOL = 0.01                   # the colour bar has the asked size within 1 %
+_SAID: set = set()                 # messages that are said once (per run)
+
+
+def _say_once(msg: str) -> None:
+    if msg not in _SAID:
+        _SAID.add(msg)
+        _say(msg)
+
+
+def _layout_pass(fig) -> None:
+    """One layout pass of the figure without drawing it (the positions are then final)."""
+    eng = fig.get_layout_engine() if hasattr(fig, "get_layout_engine") else None
+    if eng is not None and hasattr(eng, "execute"):
+        eng.execute(fig)
+    else:                                          # older matplotlib: layout happens at draw time
+        fig.canvas.draw()
+
+
+def _cbar_size_in(cb, vertical: bool) -> Tuple[float, float]:
+    """
+    (length, width) in inch of the colour bar as it is drawn, after a layout pass.
+    The length is that of the whole bar with its extension triangles (`extend`);
+    the axes of the bar itself (the coloured rectangle) are shorter by that, which
+    matplotlib's locator of the bar applies at draw time, so it is applied here.
+    """
+    ax = cb.ax
+    full = ax.get_position(original=True)          # the slot: the bar with its extensions
+    loc = ax.get_axes_locator()
+    pos = full
+    if loc is not None:
+        try:
+            renderer = ax.figure.canvas.get_renderer()
+        except Exception:                          # a canvas without get_renderer
+            renderer = None
+        pos = loc(ax, renderer)
+    ax.apply_aspect(pos)
+    body = ax.get_position()
+    fw, fh = ax.figure.get_size_inches()
+    if vertical:
+        ext = full.height / pos.height if pos.height > 0.0 else 1.0
+        return body.height * ext * fh, body.width * fw
+    ext = full.width / pos.width if pos.width > 0.0 else 1.0
+    return body.width * ext * fw, body.height * fh
+
+
+def add_colorbar(fig, mappable, axes, *, location: str, shrink: float, extend: str,
+                 label: str, length_cm: Optional[float] = None,
+                 width_cm: Optional[float] = None):
+    """
+    The colour bar of the panels `axes`. Without `length_cm` and `width_cm` it is
+    matplotlib's: the length is `shrink` x the length of the panels along the bar
+    and the width 1/20 of its length. `length_cm` / `width_cm` [cm] fix the size
+    that is drawn (the length with the extension triangles of `extend`, the width of
+    the coloured bar): the figure is laid out (without drawing) and the bar made again
+    with the length (`shrink`) and the width (`aspect` = length / width) that this
+    pass shows are needed, repeated (up to 6 passes) until it is within 1 %. `width_cm` alone keeps the
+    length, `length_cm` alone the proportions (1/20). A length that the panels
+    cannot hold is reduced to the length of the panels, with a message. The size
+    holds for the layout as it is when this is called (set the figure title first).
+    """
+    kw = dict(location=location, extend=extend, label=label)
+    cb = fig.colorbar(mappable, ax=axes, shrink=shrink, **kw)
+    if length_cm is None and width_cm is None:
+        return cb
+    vertical = location in ("right", "left")
+    want_l = None if length_cm is None else float(length_cm) / 2.54
+    want_w = None if width_cm is None else float(width_cm) / 2.54
+    aspect = _CBAR_ASPECT
+    frac = 0.5 if want_w is not None else 0.15      # the width may be more than 15 % of the panels
+    clipped = False
+    keep_l = None                                   # no CBAR_LENGTH: the length of the plain bar
+    for it in range(6):
+        _layout_pass(fig)
+        have_l, have_w = _cbar_size_in(cb, vertical)
+        if want_l is None and keep_l is None:
+            keep_l = have_l
+        goal_l = have_l if clipped else (keep_l if want_l is None else want_l)
+        goal_w = want_w if want_w is not None else goal_l / aspect
+        if abs(have_l - goal_l) <= _CBAR_TOL * goal_l and abs(have_w - goal_w) <= _CBAR_TOL * goal_w:
+            break
+        new_shrink = shrink * goal_l / have_l
+        if new_shrink > 1.0:                        # longer than the panels: all of their length
+            new_shrink, clipped = 1.0, True
+        if want_w is not None:
+            aspect = have_l * new_shrink / shrink / want_w
+        shrink = new_shrink
+        cb.remove()
+        cb = fig.colorbar(mappable, ax=axes, shrink=shrink, aspect=aspect, fraction=frac, **kw)
+    else:
+        _say(f"the colour bar has {have_l * 2.54:.2f} x {have_w * 2.54:.2f} cm, not the asked "
+             f"size (CBAR_LENGTH, CBAR_WIDTH).")
+    if clipped:
+        msg = (f"CBAR_LENGTH = {length_cm:g} cm is longer than the panels "
+               f"({have_l * 2.54:.1f} cm): the colour bar is as long as the panels.")
+        _say_once(msg)
+    return cb
+
+
 def plot_page(page: Sequence[dict], *, site_lon: np.ndarray, site_lat: np.ndarray,
               site_names: Sequence[str], frame: dict,
               bbox: Tuple[float, float, float, float], relief: Optional[dict],
@@ -2387,10 +3171,13 @@ def plot_page(page: Sequence[dict], *, site_lon: np.ndarray, site_lat: np.ndarra
         ax.set_title(f"{s['band']} | {s['comp']}\n{sub}", fontsize=float(cfg["TICK_FONTSIZE"]) + 1)
     for k in range(n, nr * nc):
         axs[k // nc][k % nc].set_visible(False)
+    if title:                                      # before the colour bar: its size is fitted to the layout
+        fig.suptitle(title, fontsize=float(cfg["TICK_FONTSIZE"]) + 3)
     loc = cfg["CBAR_LOCATION"] or "right"
     sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-    cb = fig.colorbar(sm, ax=used, location=loc, shrink=float(cfg["CBAR_SHRINK"]),
-                      extend=extend, label=cbar_label)
+    cb = add_colorbar(fig, sm, used, location=loc, shrink=float(cfg["CBAR_SHRINK"]),
+                      extend=extend, label=cbar_label, length_cm=cfg["CBAR_LENGTH"],
+                      width_cm=cfg["CBAR_WIDTH"])
     ref = cfg["NRMS_REFERENCE"]
     if ref is not None and norm.vmin <= ref <= norm.vmax:
         (cb.ax.axhline if loc in ("right", "left") else cb.ax.axvline)(
@@ -2405,8 +3192,6 @@ def plot_page(page: Sequence[dict], *, site_lon: np.ndarray, site_lat: np.ndarra
     if handles and leg_loc:
         used[0].legend(handles=handles, loc=leg_loc, fontsize=float(cfg["TICK_FONTSIZE"]) - 1,
                        framealpha=0.8)
-    if title:
-        fig.suptitle(title, fontsize=float(cfg["TICK_FONTSIZE"]) + 3)
     return fig
 
 
@@ -2831,20 +3616,29 @@ def run(cfg: Dict[str, Any]) -> int:
     out_of_map = overlay_outside(list(profiles) + list(lines), bbox)
     if out_of_map:
         _say(f"WARNING: outside the map (not shown): {', '.join(out_of_map)}.")
+    try:
+        for msg in cut_report(profiles, lines, bbox, cfg["OVERLAY_CUT_MARGIN_KM"]):
+            _say(msg)
+    except OverlayError as exc:
+        _say(f"WARNING: {exc}: profiles and lines are not cut.")
     frame = make_frame(cfg["DISPLAY_COORDS"], 0.5 * (bbox[0] + bbox[1]), 0.5 * (bbox[2] + bbox[3]))
     relief = None
     relief_extent = None
     credit = None
     if cfg["DEM_SOURCE"] != "none":
         try:
-            if cfg["DEM_SOURCE"] == "srtm":
-                dem = load_dem_srtm(*bbox, cache_dir=cfg["DEM_CACHE_DIR"],
-                                    template=cfg["DEM_URL_TEMPLATE"],
-                                    download=cfg["DEM_DOWNLOAD"], timeout=cfg["DEM_TIMEOUT"],
-                                    max_tiles=cfg["DEM_MAX_TILES"], fill=cfg["DEM_FILL_MISSING"],
-                                    strict=cfg["DEM_STRICT"])
+            if cfg["DEM_SOURCE"] == "file":
+                dem = load_dem_file(cfg["DEM_FILE"], bbox, cfg["DEM_MAX_PIXELS"])
             else:
-                dem = load_dem_file(cfg["DEM_FILE"])
+                template = dem_template(cfg["DEM_SOURCE"], cfg["DEM_URL_TEMPLATE"])
+                tkw = dict(cache_dir=cfg["DEM_CACHE_DIR"], template=template,
+                           download=cfg["DEM_DOWNLOAD"], timeout=cfg["DEM_TIMEOUT"],
+                           max_tiles=cfg["DEM_MAX_TILES"], fill=cfg["DEM_FILL_MISSING"],
+                           strict=cfg["DEM_STRICT"])
+                if tile_kind(template) == "raster":
+                    dem = load_dem_raster(*bbox, max_pixels=cfg["DEM_MAX_PIXELS"], **tkw)
+                else:
+                    dem = load_dem_hgt(*bbox, **tkw)
             if dem is not None:
                 dem = decimate_dem(crop_dem(dem, *bbox), cfg["DEM_MAX_PIXELS"])
                 relief = shade_dem(dem, style=cfg["DEM_STYLE"], azdeg=cfg["HILLSHADE_AZIMUTH"],
@@ -2863,9 +3657,9 @@ def run(cfg: Dict[str, Any]) -> int:
     if relief is not None:
         credit = cfg["DEM_CREDIT"]
         if credit == "auto":
-            credit = ("Relief: SRTM-format AWS terrain tiles (SRTM courtesy of USGS)"
-                      if cfg["DEM_SOURCE"] == "srtm"
-                      and str(cfg["DEM_URL_TEMPLATE"]).startswith(_AWS_SKADI_PREFIX) else None)
+            credit = (_DEM_PRESETS[cfg["DEM_SOURCE"]]["credit"]
+                      if cfg["DEM_SOURCE"] in _DEM_PRESETS and not cfg["DEM_URL_TEMPLATE"]
+                      else None)
 
     # --- maps ---
     spread = ens and kind == "std"           # spread of the members: sequential scale from 0
@@ -2910,12 +3704,13 @@ def main(argv: Sequence[str]) -> int:
     ap = argparse.ArgumentParser(
         prog="femtic_plot_sitemap.py",
         description="Site map of a FEMTIC run or ensemble: nRMS per site, band and component on "
-                    "an SRTM shaded relief. All paths are taken relative to WORK_DIR.")
+                    "a shaded relief (Copernicus DEM by default). All paths are taken relative to "
+                    "WORK_DIR.")
     ap.add_argument("-w", "--work-dir", default=None, metavar="DIR",
                     help="base of all relative paths (replaces WORK_DIR)")
     ap.add_argument("-i", "--iteration", default=None, metavar="N",
                     help="\"best\", \"last\" or a number (replaces ITERATION)")
-    ap.add_argument("--dem", default=None, choices=("srtm", "file", "none"),
+    ap.add_argument("--dem", default=None, choices=_DEM_SOURCES,
                     help="DEM source (replaces DEM_SOURCE)")
     ap.add_argument("--runs", nargs="+", default=None, metavar="PATH",
                     help="members of the ensemble: run directories, results files or globs "

@@ -150,6 +150,8 @@ Notes:
 |---|---|---|---|
 | `PERCENTILES` | list of float | `[2.3, 15.9, 50.0, 84.1, 97.7]` | Percentile levels (2-σ / 1-σ normal-equivalent). |
 | `QDIFF_PAIRS` | list of `(lo, hi)` | `[(15.9, 84.1), (2.3, 97.7)]` | Percentile-pair differences `\|P_hi - P_lo\|` computed as extra, outlier-robust spread statistics (both values must also appear in `PERCENTILES`). The default gives both a 1-sigma-equivalent (`15.9`/`84.1`) and 2-sigma-equivalent (`2.3`/`97.7`) spread. Saved as `<P>_qdiff_<lo>_<hi>` and plottable under the same key in `MOD_STATS_WHAT`. |
+| `COMPUTE_QDIFF_ITER0` | bool | `True` | Also store the spread of the iter0 models and its ratio to the converged one, for every `QDIFF_PAIRS` entry: `<P>_qdiff0_<lo>_<hi>` and `<P>_qratio_<lo>_<hi>` (see "Spread at iter0 and the ratio iterX / iter0" below). Needs `ENS_MODEL_SOURCE = "both"`; with `"converged"` or `"perturbed"` a message is printed and no keys are written (never an error). |
+| `QRATIO_MIN_ITER0` | float | `1e-6` | The ratio is `NaN` where the iter0 spread (log10 Ohm.m) is not larger than this, so there is no division by zero or by rounding noise (identical iter0 models, e.g. `referencemodel.dat` a symbolic link). |
 | `COMPUTE_PRIOR_DIFF` | bool | `True` | Store the difference to the prior model, `<P>_diff_prior = model(ens) - model(prior)`, per free parameter in log10(Ohm.m) (see "Difference to the prior model" below). **Signed**: positive = the ensemble is more resistive than the prior; no absolute value is taken here (the plot script offers `abs_diff_prior`). A prior that cannot be used gives a message and no keys, never an error. |
 | `PRIOR_DIFF_STAT` | str | `"mean"` | `model(ens)`: the `"mean"` or the `"median"` of this run's models (the converged ones, or the perturbed ones with `ENS_MODEL_SOURCE = "perturbed"`). Anything else is rejected. |
 | `PRIOR_DIFF_SOURCE` | str | `"auto"` | `model(prior)`: `"reference"` = the unperturbed prior model, the block file `PRIOR_DIFF_FILE` (must have the members' mesh and free regions); `"perturbed"` = the same statistic of the members' perturbed references `ENS_PERTURBED_FILE` (needs `ENS_MODEL_SOURCE = "both"`; it differs from the reference by the sampling noise of the draws); `"auto"` = the reference if it can be used, else the perturbed ones if the run has them, else no difference. What was used is printed and stored in `<P>_diff_prior_info`. |
@@ -386,6 +388,9 @@ scripts read the file with `femtic.read_ensemble_results()`.
 | `<P>_prc` | `(N_prc, N_free)` | Percentile values at `PERCENTILES` levels. |
 | `<P>_prc_levels` | `(N_prc,)` | The `PERCENTILES` levels themselves, for self-describing output. |
 | `<P>_qdiff_<lo>_<hi>` | `(N_free,)` | `\|P_hi - P_lo\|` per free parameter, one key per `QDIFF_PAIRS` entry (e.g. `<P>_qdiff_15_9_84_1`, `<P>_qdiff_2_3_97_7`). |
+| `<P>_qdiff0_<lo>_<hi>` | `(N_free,)` | The same `\|P_hi - P_lo\|` of the **iter0** models (the members' `ENS_PERTURBED_FILE`, the RTO prior draw), one key per `QDIFF_PAIRS` entry (e.g. `<P>_qdiff0_15_9_84_1`). Present with `ENS_MODEL_SOURCE = "both"` and `COMPUTE_QDIFF_ITER0=True`. |
+| `<P>_qratio_<lo>_<hi>` | `(N_free,)` | `<P>_qdiff_<lo>_<hi> / <P>_qdiff0_<lo>_<hi>`: the spread at iterX over the spread at iter0, X = the best-nRMS iteration of each member. `< 1` = narrowed by the data; `NaN` where the iter0 spread `<= QRATIO_MIN_ITER0`. Present with `<P>_qdiff0_*`. |
+| `<P>_qratio_info` | str | Which models the ratio is made of (text). Present with `<P>_qratio_*`. |
 | `<P>_diff_prior` | `(N_free,)` | **Signed** difference `model(ens) - model(prior)` in log10(Ohm.m): `PRIOR_DIFF_STAT` of this run's models minus the prior model (`PRIOR_DIFF_SOURCE`); positive = more resistive than the prior. Present only if `COMPUTE_PRIOR_DIFF=True` and a prior could be used. No absolute value is stored: plot with `"diff_prior"` or, for the size alone, `"abs_diff_prior"` (made from it by `femtic.ensemble_stat_map()`). |
 | `<P>_prior` | `(N_free,)` | The prior model in log10(Ohm.m) that was subtracted (the reference file, or the statistic of the perturbed references). Present with `<P>_diff_prior`. |
 | `<P>_diff_prior_info` | `(3,)` str | `[PRIOR_DIFF_STAT, "reference" or "perturbed", text]`: which statistic and which prior were used. Present with `<P>_diff_prior`. |
@@ -466,6 +471,15 @@ for a known ensemble size.
 
 Plain ASCII only (other characters in directory names show as `?`).
 
+**Contents of the results file.** After the scan report, `femtic_ens_post_summary.md`
+ends with a section **"Contents of the results file"**: the file, its size, the
+number of members and free parameters, and a table with the key, shape, type and
+meaning of every array in the `.npz` just written, in file order (made by
+`femtic.append_results_contents()`). The list is read back from the file, so it
+shows what was really stored (for example which optional keys are present). The
+same list is printed to the console right after "Results saved" (plain text with
+aligned columns, `femtic.print_results_contents()`; only if `OUT = True`).
+
 
 ## Difference to the prior model
 
@@ -497,6 +511,55 @@ it is near zero the prior is what the model still says.
   Needs the `femtic.py` and `femtic_ens_plot_slices.py` of 2026-11-15.
 - Not stored for a results file made before this change; the plot scripts
   then skip the panel with a printed message.
+
+
+## Spread at iter0 and the ratio iterX / iter0
+
+`<P>_qdiff_<lo>_<hi>` is the spread of the **converged** models: `|P_hi - P_lo|`
+over the members, per free parameter, in log10(Ohm.m), each member taken at its
+best-nRMS iteration X (`resistivity_block_iter<X>.dat`, X from `femtic.cnv`).
+Two keys put it in relation to where the ensemble started:
+
+- `<P>_qdiff0_<lo>_<hi>`: the same spread of the **iter0** models, i.e. the
+  perturbed references (`ENS_PERTURBED_FILE`, default `referencemodel.dat`, the
+  RTO prior draw) of the same members. It is what the prior says.
+- `<P>_qratio_<lo>_<hi>` = `qdiff / qdiff0`: iterX over iter0. Below 1 the data
+  narrowed the ensemble at that block (0.5: the spread is halved); near 1 the
+  prior is what is left (the data say little there, which is also what low
+  sensitivity looks like); above 1 the inversion widened it.
+
+Details:
+
+- Both spreads are made with the same `numpy.percentile` estimate and the same
+  levels, so the ratio compares like with like; `qratio * qdiff0 = qdiff`
+  wherever the ratio is defined.
+- One pair of keys per `QDIFF_PAIRS` entry whose levels are in `PERCENTILES`
+  (the 1-sigma-equivalent `15.9` / `84.1` and the 2-sigma-equivalent
+  `2.3` / `97.7` by default).
+- Needs `ENS_MODEL_SOURCE = "both"` (the default): the iter0 and the converged
+  models of the **same** members are then loaded, row for row (with
+  `ENS_SUBSAMPLE_N` the same drawn rows). With `"converged"` there are no iter0
+  models, with `"perturbed"` the run itself is the iter0 ensemble and its
+  `<P>_qdiff_*` already is the iter0 spread: a message is printed and no keys are
+  written.
+- `ENS_PERTURBED_FILE` decides what iter0 is. `referencemodel.dat` holds the
+  draw of every member. `resistivity_block_iter0.dat` holds it only if the
+  ensemble was prepared with `MOD_START_FROM_PERTURBED = True`; otherwise it is a
+  link to the shared template, all members are identical and the iter0 spread is
+  zero. Then the ratio is `NaN` everywhere and the run says so.
+- `NaN` also where the iter0 spread is `<= QRATIO_MIN_ITER0`: free parameters
+  that the perturbation left (almost) unchanged. Fixed regions (air, ocean) are
+  not free parameters and are not in the arrays at all.
+- The run prints, per pair, the range of the iter0 spread, the median ratio, the
+  share of the blocks with a ratio below 1 and the number of `NaN` blocks.
+- Plot them with `femtic_ens_plot_slices.py`: add `"qdiff0_15_9_84_1"` and/or
+  `"qratio_15_9_84_1"` (also `"..._2_3_97_7"`) to `MOD_STATS_WHAT` (commented
+  lines show it); the ratio has its own style (`"coolwarm"`, `clim=[0, 2]`, so
+  1 is the neutral colour) and can be the name in `MOD_ALPHA_SOURCE`
+  (`"qratio_15_9_84_1 < 0.5"`). Needs the `femtic.py` and
+  `femtic_ens_plot_slices.py` of 2026-11-22.
+- Not stored for a results file made before this change; the plot scripts then
+  skip the panel with a printed message.
 
 
 ## Quick start
@@ -610,3 +673,5 @@ correct.
 | 2026-11-15 (b) | Claude Sonnet 5.5 (Anthropic) | Every stored sensitivity is normalised to its max, and the ranges are stored. `<P>_sens_mean_raw` (plain ensemble mean) was the one key in native units and, for the raw kind, ranged far above 1; it is now divided by the max of the mean (the divisor of the `*_an` keys), so it equals `mean_an`. New keys `<P>_sensitivity_scale`, `<P>_sensitivity_native_range`, `<P>_sensitivity_range_stats`, `<P>_sensitivity_member_max`, `<P>_sensitivity_member_rows` hold what was divided out (native values are recoverable); printed per kind. The run lists the keys still above 1: `max_an` (and for skewed ensembles `std_an` / `median_an`), because the `*_an` keys share one divisor; the earlier comment under `SENS_KIND` ("log10 <= 0" for all) was not right and is corrected. All other keys unchanged. Needs the `femtic.py` and `femtic_ens_plot_slices.py` of the same date. Tested on synthetic results only. AI-generated; review before production use. |
 | 2026-11-15 (c) | Claude Sonnet 5.5 (Anthropic) | **One normalisation, done right before storing; `_na` / `_an` removed.** Per kind, `mean` / `median` / `min` / `max` / `std` are taken of the native sensitivity and each is divided by **its own max** over the free blocks just before it is stored (log10, so each peaks at exactly 0); `cv = std / mean` stays a ratio. New key names `<P>_sens_mean`, `_median`, `_min`, `_max`, `_std`, `_cv` (+ `_cum` / `_vn` with `SENS_KIND = "both"`); gone: all `<P>_sens_*_na`, `<P>_sens_*_an`, `<P>_sens_mean_raw`, and the keys `<P>_sensitivity_scale`, `_member_max`, `_member_rows` of (b). Stored ranges: `<P>_sensitivity_native_range` (n_kinds, 5, 2) with `<P>_sensitivity_range_stats`; printed per kind. Every stored statistic is now <= 1; the old `max_an` / `std_an` were not (one common divisor). The statistics no longer share a divisor, so comparing them needs the stored ranges. Needs the `femtic.py` and `femtic_ens_plot_slices.py` of the same date; the plot script still reads files with the old keys. Tested on synthetic results only. AI-generated; review before production use. |
 | 2026-11-15 (d) | Claude Sonnet 5.5 (Anthropic) | **Difference to the prior model.** New switches `COMPUTE_PRIOR_DIFF` (default `True`), `PRIOR_DIFF_STAT` (`"mean"` \| `"median"`), `PRIOR_DIFF_SOURCE` (`"auto"` \| `"reference"` \| `"perturbed"`), `PRIOR_DIFF_FILE`; new keys `<P>_diff_prior` (signed `model(ens) - model(prior)`, log10), `<P>_prior`, `<P>_diff_prior_info`; section "Difference to the prior model". No absolute value in the script, as asked: `femtic.ensemble_stat_map()` offers `abs_diff_prior` for plotting. An unusable prior is reported and skipped. With the feature off, or without a prior, the output is the previous one (checked: every other array bit-identical, also against the original script). Needs the `femtic.py` of the same date to be plotted. Tested by running the whole script on a synthetic ensemble (reference, median, perturbed, auto fallback, missing / mismatching / unreadable prior, subsample, `ENS_MODEL_SOURCE = "perturbed"`); **not run on real ensembles**. AI-generated; review before production use. |
+| 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | **Spread at iter0 and the ratio iterX / iter0.** New switches `COMPUTE_QDIFF_ITER0` (default `True`) and `QRATIO_MIN_ITER0` (default `1e-6`); new keys, per `QDIFF_PAIRS` entry, `<P>_qdiff0_<lo>_<hi>` (`\|P_hi - P_lo\|` of the iter0 models = `ENS_PERTURBED_FILE` of the members) and `<P>_qratio_<lo>_<hi>` (= `<P>_qdiff_<lo>_<hi> / <P>_qdiff0_<lo>_<hi>`, X = the best-nRMS iteration of each member; `NaN` where the iter0 spread `<= QRATIO_MIN_ITER0`) and `<P>_qratio_info`; helper `_iter0_spread_ratio()`; block (2a2). Needs `ENS_MODEL_SOURCE = "both"` (message, no keys otherwise). Nothing else changes. The plot side reads the keys with the `femtic.py` and `femtic_ens_plot_slices.py` of the same date. Tested on synthetic ensembles (48 tests in `test_femtic_ens_post_qratio.py`: the helper, the blocks cut out of this script, the reader, the plot styles; 46 hand-made code changes, 44 caught, the 2 others have no effect on the result); not on member directories. AI-generated; review before production use. |
+| 2026-11-22 (b) | Claude Sonnet 5.5 (Anthropic) | **Contents of the results `.npz`.** The list of the arrays in the `.npz` just written (key, shape, type, meaning) is printed after "Results saved" (if `OUT`) and appended to `femtic_ens_post_summary.md` (`fem.print_results_contents()`, `fem.append_results_contents()`; the `femtic.py` of the same date). Read back from the file. Nothing else changes. Tested on synthetic results files (`test_femtic_results_contents.py`, 87 tests, which also check that every key this script writes has a description); not on a run with member directories. AI-generated; review before production use. |

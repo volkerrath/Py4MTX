@@ -394,7 +394,7 @@ type as x.
 ### `read_site_dat(path, site_names=None)`
 
 Parses the comma-separated sitelist produced by `mt_make_sitelist.py`
-(`WHAT_FOR="femtic"`).  Column order (no header, `#` = comment):
+(`WHAT_FOR="femtic_site"`).  Column order (no header, `#` = comment):
 
 ```
 name, lat, lon, elev, sitenum, easting, northing
@@ -544,8 +544,8 @@ member directories except where a block file is named.
 
 | Function | Purpose |
 |---|---|
-| `read_ensemble_results(path, prefix=None, *, percentiles=None, out=True)` | Read the results `.npz` of `femtic_ens_post.py` into a dict: `ens`, `pert` (perturbed models of the same members or `None`), `model_source`, `avg`/`var`/`err`/`med`/`mad`, `prc`/`prc_levels`, `qdiff`, `var_boot`/`err_boot`/`var_boot_se`, `sens` (`{suffix: vector}`), `sens_kinds`/`sens_suffixes` (the kinds the `sens` keys hold and their key suffixes, or `None` for files from before 2026-11-15), `sens_ranges` (`{kind: {stat: (min, max)}}`, the native range of each stored statistic, or `None` for files from before 2026-11-15 (c)), `simrc_coef`/`simrc_corr`, `diff_prior`/`prior`/`diff_prior_info` (the signed log10 difference model(ens) - model(prior), the prior itself and `[stat, source kind, text]`, or `None` for files from before 2026-11-15 (d) or when no prior could be used), `model_list`, `best_index`/`best_member`/`best_file`/`best_iter`/`best_nrms`, `nrms_table`, `nrms_max`, `perturbed_file`, `subsample` (`idx`, `n_accepted`, `seed`, or `None`). `prefix=None` detects the file's only ensemble. Statistics missing from the file are derived from the stored members. |
-| `ensemble_stat_map(res)` | `(stat_map, value_keys)`: every plottable statistic `key -> (vector, description)` (avg, var, err, med, mad, `p<level>`, `qdiff_*`, bootstrap, `sens_*`, `simrc_*`, `diff_prior` = signed difference to the prior model and `abs_diff_prior` = its absolute value, made here) and the keys on the resistivity scale (usable as borehole lines). |
+| `read_ensemble_results(path, prefix=None, *, percentiles=None, out=True)` | Read the results `.npz` of `femtic_ens_post.py` into a dict: `ens`, `pert` (perturbed models of the same members or `None`), `model_source`, `avg`/`var`/`err`/`med`/`mad`, `prc`/`prc_levels`, `qdiff`, `var_boot`/`err_boot`/`var_boot_se`, `sens` (`{suffix: vector}`), `sens_kinds`/`sens_suffixes` (the kinds the `sens` keys hold and their key suffixes, or `None` for files from before 2026-11-15), `sens_ranges` (`{kind: {stat: (min, max)}}`, the native range of each stored statistic, or `None` for files from before 2026-11-15 (c)), `simrc_coef`/`simrc_corr`, `qiter0`/`qiter0_info` (`{key: vector}` of the iter0 spreads `qdiff0_*` and the ratios `qratio_*` = iterX / iter0 of 2026-11-22, `{}` / `None` for older files), `diff_prior`/`prior`/`diff_prior_info` (the signed log10 difference model(ens) - model(prior), the prior itself and `[stat, source kind, text]`, or `None` for files from before 2026-11-15 (d) or when no prior could be used), `model_list`, `best_index`/`best_member`/`best_file`/`best_iter`/`best_nrms`, `nrms_table`, `nrms_max`, `perturbed_file`, `subsample` (`idx`, `n_accepted`, `seed`, or `None`). `prefix=None` detects the file's only ensemble. Statistics missing from the file are derived from the stored members. |
+| `ensemble_stat_map(res)` | `(stat_map, value_keys)`: every plottable statistic `key -> (vector, description)` (avg, var, err, med, mad, `p<level>`, `qdiff_*`, `qdiff0_*` / `qratio_*` (iter0 spread and the ratio iterX / iter0), bootstrap, `sens_*`, `simrc_*`, `diff_prior` = signed difference to the prior model and `abs_diff_prior` = its absolute value, made here) and the keys on the resistivity scale (usable as borehole lines). |
 | `resolve_sens_stat(name, available, *, stored_kinds=None, stored_suffixes=None, kind="auto")` | `(key, note)`: the stored key that a `sens_*` panel / blanking name stands for, for the wanted sensitivity kind (`"auto"`, `"raw"`, `"volume_normalised"`; see `normalise_sens_kind`, `strip_sens_suffix`). `key` is `None` if nothing fits or the file holds only the other kind. Maps the dropped names `sens_<stat>_an` / `_na` too (see the 2026-11-15 (c) changelog). |
 | `resolve_results_template(res, template=None, *, ocean=None)` | Block file supplying header / region structure for the panels: the best member's own file, or `template`. Returns `(path, from_vector)`; `from_vector` is `True` when the "best" panel must be rebuilt from the stored best vector. |
 | `write_nrms_table(path, rows)` / `read_nrms_table(path)` | CSV of the per-member best nRMS (member, iteration, nRMS, status), sorted by nRMS. |
@@ -594,6 +594,24 @@ drawing is `femtic_viz.plan_borehole_figures()` / `draw_borehole_figures()`.
 |---|---|
 | `build_scan_report(not_accepted, fallback, matches, n_scanned, n_accepted, ensemble_dir, ensemble_name, nrms_max, index_range=None)` | Markdown section accounting for every scanned directory and the reason each non-accepted one was left out, plus the directory-numbering check. |
 | `append_scan_report(report_md, summary_path, script_file)` | Append it to the parameter-summary file (fallback: `<script>_scan_report.md`). Used by `femtic_ens_post.py` and `femtic_ens_repair.py` (which had its own copy of these helpers before 2026-11-08). |
+
+### Contents of a results file
+
+The list of the arrays in a results `.npz` (key, shape, type, meaning), for the parameter
+summary and for the console. Shape and type are read from the `.npy` headers inside the
+archive, so no array is loaded (a covariance matrix costs nothing); the meaning is known for
+the keys of `femtic_ens_post.py`. None of these functions raises for an unreadable file or
+an unwritable summary: the list is documentation, not a result.
+
+| Function / name | Purpose |
+|---|---|
+| `RESULTS_KEY_DOC` | Dict: key name without the prefix `<P>_` -> one-line description, for every key `femtic_ens_post.py` writes (a test compares it with the script). |
+| `results_key_doc(name)` | Description of one key, including the ones with a variable part (`qdiff_<lo>_<hi>`, `qdiff0_...`, `qratio_...`, `sens_<stat>[_cum\|_vn]`); `""` if unknown. |
+| `npz_inventory(path)` | `[(key, shape, dtype), ...]` in file order; `ValueError` for a file that is no `.npz`. |
+| `results_contents_md(path, prefix=None, *, heading=...)` | Markdown section: file, size, number of arrays, members and free parameters of each ensemble found (`<P>_ens` with `<P>_avg`; `prefix` selects one) and the table. |
+| `results_contents_text(path, prefix=None)` | The same as plain ASCII text with aligned columns. |
+| `print_results_contents(path, prefix=None)` | Print that text. Used by `femtic_ens_post.py`, `femtic_ens_plot_slices.py` and `femtic_ens_plot_bh.py` (if `OUT`). |
+| `append_results_contents(npz_path, summary_path, script_file, prefix=None)` | Append the Markdown section to the parameter summary (fallback: `<script>_results_contents.md` next to it). Used by the scripts that write or read a results `.npz`: `femtic_ens_post.py`, `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py`, `femtic_ens_from_covar.py`, `femtic_ens_decomp.py`, `femtic_ens_misfit.py`. |
 
 ---
 
@@ -658,7 +676,36 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-11-20
+Updated: 2026-11-22
+
+### Changelog (2026-11-22, b) --- contents of a results file
+- New `RESULTS_KEY_DOC`, `results_key_doc()`, `npz_inventory()`, `results_contents_md()`,
+  `results_contents_text()`, `print_results_contents()` and `append_results_contents()`
+  (see "Contents of a results file"). The scripts that write or read a results `.npz`
+  append the list to their `<script>_summary.md`; `femtic_ens_post.py`,
+  `femtic_ens_plot_slices.py` and `femtic_ens_plot_bh.py` also print it. No existing
+  function changed.
+- Tested on synthetic `.npz` files (87 tests in `test_femtic_results_contents.py`; the
+  key names are taken from the source of `femtic_ens_post.py`, so a key without a
+  description fails a test). Not on results of a real run. AI-generated (Claude Sonnet
+  5.5, Anthropic); review before production use.
+
+### Changelog (2026-11-22) --- spread at iter0 and the ratio iterX / iter0
+- `femtic_ens_post.py` of the same date (its changelog 2026-11-22) stores, per
+  `QDIFF_PAIRS` entry, `<P>_qdiff0_<lo>_<hi>` (the percentile-pair spread of the
+  iter0 / perturbed models), `<P>_qratio_<lo>_<hi>` (= `qdiff / qdiff0`, iterX
+  over iter0, X = the best-nRMS iteration of each member) and `<P>_qratio_info`.
+  `read_ensemble_results()` returns the arrays as `res["qiter0"]` (keys
+  `"qdiff0_15_9_84_1"`, `"qratio_15_9_84_1"`, ...; `{}` for older files; a key of
+  the wrong length is ignored with a message) and the text as
+  `res["qiter0_info"]`; `res["qdiff"]` still holds the converged `qdiff_*` only.
+  `ensemble_stat_map()` offers them under those names (not as resistivity-scale
+  keys); `select_ensemble_source()` drops them when the perturbed models alone
+  are drawn. Nothing else changed; files without the keys read as before.
+- Needs `femtic_ens_post.py` and `femtic_ens_plot_slices.py` of the same date.
+  Tested on synthetic results (reader, a file without the keys, a wrong-length
+  key, stat map, source swap); not on your data. AI-generated (Claude Sonnet
+  5.5, Anthropic); review before production use.
 
 ### Changelog (2026-11-20, b) --- invalid data in `observe.dat`: `drop` or `mark`
 - `edi_list_to_observe_dat(..., invalid="drop"|"mark", invalid_se=-1.0,

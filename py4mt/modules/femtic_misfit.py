@@ -19,6 +19,9 @@ FEMTIC ``results_iterN.h5`` files.
   5. "nrms"       ensemble only: histogram of the best nRMS of all scanned
                   members (accepted / rejected), from the results .npz of
                   femtic_ens_post.py.
+  6. "outliers"   optional: the sites whose nRMS lies outside the limits of
+                  the distribution of the site nRMS values (default: the 2-sigma
+                  quantiles, 2.275 / 97.725 %); table, CSV and figure.
 
 The code is the engine of femtic_data_misfit.py (same functions, same
 output), with one change: the settings are not read from module globals
@@ -49,6 +52,34 @@ Notice      : This code is AI-generated. Review and test it before any
 
 Changelog
 ---------
+2026-11-22  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            new method "outliers": the sites whose nRMS (conventional RMS1
+            normalization, the value of <prefix>_site_nrms.txt) is outside the
+            limits of the distribution of the site nRMS values. OUTLIER_METHOD
+            "quantile" (default; the tail levels of OUTLIER_SIGMA = 2, i.e. the
+            2.275 / 97.725 % quantiles), "sigma" (mean +- k std) or "mad"
+            (median +- k 1.4826 MAD); OUTLIER_SIDE "both" | "high" | "low";
+            OUTLIER_LOG10, OUTLIER_MIN_N, OUTLIER_PLOT. Output
+            <prefix>_site_outliers.txt (the sites outside, worst first),
+            <prefix>_site_outliers.csv (every site with its flag) and a figure
+            <prefix>_site_outliers.<fmt>. CURVES_SITES = "outliers" draws the
+            response curves of these sites only. New functions normal_tail,
+            outlier_limits, find_site_outliers, format_site_outliers,
+            format_site_csv, plot_site_outliers, run_outliers, named_site_info
+            (the site names of run_curves, shared) and _site_search_dirs; the
+            methods "crossplot", "histogram", "qq", "curves" and "nrms" are
+            unchanged.
+2026-11-21c Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            "curves": CURVES_MAP_PLACEMENT "top" / "bottom" (also "above" /
+            "below", as in CURVES_LEGEND_LOC): the site map gets an own row
+            above / below the panels, across the whole width of the figure,
+            like the own column of "right" / "left"; the figure gets higher by
+            CURVES_MAP_SIZE, which is the height of the row; the row is as high
+            as asked (the margins of the figure are taken into account). New
+            constant MAP_PLACEMENT_ALIASES. CURVES_MAP_SIZE is now in cm (was
+            inches; default 4.3 cm = 1.7 in, so the default figure is the
+            same); new function map_size_in. Other placements and the figure
+            without a map are unchanged.
 2026-11-21b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             "curves": optional small map of the sites in every figure. All
             sites are points coloured by their site nRMS (the same nRMS as in
@@ -65,7 +96,7 @@ Changelog
             Placement CURVES_MAP_PLACEMENT: "right" / "left" = an own column
             next to the panels (figure wider by CURVES_MAP_SIZE), "upper
             right" / "upper left" / "lower right" / "lower left" = inset in the
-            corner of the last / first panel (CURVES_MAP_SIZE inches square,
+            corner of the last / first panel (CURVES_MAP_SIZE cm square,
             smaller for a flat window, drawn on top of the curves). New
             settings CURVES_MAP, CURVES_MAP_PLACEMENT, CURVES_MAP_SIZE,
             CURVES_MAP_TICKS, CURVES_MAP_AXES, CURVES_MAP_CMAP,
@@ -188,7 +219,8 @@ class Settings:
     ITERATION: Union[str, int] = "best"      # "best" | "last" | integer
     ITER_PATTERN: str = "results_iter*.h5"   # searched in each run directory
     METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq")
-    #   "curves" is optional; "nrms" needs NRMS_RESULTS or NRMS_CSV (see below)
+    #   "curves" and "outliers" are optional; "nrms" needs NRMS_RESULTS or NRMS_CSV
+    #   (see below)
 
     # --- ensemble handling ---
     ENSEMBLE_OBS: str = "mean"     # observed values/errors: "mean" over members
@@ -318,6 +350,30 @@ class Settings:
     NRMS_LABEL_FONTSIZE: int = 16
     NRMS_TITLE_FONTSIZE: Optional[int] = None   # None = Matplotlib's default title size
 
+    # --- site outliers (optional method "outliers"; add it to METHODS) ---
+    # The sites whose nRMS (conventional RMS1 normalization, as in
+    # <prefix>_site_nrms.txt; for an ensemble: of the ensemble mean response, or
+    # of REF_MEMBER) is outside the limits of the distribution of the site nRMS
+    # values. Site names as for "curves" (CURVES_SITE_DAT, CURVES_SITE_MATCH,
+    # CURVES_SITE_ID_OFFSET, CURVES_SITE_TOL). Output: <prefix>_site_outliers.txt
+    # (the sites outside), .csv (every site, with its flag) and a figure.
+    # CURVES_SITES = "outliers" draws the curves of these sites only.
+    OUTLIER_METHOD: str = "quantile"   # "quantile": the limits are the quantiles of
+                                       # the site nRMS values at the normal-
+                                       # distribution tail levels of OUTLIER_SIGMA
+                                       # (2 -> 2.275 and 97.725 %); always flags the
+                                       # extreme site(s), whatever the data
+                                       # "sigma": mean +- OUTLIER_SIGMA * std
+                                       # "mad": median +- OUTLIER_SIGMA * 1.4826 * MAD
+                                       # (robust)
+    OUTLIER_SIGMA: float = 2.0         # > 0
+    OUTLIER_SIDE: str = "both"         # "both" | "high" (poorly fitted sites only)
+                                       # | "low" (nRMS below the lower limit only)
+    OUTLIER_LOG10: bool = False        # "sigma" / "mad": work with log10(nRMS) (nRMS is
+                                       # positive and skewed); no effect on "quantile"
+    OUTLIER_MIN_N: int = 1             # sites with fewer residual values are not used
+    OUTLIER_PLOT: bool = True          # figure <prefix>_site_outliers.<fmt>
+
     # --- response curves (optional method "curves"; add it to METHODS) ---
     # Needs data_viz.py on the path. One figure per site, one panel per entry of
     # CURVES_WHAT; PLOT_FORMATS/PLOT_DPI/OUT_DIR/OUT_PREFIX apply as usual.
@@ -356,7 +412,8 @@ class Settings:
     # of the local site.dat (case-insensitive;
     # "A01, A02" as one string also works). A
     # list gives one file per site (see
-    # CURVES_MULTIPAGE)
+    # CURVES_MULTIPAGE). "outliers" = the sites
+    # found by the method "outliers" (OUTLIER_*)
     CURVES_SITE_ORDER: str = "even"    # for an int CURVES_SITES: "even" (spread
                                        # over the site list), "id" (first N),
                                        # "worst" / "best" (by site nRMS)
@@ -426,11 +483,16 @@ class Settings:
     CURVES_MAP: bool = False           # True = draw the map
     CURVES_MAP_PLACEMENT: str = "right"   # "right" | "left": an own column next to the
                                        # panels (figure gets wider by CURVES_MAP_SIZE);
+                                       # "top" | "bottom" (or "above" | "below"): an own
+                                       # row above / below the panels (figure gets higher
+                                       # by CURVES_MAP_SIZE);
                                        # "upper right" | "upper left" | "lower right" |
                                        # "lower left": inset in the corner of the last
                                        # (right) / first (left) panel, on top of the
                                        # curves (do not put the legend there)
-    CURVES_MAP_SIZE: float = 1.7       # [in] side of the map block (map and colour bar)
+    CURVES_MAP_SIZE: float = 4.3       # [cm] side of the map block (map and colour bar):
+                                       # width of the column, height of the row, size
+                                       # of the inset (4.3 cm = 1.7 in)
     CURVES_MAP_TICKS: bool = True      # True = ticks and labels in model coordinates
                                        # [km]; False = no ticks, no labels (frame only)
     CURVES_MAP_AXES: str = "ne"        # "ne": site_x = north (vertical), site_y = east
@@ -1901,7 +1963,15 @@ def draw_bands(ax, period: np.ndarray, y: np.ndarray, *, pct, color,
 # ---------------------------------------------------------------------------
 # Map of the sites in the "curves" figures
 # ---------------------------------------------------------------------------
-MAP_PLACEMENTS = ("right", "left", "upper right", "upper left", "lower right", "lower left")
+MAP_PLACEMENTS = ("right", "left", "top", "bottom",
+                  "upper right", "upper left", "lower right", "lower left")
+MAP_PLACEMENT_ALIASES = {"above": "top", "below": "bottom"}      # as in CURVES_LEGEND_LOC
+_CM_PER_INCH = 2.54
+
+
+def map_size_in(cfg: dict) -> float:
+    """CURVES_MAP_SIZE (cm) in inches, the unit of figure sizes."""
+    return float(cfg["map_size"]) / _CM_PER_INCH
 MAP_AXES = ("ne", "en")
 # single-hue blue ramp (steps 250 ... 700 of the reference sequential ramp):
 # light = low nRMS, dark = high; the light end is not lighter than step 250 so
@@ -1962,9 +2032,10 @@ def _add_site_map(fig, panel_axes, slot, sid: int, site_map: dict, cfg: dict,
     where a site has no nRMS); the current site `sid` carries a larger marker
     with a dark ring. Axes in km (model coordinates) if CURVES_MAP_TICKS, else
     none. The block (map + colour bar) is the axes `slot` (placement "right" /
-    "left": own column of the figure) or an inset, CURVES_MAP_SIZE inches
-    square, in a corner of the first / last panel (the size is kept whatever
-    the layout makes of the panel).
+    "left": own column of the figure; "top" / "bottom": own row, across all
+    panels) or an inset, CURVES_MAP_SIZE cm square, in a corner of the
+    first / last panel (the size is kept whatever the layout makes of the
+    panel).
     """
     from matplotlib.cm import ScalarMappable
     from matplotlib.ticker import MaxNLocator
@@ -2014,7 +2085,7 @@ def _add_site_map(fig, panel_axes, slot, sid: int, site_map: dict, cfg: dict,
     else:                                                  # corner of a panel
         parent = panel_axes[0] if "left" in place else panel_axes[-1]
         block = parent.inset_axes([0.0, 0.0, 1.0, 1.0])
-        side_in = float(cfg["map_size"])
+        side_in = map_size_in(cfg)
         pad_in = 0.06
         # square block; for a flat window only as high as its content needs
         # (but not lower than 0.9 in, the room of the colour bar)
@@ -2114,6 +2185,31 @@ def _add_site_map(fig, panel_axes, slot, sid: int, site_map: dict, cfg: dict,
         cax.set_title("nRMS", fontsize=5.5, pad=2)
 
 
+def _fit_map_row(fig, gs, slot, top: bool, size_in: float, panel_h: float) -> None:
+    """
+    Give the row of the site map (placement "top" / "bottom") its height
+    CURVES_MAP_SIZE (here `size_in`, converted to inches). Constrained layout
+    takes the margins of the figure (title, axis labels, legend below the
+    panels) off the total height before it splits the rest by the height
+    ratios [size_in, panel_h], so the row comes out
+    lower than size_in. One layout pass (draw_without_rendering, nothing is
+    drawn) measures the row; then the ratios are set to [size_in, room -
+    size_in] (room = height left after the margins), which makes the row
+    size_in high and gives the panels the rest. Does nothing if the layout
+    cannot be measured (old Matplotlib) or the panels would get less than 1 in.
+    """
+    try:
+        fig.draw_without_rendering()
+        h1 = slot.get_position().height * fig.get_figheight()
+    except Exception:
+        return
+    if not h1 > 0.0:
+        return
+    room = h1 * (size_in + panel_h) / size_in
+    if room - size_in >= 1.0:
+        gs.set_height_ratios([size_in, room - size_in] if top else [room - size_in, size_in])
+
+
 def plot_site_curves(sid: int, series: Dict[str, dict], info: dict, *, M: int,
                      layers: Sequence[str], cfg: dict, title_extra: str,
                      dv, markers: dict, comp_class, rng,
@@ -2148,10 +2244,22 @@ def plot_site_curves(sid: int, series: Dict[str, dict], info: dict, *, M: int,
         return None
 
     nc = len(panels)
-    slot = None                                   # own column of the site map
-    if site_map is not None and cfg["map_placement"] in ("right", "left"):
+    slot = None                                   # own column / row of the site map
+    row_fit = None                                # (gridspec, top, size, panel height): own row
+    if site_map is not None and cfg["map_placement"] in ("top", "bottom"):
+        top = cfg["map_placement"] == "top"
+        msz = map_size_in(cfg)
+        fig = plt.figure(figsize=(cfg["panel_size"][0] * nc, cfg["panel_size"][1] + msz),
+                         constrained_layout=True)
+        ratios = [msz, cfg["panel_size"][1]] if top else [cfg["panel_size"][1], msz]
+        gs = fig.add_gridspec(2, nc, height_ratios=ratios)
+        i0 = 1 if top else 0
+        axes = np.array([[fig.add_subplot(gs[i0, k]) for k in range(nc)]])
+        slot = fig.add_subplot(gs[0 if top else 1, :])
+        row_fit = (gs, top, msz, cfg["panel_size"][1])
+    elif site_map is not None and cfg["map_placement"] in ("right", "left"):
         left = cfg["map_placement"] == "left"
-        msz = float(cfg["map_size"])
+        msz = map_size_in(cfg)
         fig = plt.figure(figsize=(cfg["panel_size"][0] * nc + msz, cfg["panel_size"][1]),
                          constrained_layout=True)
         ratios = [cfg["panel_size"][0]] * nc
@@ -2282,6 +2390,8 @@ def plot_site_curves(sid: int, series: Dict[str, dict], info: dict, *, M: int,
         fig.suptitle(_sup, fontsize=10)
     if site_map is not None:
         _add_site_map(fig, axes[0], slot, sid, site_map, cfg, obs_only)
+        if row_fit is not None:
+            _fit_map_row(fig, row_fit[0], slot, *row_fit[1:])
     return fig
 
 
@@ -2296,6 +2406,374 @@ def format_site_nrms(info: Dict[int, dict]) -> str:
                      + ",".join(str(i) for i in d.get("also", [])))
     lines.append("=" * len(hdr))
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Site names, and the sites whose nRMS is an outlier (method "outliers")
+# ---------------------------------------------------------------------------
+def _site_search_dirs(runs: Sequence[dict]) -> List[str]:
+    """Where to look for site.dat: the results directories and up to two
+    levels above them (ensemble members sit in a common parent), then the
+    current directory as a last resort."""
+    sdirs: List[str] = []
+    for r in runs:
+        d = os.path.dirname(os.path.abspath(r["path"]))
+        for _ in range(3):
+            if d not in sdirs:
+                sdirs.append(d)
+            d = os.path.dirname(d)
+    if os.getcwd() not in sdirs:
+        sdirs.append(os.getcwd())
+    return sdirs
+
+
+def named_site_info(ds: dict, *, site_dat, search_dirs: Sequence[str],
+                    id_offset: int, match: str, tol: float) -> Dict[int, dict]:
+    """site_nrms(ds) with the site names of the site.dat added (key "name")."""
+    info = site_nrms(ds)
+    names = load_site_names(site_dat, search_dirs, id_offset, info, match, tol)
+    for s, nm in names.items():
+        if s in info:
+            info[s]["name"] = nm
+    return info
+
+
+OUTLIER_METHODS: Tuple[str, ...] = ("quantile", "sigma", "mad")
+OUTLIER_SIDES: Tuple[str, ...] = ("both", "high", "low")
+OUTLIER_MAX_LABELS = 40        # sites named in the figure (the worst ones)
+OUTLIER_COLORS = dict(inside="0.55", high="#d55e00", low="#0072b2")   # grey, vermillion, blue
+
+
+def normal_tail(sigma: float) -> float:
+    """P(Z < -sigma) of the standard normal distribution (0.02275 for 2)."""
+    return 0.5 * math.erfc(float(sigma) / math.sqrt(2.0))
+
+
+def _ascii(text) -> str:
+    """Plain ASCII (the tables are written as ASCII; other characters become ?)."""
+    return str(text).encode("ascii", "replace").decode("ascii")
+
+
+def outlier_limits(values, *, method: str = "quantile", sigma: float = 2.0,
+                   log10: bool = False) -> dict:
+    """
+    Limits of "normal" values and the centre of `values` (non-finite entries,
+    and with log10 non-positive ones, are left out).
+
+    method "quantile"  lo, hi = the quantiles at the tail levels of a normal
+                       distribution at -sigma / +sigma (sigma = 2: 2.275 and
+                       97.725 %), numpy's linear interpolation; the centre is
+                       the median; spread = (hi - lo) / (2 sigma). With 3 or more
+                       values the smallest and the largest one are always outside
+                       (unless tied with their neighbour), so this flags the
+                       extreme sites whatever the data.
+           "sigma"     mean -+ sigma * std (ddof = 1)
+           "mad"       median -+ sigma * 1.4826 * MAD (a robust sigma)
+    log10  compute everything on log10(values); lo, hi and center are returned
+           back-transformed (10**), the spread stays in log10 units. Ignored for
+           "quantile" (the quantiles of a monotone transform are the same up to
+           the interpolation), which then also keeps non-positive values.
+
+    Returns dict(lo, hi, center, spread, n, level_lo, level_hi) with NaN limits
+    for fewer than 3 usable values; level_lo / level_hi [%] only for "quantile"
+    (else NaN). Raises ValueError for an unknown method or sigma <= 0.
+    """
+    if method not in OUTLIER_METHODS:
+        raise ValueError(f"OUTLIER_METHOD {method!r} not in {OUTLIER_METHODS}.")
+    sigma = float(sigma)
+    if not sigma > 0.0:
+        raise ValueError(f"OUTLIER_SIGMA must be > 0, got {sigma}.")
+    v = np.asarray(values, float).ravel()
+    v = v[np.isfinite(v)]
+    log10 = bool(log10) and method != "quantile"
+    if log10:
+        v = np.log10(v[v > 0.0])
+    nan = float("nan")
+    out = dict(lo=nan, hi=nan, center=nan, spread=nan, n=int(v.size),
+               level_lo=nan, level_hi=nan)
+    if v.size < 3:
+        return out
+    if method == "quantile":
+        p = 100.0 * normal_tail(sigma)
+        lo, hi = (float(q) for q in np.percentile(v, [p, 100.0 - p]))
+        center = float(np.median(v))
+        spread = (hi - lo) / (2.0 * sigma)
+        out.update(level_lo=p, level_hi=100.0 - p)
+    elif method == "sigma":
+        center = float(np.mean(v))
+        spread = float(np.std(v, ddof=1))
+        lo, hi = center - sigma * spread, center + sigma * spread
+    else:
+        center = float(np.median(v))
+        spread = 1.4826 * float(np.median(np.abs(v - center)))
+        lo, hi = center - sigma * spread, center + sigma * spread
+    if log10:
+        lo, hi, center = 10.0 ** lo, 10.0 ** hi, 10.0 ** center
+    out.update(lo=lo, hi=hi, center=center, spread=spread)
+    return out
+
+
+def find_site_outliers(info: Dict[int, dict], *, method: str = "quantile",
+                       sigma: float = 2.0, side: str = "both",
+                       log10: bool = False, min_n: int = 1) -> dict:
+    """
+    The sites of the per-site table `info` (see site_nrms) whose nRMS is
+    outside the limits of outlier_limits(): above hi ("high": poorly fitted)
+    and / or below lo ("low"), as `side` says ("both" | "high" | "low").
+    Sites without a finite nRMS, or with fewer than `min_n` residual values,
+    are not used.
+
+    Returns dict(method, sigma, side, log10, lo, hi, center, spread, level_lo,
+    level_hi, n_used, n_total, used = [ids], flag = {id: "" | "high" | "low"},
+    outliers = [ids, largest nRMS first]). Raises ValueError for an unknown
+    method / side, sigma <= 0.
+    """
+    if side not in OUTLIER_SIDES:
+        raise ValueError(f"OUTLIER_SIDE {side!r} not in {OUTLIER_SIDES}.")
+    log10 = bool(log10) and method != "quantile"      # no effect on the quantiles
+    used = sorted(s for s, d in info.items()
+                  if np.isfinite(d["nrms"]) and d["n"] >= int(min_n)
+                  and (not log10 or d["nrms"] > 0.0))
+    vals = np.array([info[s]["nrms"] for s in used], float)
+    lim = outlier_limits(vals, method=method, sigma=sigma, log10=log10)
+    flag = {s: "" for s in info}
+    for s, v in zip(used, vals):
+        if side in ("both", "high") and v > lim["hi"]:
+            flag[s] = "high"
+        elif side in ("both", "low") and v < lim["lo"]:
+            flag[s] = "low"
+    outliers = sorted((s for s in used if flag[s]), key=lambda s: -info[s]["nrms"])
+    return dict(method=method, sigma=float(sigma), side=side, log10=bool(log10),
+                n_used=len(used), n_total=len(info), used=used, flag=flag,
+                outliers=outliers, **{k: lim[k] for k in
+                                      ("lo", "hi", "center", "spread", "level_lo", "level_hi")})
+
+
+def _outlier_cfg(opts) -> dict:
+    """The OUTLIER_* settings as keywords of find_site_outliers (ValueError if invalid)."""
+    cfg = dict(method=str(opts.OUTLIER_METHOD).strip().lower(),
+               sigma=opts.OUTLIER_SIGMA,
+               side=str(opts.OUTLIER_SIDE).strip().lower(),
+               log10=bool(opts.OUTLIER_LOG10), min_n=opts.OUTLIER_MIN_N)
+    if cfg["method"] not in OUTLIER_METHODS:
+        raise ValueError(f"OUTLIER_METHOD {opts.OUTLIER_METHOD!r} not in {OUTLIER_METHODS}.")
+    if cfg["side"] not in OUTLIER_SIDES:
+        raise ValueError(f"OUTLIER_SIDE {opts.OUTLIER_SIDE!r} not in {OUTLIER_SIDES}.")
+    try:
+        cfg["sigma"] = float(cfg["sigma"])
+        cfg["min_n"] = int(cfg["min_n"])
+    except (TypeError, ValueError):
+        raise ValueError("OUTLIER_SIGMA must be a number > 0 and OUTLIER_MIN_N an integer.")
+    if not cfg["sigma"] > 0.0 or cfg["min_n"] < 1:
+        raise ValueError("OUTLIER_SIGMA must be > 0 and OUTLIER_MIN_N >= 1.")
+    return cfg
+
+
+def outlier_summary(res: dict) -> List[str]:
+    """The lines that say how the outliers were found (for the console and the table)."""
+    if res["method"] == "quantile":
+        how = (f"quantile: limits at the {res['level_lo']:.3f} and {res['level_hi']:.3f} % "
+               f"quantiles of the site nRMS (the normal-distribution tail levels of "
+               f"+-{res['sigma']:g} sigma)") if np.isfinite(res["level_lo"]) else "quantile"
+    elif res["method"] == "sigma":
+        how = f"sigma: mean +- {res['sigma']:g} std" + (" of log10(nRMS)" if res["log10"] else "")
+    else:
+        how = (f"mad: median +- {res['sigma']:g} * 1.4826 * MAD"
+               + (" of log10(nRMS)" if res["log10"] else ""))
+    out = [f"method   {how}; side: {res['side']}",
+           f"sites    {res['n_used']} used of {res['n_total']}"
+           + (" (the others have no nRMS or too few values)"
+              if res["n_used"] < res["n_total"] else "")]
+    if not np.isfinite(res["lo"]):
+        out.append("limits   not defined (fewer than 3 sites with an nRMS)")
+        return out
+    lo = "-" if res["side"] == "high" else f"{res['lo']:.3f}"
+    hi = "-" if res["side"] == "low" else f"{res['hi']:.3f}"
+    out.append(f"limits   nRMS < {lo} or nRMS > {hi}   (centre {res['center']:.3f})")
+    n_hi = sum(1 for s in res["outliers"] if res["flag"][s] == "high")
+    n_lo = len(res["outliers"]) - n_hi
+    out.append(f"outside  {len(res['outliers'])} of {res['n_used']} sites "
+               f"({n_hi} above, {n_lo} below)")
+    if res["method"] == "quantile":
+        out.append("note     quantile limits always flag the extreme site(s), whatever the "
+                   "data; to flag only sites that stand out, use OUTLIER_METHOD = "
+                   "\"sigma\" or \"mad\"")
+    return out
+
+
+def format_site_outliers(info: Dict[int, dict], res: dict) -> str:
+    """Table of the outlier sites, largest nRMS first (ASCII). `rank` is the
+    rank among all used sites (1 = largest nRMS); z = (nRMS - centre) / spread
+    (log10 units with OUTLIER_LOG10)."""
+    hdr = (f"{'rank':>5} {'site_id':>8} {'name':<16} {'site_x':>14} {'site_y':>14} "
+           f"{'n':>7} {'nrms':>8} {'z':>7}  side")
+    lines = ["=" * len(hdr), hdr, "-" * len(hdr)]
+    order = sorted(res["used"], key=lambda s: -info[s]["nrms"])
+    rank = {s: k + 1 for k, s in enumerate(order)}
+    for s in res["outliers"]:
+        d = info[s]
+        v = math.log10(d["nrms"]) if res["log10"] else d["nrms"]
+        c = math.log10(res["center"]) if res["log10"] else res["center"]
+        z = (v - c) / res["spread"] if res["spread"] and np.isfinite(res["spread"]) else float("nan")
+        lines.append(f"{rank[s]:>5d} {s:>8d} {_ascii(d.get('name', '')):<16} {d['x']:>14.6g} "
+                     f"{d['y']:>14.6g} {d['n']:>7d} {d['nrms']:>8.3f} {z:>7.2f}  "
+                     f"{res['flag'][s]}")
+    if not res["outliers"]:
+        lines.append("(no site outside the limits)")
+    lines.append("=" * len(hdr))
+    return "\n".join(lines)
+
+
+def format_site_csv(info: Dict[int, dict], res: dict) -> str:
+    """Every site with its nRMS and flag ("high" | "low" | empty; "unused" for
+    a site that was not used) as CSV text, sorted by site id."""
+    import csv
+    import io
+
+    buf = io.StringIO()
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(["site_id", "name", "site_x", "site_y", "n", "nrms", "flag"])
+    used = set(res["used"])
+    for s in sorted(info):
+        d = info[s]
+        w.writerow([s, _ascii(d.get("name", "")), f"{d['x']:.6g}", f"{d['y']:.6g}", d["n"],
+                    f"{d['nrms']:.4f}" if np.isfinite(d["nrms"]) else "nan",
+                    res["flag"][s] if s in used else "unused"])
+    return buf.getvalue().rstrip("\n")
+
+
+def plot_site_outliers(info: Dict[int, dict], res: dict, *, title: str = "",
+                       name_case: Optional[str] = None,
+                       max_labels: int = OUTLIER_MAX_LABELS):
+    """
+    Figure: the nRMS of every used site (in the order of the site ids; the
+    outliers marked and named, the worst `max_labels` of them), the limits as
+    dashed lines, and the histogram of the nRMS values at the right. Above the
+    upper limit: triangles up; below the lower limit: triangles down.
+    """
+    import matplotlib.pyplot as plt
+    from matplotlib.lines import Line2D
+
+    used = res["used"]
+    v = np.array([info[s]["nrms"] for s in used], float)
+    k = np.arange(v.size)
+    flag = np.array([res["flag"][s] for s in used])
+    col = OUTLIER_COLORS
+    fig, (ax, axh) = plt.subplots(1, 2, sharey=True, figsize=(9.0, 4.2),
+                                  gridspec_kw=dict(width_ratios=[4, 1], wspace=0.05,
+                                                   left=0.10, right=0.98, bottom=0.17,
+                                                   top=0.90 if title else 0.96))
+    inside = flag == ""
+    ax.plot(k[inside], v[inside], "o", ms=4, color=col["inside"], mec="none")
+    handles = [Line2D([], [], marker="o", ls="", ms=4, color=col["inside"],
+                      label=f"within limits ({int(inside.sum())})")]
+    for kind, mk, txt in (("high", "^", "above the upper limit"),
+                          ("low", "v", "below the lower limit")):
+        m = flag == kind
+        if m.any():
+            ax.plot(k[m], v[m], mk, ms=7, color=col[kind], mec="white", mew=0.8)
+            handles.append(Line2D([], [], marker=mk, ls="", ms=7, color=col[kind],
+                                  mec="white", label=f"{txt} ({int(m.sum())})"))
+    lines = []
+    if np.isfinite(res["lo"]):
+        if res["side"] != "high":
+            lines.append(res["lo"])
+        if res["side"] != "low":
+            lines.append(res["hi"])
+        for y in lines:
+            for a in (ax, axh):
+                a.axhline(y, color="0.25", lw=1.0, ls="--")
+        for a in (ax, axh):
+            a.axhline(res["center"], color="0.25", lw=0.8, ls=":")
+        handles.append(Line2D([], [], color="0.25", lw=1.0, ls="--", label="limits"))
+        handles.append(Line2D([], [], color="0.25", lw=0.8, ls=":", label="centre"))
+    for s in res["outliers"][:max_labels]:
+        j = used.index(s)
+        nm = display_name(info[s].get("name"), name_case) or str(s)
+        hi = res["flag"][s] == "high"
+        ax.annotate(_ascii(nm), (j, info[s]["nrms"]), xytext=(0, 6 if hi else -6),
+                    textcoords="offset points", rotation=90, fontsize=7,
+                    ha="center", va="bottom" if hi else "top")
+    if len(res["outliers"]) > max_labels:
+        ax.text(0.01, 0.98, f"{len(res['outliers']) - max_labels} more not named",
+                transform=ax.transAxes, fontsize=7, va="top")
+    if v.size:
+        if res["log10"] and np.all(v > 0):
+            edges = 10.0 ** np.histogram_bin_edges(np.log10(v), bins="auto")
+            ax.set_yscale("log")
+        else:
+            edges = np.histogram_bin_edges(v, bins="auto")
+        axh.hist(v, bins=edges, orientation="horizontal", color=col["inside"],
+                 edgecolor="white", lw=0.5)
+    ax.margins(y=0.15)
+    ax.set_xlabel("site (in the order of the site ids)")
+    ax.set_ylabel("site nRMS")
+    axh.set_xlabel("sites")
+    axh.tick_params(labelleft=False)
+    for a in (ax, axh):
+        a.grid(True, axis="y", color="0.9", lw=0.6)
+        a.set_axisbelow(True)
+        for side_ in ("top", "right"):
+            a.spines[side_].set_visible(False)
+    ax.legend(handles=handles, loc="best", fontsize=8, frameon=False)
+    if title:
+        fig.suptitle(title, fontsize=10)
+    return fig
+
+
+def run_outliers(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
+                 plot_dir: Optional[str] = None,
+                 search_dirs: Sequence[str] = ()) -> int:
+    """
+    Method "outliers": find the sites whose nRMS is outside the limits (see the
+    OUTLIER_* settings), print and write the table / CSV, draw the figure.
+    Returns 0 on success, 1 if a setting is invalid.
+    """
+    import matplotlib.pyplot as plt
+
+    try:
+        cfg = _outlier_cfg(opts)
+    except ValueError as exc:
+        print(f"femtic_misfit: outliers: {exc}")
+        return 1
+    if opts.CURVES_SITE_MATCH not in ("auto", "coords", "id"):
+        print("femtic_misfit: outliers: CURVES_SITE_MATCH must be auto/coords/id.")
+        return 1
+    info = named_site_info(ds, site_dat=opts.CURVES_SITE_DAT, search_dirs=search_dirs,
+                           id_offset=opts.CURVES_SITE_ID_OFFSET,
+                           match=opts.CURVES_SITE_MATCH, tol=float(opts.CURVES_SITE_TOL))
+    res = find_site_outliers(info, **cfg)
+    notes = outlier_summary(res)
+    table = format_site_outliers(info, res)
+    print("femtic_misfit: site outliers")
+    for ln in notes:
+        print("  " + ln)
+    print(table)
+    if opts.WRITE_STATS:
+        _write(os.path.join(out_dir, f"{prefix}_site_outliers.txt"),
+               f"# {title_extra}; sites whose nRMS (conventional RMS1 normalization) is "
+               "outside the limits\n# of the site-nRMS distribution; rank 1 = largest nRMS; "
+               "z = (nRMS - centre) / spread\n"
+               + "\n".join("# " + ln for ln in notes), table)
+        _write(os.path.join(out_dir, f"{prefix}_site_outliers.csv"),
+               "# every site; flag: high / low = outside the limits, empty = inside, "
+               "unused = no nRMS or too few values", format_site_csv(info, res))
+    if opts.OUTLIER_PLOT:
+        if not res["n_used"]:
+            print("femtic_misfit: outliers: no site with an nRMS, no figure.")
+        else:
+            fig = plot_site_outliers(
+                info, res, name_case=opts.CURVES_NAME_CASE,
+                title=_resolve_title(opts.FIGURE_TITLE, "outliers",
+                                     f"site nRMS outliers, {title_extra}", title=title_extra))
+            fig_dir = plot_dir or out_dir
+            os.makedirs(fig_dir, exist_ok=True)
+            _save(fig, os.path.join(fig_dir, f"{prefix}_site_outliers"),
+                  opts.PLOT_FORMATS, opts.PLOT_DPI)
+            if opts.SHOW:
+                plt.show()
+            plt.close(fig)
+    return 0
 
 
 def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
@@ -2342,9 +2820,11 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
         return 1
     if cfg["map"]:
         cfg["map_placement"] = str(cfg["map_placement"]).strip().lower()
+        cfg["map_placement"] = MAP_PLACEMENT_ALIASES.get(cfg["map_placement"], cfg["map_placement"])
         if cfg["map_placement"] not in MAP_PLACEMENTS:
             print(f"femtic_misfit: curves: CURVES_MAP_PLACEMENT must be one of "
-                  f"{MAP_PLACEMENTS}; got {cfg['map_placement']!r}.")
+                  f"{MAP_PLACEMENTS} (or {tuple(MAP_PLACEMENT_ALIASES)}); "
+                  f"got {cfg['map_placement']!r}.")
             return 1
         if str(cfg["map_axes"]).strip().lower() not in MAP_AXES:
             print(f"femtic_misfit: curves: CURVES_MAP_AXES must be one of {MAP_AXES}.")
@@ -2358,7 +2838,7 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
                 if not _mhi > _mlo:
                     raise ValueError
         except (TypeError, ValueError):
-            print("femtic_misfit: curves: CURVES_MAP_SIZE and CURVES_MAP_MARKER_SIZE must "
+            print("femtic_misfit: curves: CURVES_MAP_SIZE [cm] and CURVES_MAP_MARKER_SIZE must "
                   "be > 0, CURVES_MAP_NRMS_RANGE None or (lo, hi) with hi > lo.")
             return 1
     M = ds["M"]
@@ -2371,20 +2851,28 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
     skipped = sorted(set(np.unique(ds["datatype_name"]).tolist()) - set(_CURVE_TYPES))
     if skipped:
         print(f"femtic_misfit: curves: no plotter for data types {skipped}, skipped.")
-    info = site_nrms(ds)
-    names = load_site_names(cfg["site_dat"], search_dirs, cfg["id_offset"], info,
-                            cfg["site_match"], cfg["site_tol"])
-    for s, nm in names.items():
-        if s in info:
-            info[s]["name"] = nm
+    info = named_site_info(ds, site_dat=cfg["site_dat"], search_dirs=search_dirs,
+                           id_offset=cfg["id_offset"], match=cfg["site_match"],
+                           tol=cfg["site_tol"])
     if opts.WRITE_STATS:
         _write(os.path.join(out_dir, f"{prefix}_site_nrms.txt"),
                f"# {title_extra}; per-site nRMS, conventional normalization (RMS1)\n"
                "# site_x / site_y as stored in the results file; name from site.dat;\n"
                "# also_ids: other site ids (e.g. VTF) at the same position, merged into site_id",
                format_site_nrms(info))
+    spec = cfg["sites"]
+    if isinstance(spec, str) and spec.strip().lower() == "outliers":
+        try:
+            res = find_site_outliers(info, **_outlier_cfg(opts))
+        except ValueError as exc:
+            print(f"femtic_misfit: curves: {exc}")
+            return 1
+        spec = list(res["outliers"])
+        print(f"femtic_misfit: curves: CURVES_SITES = \"outliers\": {len(spec)} of "
+              f"{res['n_used']} sites outside the limits ({res['method']}, "
+              f"+-{res['sigma']:g} sigma, side {res['side']}).")
     try:
-        sids = select_sites(info, cfg["sites"], cfg["site_order"], cfg["max_sites"])
+        sids = select_sites(info, spec, cfg["site_order"], cfg["max_sites"])
     except ValueError as exc:
         print(f"femtic_misfit: curves: {exc}")
         return 1
@@ -2910,22 +3398,15 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
                    + "; 0 for a Gaussian\n"
                    "# (definitions: see the fit-measure note of the other tables)", table)
 
+    rc = 0
+    if "outliers" in opts.METHODS:
+        rc = run_outliers(ds, opts, out_dir=out_dir, prefix=prefix, title_extra=title_extra,
+                          plot_dir=fig_dir, search_dirs=_site_search_dirs(runs))
     if "curves" in opts.METHODS:
-        # where to look for site.dat: the results directories and up to two
-        # levels above them (ensemble members sit in a common parent)
-        sdirs: List[str] = []
-        for r in runs:
-            d = os.path.dirname(os.path.abspath(r["path"]))
-            for _ in range(3):
-                if d not in sdirs:
-                    sdirs.append(d)
-                d = os.path.dirname(d)
-        if os.getcwd() not in sdirs:              # the local site.dat, as a last resort
-            sdirs.append(os.getcwd())
-        return run_curves(ds, opts, out_dir=out_dir, prefix=prefix, title_extra=title_extra,
-                          plot_dir=fig_dir,
-                          search_dirs=sdirs)
-    return 0
+        return max(rc, run_curves(ds, opts, out_dir=out_dir, prefix=prefix,
+                                  title_extra=title_extra, plot_dir=fig_dir,
+                                  search_dirs=_site_search_dirs(runs)))
+    return rc
 
 
 # ---------------------------------------------------------------------------
@@ -2968,7 +3449,7 @@ def run_models(opts, argv: Sequence[str] = ()) -> int:
     if "nrms" in methods:
         print("femtic_misfit: method 'nrms' needs an ensemble (femtic_ens_misfit.py); "
               "ignored for single models.")
-    if not any(m in methods for m in ("crossplot", "histogram", "qq", "curves")):
+    if not any(m in methods for m in ("crossplot", "histogram", "qq", "curves", "outliers")):
         print("femtic_misfit: no method left to run.")
         return 1
     paths = expand_paths(list(argv) if argv else opts.RUN_PATHS)
@@ -3009,7 +3490,7 @@ def run_ensemble(opts, argv: Sequence[str] = ()) -> int:
     _backend(opts)
     methods = tuple(opts.METHODS)
     rc_nrms = run_nrms_histogram(opts) if "nrms" in methods else 0
-    if not any(m in methods for m in ("crossplot", "histogram", "qq", "curves")):
+    if not any(m in methods for m in ("crossplot", "histogram", "qq", "curves", "outliers")):
         return rc_nrms        # only the nRMS histogram was asked for
     paths = expand_paths(list(argv) if argv else opts.RUN_PATHS)
     if not paths:

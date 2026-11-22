@@ -86,6 +86,15 @@ AI-generated code -- review before production use.
               (femtic.py of the same date); a file that cannot give it stops
               the script with a message. AI-generated; review before
               production use.
+
+2026-11-22  Claude Sonnet 5.5 (Anthropic)
+              The contents of the results .npz that was read
+              (ENSEMBLE_RESULTS: every key with shape, type and meaning) are
+              printed after reading (if OUT) and appended to
+              femtic_ens_plot_bh_summary.md (fem.print_results_contents(),
+              fem.append_results_contents(), femtic.py of the same date).
+              Nothing else changes.
+              AI-generated; review before production use.
 """
 
 from __future__ import annotations
@@ -613,6 +622,8 @@ try:
     mesh = fem.BoreholeMesh(MOD_MESH)
 except (FileNotFoundError, KeyError, ValueError) as _exc:
     sys.exit(f"femtic_ens_plot_bh.py: {_exc}")
+if OUT:
+    fem.print_results_contents(ENSEMBLE_RESULTS, prefix=res["prefix"])
 
 P = res["prefix"]
 ens_matrix = res["ens"]
@@ -830,3 +841,5 @@ print("\nfemtic_ens_plot_bh.py complete.")
 # Parameter summary
 # ---------------------------------------------------------------------------
 _summary_path = utl.write_param_summary(__file__, out_dir=ENSEMBLE_DIR)
+# The contents of the results .npz that was read (key, shape, type, meaning).
+fem.append_results_contents(ENSEMBLE_RESULTS, _summary_path, __file__, prefix=NPZ_PREFIX)

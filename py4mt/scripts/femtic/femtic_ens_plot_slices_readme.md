@@ -218,6 +218,33 @@ and in the file's `<P>_diff_prior_info`. In a results file written with
 the set of perturbed models, so the difference exists only for a reference
 prior and measures the sampling noise of the prior draws.
 
+### Spread at iter0 and the ratio iterX / iter0
+
+When `femtic_ens_post.py` ran with `COMPUTE_QDIFF_ITER0` and
+`ENS_MODEL_SOURCE = "both"` (its changelog 2026-11-22) the results file holds,
+for every `QDIFF_PAIRS` entry, the spread of the **iter0** models
+(`qdiff0_<lo>_<hi>`) and the ratio of the converged spread to it
+(`qratio_<lo>_<hi>` = `qdiff / qdiff0`, X = the best-nRMS iteration of each
+member). Neither is in the default `MOD_STATS_WHAT`:
+
+| Name | Shows | Default style (`MOD_STATS_STYLE`) |
+|---|---|---|
+| `"qdiff0_15_9_84_1"`, `"qdiff0_2_3_97_7"` | `\|P_hi - P_lo\|` of the iter0 / perturbed models, log10(Ohm.m): what the prior says | as `qdiff_*`: `clim=[0, 1]` |
+| `"qratio_15_9_84_1"`, `"qratio_2_3_97_7"` | `qdiff / qdiff0`; below 1 the data narrowed the ensemble, near 1 the prior is what is left | `"coolwarm"`, `clim=[0, 2]` (1 is the neutral colour), label `"P84.1 - P15.9: iterX / iter0"` |
+
+```python
+MOD_STATS_WHAT = MOD_STATS_WHAT + ["qdiff0_15_9_84_1", "qratio_15_9_84_1"]
+```
+
+The ratio can also be the `<name>` of `MOD_ALPHA_SOURCE`
+(`"qratio_15_9_84_1 < 0.5"` shows only the cells where the spread is less than
+half the prior spread). It is `NaN` (not drawn) where the iter0 spread is zero,
+e.g. when `referencemodel.dat` is a link and all members are identical. A file
+without the keys (written before the change, `COMPUTE_QDIFF_ITER0 = False`, or
+`ENS_MODEL_SOURCE` other than `"both"`) skips the panel with a printed
+message; with `ENS_MODEL_SOURCE = "perturbed"` for the plots (the perturbed
+models alone) the keys are dropped like `qdiff_*`.
+
 ### Statistics definition used in the panels
 
 | Parameter | Type | Default | Description |
@@ -623,8 +650,11 @@ MOD_MAP_MARKERS = [
   resistivity_block_<prefix>_alpha.dat       (if MOD_ALPHA_SOURCE is set; raw values = alpha)
   <prefix>_best.<fmt>                        "best" panel (or MOD_QC_FILE.<fmt>)
   <prefix>_avg.<fmt>   <prefix>_err.<fmt>  ...      one figure per panel and MOD_PLOT_FORMAT entry
-femtic_ens_plot_slices_summary.md            settings of the run (in ENSEMBLE_DIR)
+femtic_ens_plot_slices_summary.md            settings of the run, then the contents of the results .npz that was read (in ENSEMBLE_DIR)
 ```
+
+The contents of the results `.npz` (every key with shape, type and meaning) are printed
+to the console after reading (if `OUT = True`) and appended to the summary file.
 
 The statistic block files are valid FEMTIC resistivity block files usable as
 input to `femtic_mod_edit.py`, `femtic_mod_plot_slice.py`, or the VTK export
@@ -679,3 +709,5 @@ the file.
 | 2026-11-15 (d) | Claude Sonnet 5.5 (Anthropic) | **Fault limited to its defining points.** The `kind="profile"` entry of `MOD_SLICES` takes `limit_km` (km, default `0.0`: the stretch p1 ... p2; `> 0` widens, `< 0` narrows it at both ends, `None` = off) and `alpha_outside` (default `0.25`): the fault between the two points is drawn as given, the rest fainter (overlay lines on the other panels; the model on the fault panel faded towards white). The Vuache entry carries both keys; the comment above it and the new section "Fault from two surface points" describe them. Based on the script as of 2026-11-15 16:12: all settings kept, `sens_*` names as in (c); MOD_ALPHA_SOURCE `"sens_median > -6."` (was `"sens_median_an > -6."`, now relative to the median's own max). No code change in the script; needs the `femtic_viz.py` of the same date. Tested on a synthetic mesh (drawing run); not on your data. AI-generated; review before production use. |
 | 2026-11-15 (g) | Claude Sonnet 5.5 (Anthropic) | **Point markers on maps and sections.** `MOD_MAP_MARKERS` now holds the example of the Epagny 1996 epicentre (45.9383 N, 6.0883 E, depth 2 +- 1 km: yellow star with a depth bar) and the model centre (black cross, maps and sections). New entry keys `depth` / `depth_err` / `max_dist` (km), `kinds`, `err_color`, `err_lw`, `err_cap`; a marker with a depth is also drawn on `ns` / `ew` / `plane` / `profile` panels within `max_dist` (default `MOD_PROJECTION_DIST`) of the section. Commented example sections through both points next to the Vuache entry of `MOD_SLICES`. The call converts the list with the new `fem.markers_km_to_m`. With `MOD_MAP_MARKERS = []` the figures are unchanged. Needs `femtic.py` and `femtic_viz.py` of the same date. Tested on a synthetic mesh (drawing run, Agg backend); not on your data. AI-generated; review before production use. |
 | 2026-11-15 (h) | Claude Sonnet 5.5 (Anthropic) | **Difference to the prior model.** `MOD_STATS_WHAT` accepts `"diff_prior"` (signed log10 difference model(ens) - model(prior), written by `femtic_ens_post.py` (d)) and `"abs_diff_prior"` (its absolute value); `MOD_STATS_STYLE` has entries for both (diverging `"RdBu"`, `clim=[-1, 1]`; `"viridis"`, `clim=[0, 1]`); either can be the name in `MOD_ALPHA_SOURCE`. Neither is in the default list. No code change in the script body. Needs the `femtic.py` of the same date and a results file from the post script of the same date. Tested on synthetic results (stubbed and real drawing, Agg); not on your data. AI-generated; review before production use. |
+| 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | **Spread at iter0 and the ratio iterX / iter0.** `MOD_STATS_WHAT` accepts `"qdiff0_<lo>_<hi>"` (spread of the iter0 / perturbed models) and `"qratio_<lo>_<hi>"` (= `qdiff / qdiff0`, written by `femtic_ens_post.py` of the same date); `MOD_STATS_STYLE` has entries for both (`qdiff0`: as `qdiff`; `qratio`: `"coolwarm"`, `clim=[0, 2]`); neither is in the default list (commented lines show them); either can be the name in `MOD_ALPHA_SOURCE`. A file without the keys skips the panel with a printed message. No code change in the script body; needs the `femtic.py` of the same date. Tested on synthetic results (reader, stat map, style entries); not on your data. AI-generated; review before production use. |
+| 2026-11-22 (b) | Claude Sonnet 5.5 (Anthropic) | **Contents of the results `.npz`.** The list of the arrays of `ENSEMBLE_RESULTS` (key, shape, type, meaning) is printed after reading (if `OUT`) and appended to `femtic_ens_plot_slices_summary.md` (`fem.print_results_contents()`, `fem.append_results_contents()`; the `femtic.py` of the same date). Nothing else changes. Tested on synthetic results files; not on your data. AI-generated; review before production use. |

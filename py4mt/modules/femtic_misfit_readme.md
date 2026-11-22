@@ -13,7 +13,7 @@ Engine of the data-misfit scripts `femtic_ens_misfit.py` (ensemble) and
 between a single run and an ensemble with `RUN_MODE`. The module
 `femtic_misfit.py` contains the same functions (reading and selecting the
 results files, building the aligned ensemble dataset, the site-id merge, the
-fit measures, the crossplot / histogram / Q-Q / curves / nRMS methods), but
+fit measures, the crossplot / histogram / Q-Q / curves / nRMS / outliers methods), but
 the settings are an argument:
 
     import femtic_misfit as fm
@@ -45,6 +45,10 @@ copy, the script can later be reduced to a thin wrapper around this module
 | `resolve_run`, `expand_paths`, `build_dataset`, `align_members`, `merge_sites_by_position`, `data_rms`, ... | the building blocks of `femtic_data_misfit.py`, unchanged |
 | `process_runs(runs, opts, *, mode, out_dir, prefix)` | all selected methods for resolved runs (`mode` = `"single"` or `"ensemble"`) |
 | `run_curves(ds, opts, *, out_dir, prefix, title_extra, plot_dir, search_dirs)`, `run_nrms_histogram(opts)` | methods `"curves"` and `"nrms"` |
+| `run_outliers(ds, opts, *, out_dir, prefix, title_extra, plot_dir, search_dirs)` | method `"outliers"` |
+| `find_site_outliers(info, *, method, sigma, side, log10, min_n)`, `outlier_limits(values, *, method, sigma, log10)`, `normal_tail(sigma)` | the flags and the limits (pure functions; `info` = `site_nrms(ds)`) |
+| `format_site_outliers(info, res)`, `format_site_csv(info, res)`, `outlier_summary(res)`, `plot_site_outliers(info, res, *, title, name_case, max_labels)` | table, CSV, the lines that say how the limits were found, and the figure |
+| `named_site_info(ds, *, site_dat, search_dirs, id_offset, match, tol)` | `site_nrms(ds)` with the site names of `site.dat` (shared by `"curves"` and `"outliers"`) |
 
 Only the five functions that used the settings (`_curves_cfg`, `run_curves`,
 `run_nrms_histogram`, `process_runs`, and the former `main`) changed their
@@ -69,7 +73,7 @@ The defaults of `Settings` (neutral; the scripts set their own).
 | `RUN_PATHS` | `[]` | Run dirs / files / globs (argv overrides) |
 | `ITERATION` | `'best'` | `"best"`, `"last"`, or integer |
 | `ITER_PATTERN` | `'results_iter*.h5'` | Search pattern in run dirs |
-| `METHODS` | `('crossplot', 'histogram', 'qq')` | `"crossplot"`, `"histogram"`, `"qq"`, `"curves"`, `"nrms"` |
+| `METHODS` | `('crossplot', 'histogram', 'qq')` | `"crossplot"`, `"histogram"`, `"qq"`, `"curves"`, `"nrms"`, `"outliers"` |
 | `ENSEMBLE_OBS` | `'mean'` | Observed data across members |
 | `REF_MEMBER` | `None` | RMS1 reference (None = ensemble mean) |
 | `SHOW_RMS2` | `False` | Show Baba's RMS2 (observed plus synthesized error, i.e. a modelling error) in plots and tables; `False` = not shown, RMS1 only (no modelling error is used); `True` = RMS1 and RMS2 for an ensemble (M > 1) |
@@ -107,6 +111,12 @@ The defaults of `Settings` (neutral; the scripts set their own).
 | `NRMS_BINS` | `'auto'` | Number of bins or a numpy rule (`"auto"`, `"fd"`, ...) |
 | `NRMS_HIST_FILE` | `None` | Extension-less output path (`None` = `<fig dir>/<prefix>_nrms_hist`) |
 | `NRMS_TICK_FONTSIZE`, `NRMS_LABEL_FONTSIZE`, `NRMS_TITLE_FONTSIZE` | `16; 16; None` | Fonts of the nRMS histogram |
+| `OUTLIER_METHOD` | `'quantile'` | Method `"outliers"`: `"quantile"` (the 2.275 / 97.725 % quantiles of the site nRMS for `OUTLIER_SIGMA = 2`; always flags the extreme sites), `"sigma"` (mean -+ k std), `"mad"` (median -+ k * 1.4826 * MAD) |
+| `OUTLIER_SIGMA` | `2.0` | k: the width of the limits in sigma (> 0); for `"quantile"` the tail level is the normal-distribution one of -k / +k |
+| `OUTLIER_SIDE` | `'both'` | `"both"`, `"high"` (poorly fitted sites only), `"low"` |
+| `OUTLIER_LOG10` | `False` | `"sigma"` / `"mad"` on log10(nRMS); no effect on `"quantile"` |
+| `OUTLIER_MIN_N` | `1` | Sites with fewer residual values are not used |
+| `OUTLIER_PLOT` | `True` | Draw the figure `<prefix>_site_outliers.<fmt>` |
 | `CURVES_WHAT` | `('rho', 'phase', 'tipper')` | Panels: `"rho"`, `"phase"`, `"tipper"`, `"pt"` |
 | `CURVES_COMPS` | `'xx, xy, yx, yy'` | Impedance components for rho / phase panels |
 | `SITE_MERGE_BY_POSITION` | `True` | Same position = same site id (first occurrence); see "Site ids" |
@@ -116,7 +126,7 @@ The defaults of `Settings` (neutral; the scripts set their own).
 | `CURVES_SITE_MATCH` | `'auto'` | Assign names by position (`"auto"`, `"coords"`) or by id (`"id"`) |
 | `CURVES_SITE_TOL` | `15.0` | Largest distance [m] for a coordinate match |
 | `CURVES_NAME_CASE` | `None` | Site names in the figure title and the file names: `None` = as in `site.dat`, `"upper"`, `"lower"`. The title reads `site NAME (site#)`, or `site site#` for a site without a name |
-| `CURVES_SITES` | `None` | `None` = all; int N; or a LIST of `site_id` values and/or names of the local `site.dat` (any case; merged-away ids such as VTF 1001 select their site; one string `"A01, A02"` also works). A list gives one file per site, see `CURVES_MULTIPAGE` |
+| `CURVES_SITES` | `None` | `None` = all; int N; or a LIST of `site_id` values and/or names of the local `site.dat` (any case; merged-away ids such as VTF 1001 select their site; one string `"A01, A02"` also works). A list gives one file per site, see `CURVES_MULTIPAGE` The string `"outliers"` = the sites found by the method `"outliers"` (one file per site, as for a list). |
 | `CURVES_SITE_ORDER` | `'even'` | For int `CURVES_SITES`: `"even"`, `"id"`, `"worst"`, `"best"` |
 | `CURVES_MAX_SITES` | `200` | Cap on the number of figures |
 | `CURVES_ENS_MODE` | `'auto'` | `"auto"`, `"curves"`, `"density"`, `"bands"`, or `"+"`-joined |
@@ -140,8 +150,8 @@ The defaults of `Settings` (neutral; the scripts set their own).
 | `CURVES_PHASE_WRAP_STYLE` | `None` | Matplotlib line properties of the connection, merged over the dotted default (`data_viz.PHASE_WRAP_STYLE`), e.g. `{"linestyle": "--", "alpha": 0.5}`; colour, width and opacity of the curve are inherited. `None` = dotted; `False` = gap only, no connection |
 | `CURVES_PHASE_WRAP_RANGE` | `(-180.0, 180.0)` | The phase window; `(-3.14159, 3.14159)` for phases in radians |
 | `CURVES_MAP` | `False` | Small map of the sites in every "curves" figure: the current site marked, all sites coloured by their nRMS (see "Site map in the curves figures") |
-| `CURVES_MAP_PLACEMENT` | `'right'` | `"right"` / `"left"`: an own column next to the panels (the figure gets wider by `CURVES_MAP_SIZE`); `"upper right"`, `"upper left"`, `"lower right"`, `"lower left"`: inset in that corner of the last (right) / first (left) panel, on top of the curves |
-| `CURVES_MAP_SIZE` | `1.7` | Side of the map block (map and colour bar) [in]: width of the column, or size of the inset |
+| `CURVES_MAP_PLACEMENT` | `'right'` | `"right"` / `"left"`: an own column next to the panels (the figure gets wider by `CURVES_MAP_SIZE`); `"top"` / `"bottom"` (also `"above"` / `"below"`): an own row above / below the panels, across the whole width (the figure gets higher by `CURVES_MAP_SIZE`); `"upper right"`, `"upper left"`, `"lower right"`, `"lower left"`: inset in that corner of the last (right) / first (left) panel, on top of the curves |
+| `CURVES_MAP_SIZE` | `4.3` | Side of the map block (map and colour bar) in **cm**: width of the column, height of the row, or size of the inset (4.3 cm = 1.7 in; figure sizes such as `CURVES_PANEL_SIZE` stay in inches) |
 | `CURVES_MAP_TICKS` | `True` | Ticks and labels in model coordinates [km]; `False` = none (frame only) |
 | `CURVES_MAP_AXES` | `'ne'` | Which results-file coordinate is which: `"ne"` = `site_x` north (vertical), `site_y` east (horizontal), the FEMTIC convention; `"en"` = `site_x` east, `site_y` north. The map always has east horizontal and north vertical |
 | `CURVES_MAP_CMAP` | `None` | `None` = single-hue blue ramp, light = low nRMS, dark = high; or the name of a Matplotlib colormap |
@@ -293,6 +303,57 @@ on. Consequences:
 - `make_settings`: defaults are copies (changing one list does not change the
   next call), unknown names raise `KeyError`, there is no `RUN_MODE`.
 
+## Site outliers (method `"outliers"`)
+
+Which sites fit much worse (or better) than the others? For every site the nRMS of
+`<prefix>_site_nrms.txt` is used: the conventional (RMS1) normalization over the real and
+imaginary parts of all data of the site; for an ensemble of the ensemble-mean response, or
+of `REF_MEMBER`. The sites whose nRMS is **outside the limits of the distribution of these
+site values** are the outliers. Add `"outliers"` to `METHODS`.
+
+| `OUTLIER_METHOD` | Limits (k = `OUTLIER_SIGMA`, default 2) | Centre, spread (for z) |
+|---|---|---|
+| `"quantile"` (default) | the quantiles at the tail levels of a normal distribution at -k and +k sigma; for k = 2 the 2.275 % and 97.725 % quantiles of the site nRMS values (numpy's linear interpolation) | median, (hi - lo) / (2 k) |
+| `"sigma"` | mean -+ k std (ddof = 1) | mean, std |
+| `"mad"` | median -+ k * 1.4826 * MAD (a robust sigma) | median, 1.4826 MAD |
+
+A site is outside if its nRMS is **strictly** below the lower or above the upper limit.
+`OUTLIER_SIDE` = `"both"` (default), `"high"` (poorly fitted sites only) or `"low"`.
+`OUTLIER_LOG10 = True` does the `"sigma"` / `"mad"` statistics on log10(nRMS) (nRMS is
+positive and skewed; the limits are given back as nRMS, z is in log10 units); it has no effect
+on `"quantile"`. `OUTLIER_MIN_N` leaves out sites with fewer residual values. A site without an
+nRMS (no datum with a positive error) is never used or flagged; with fewer than 3 usable sites
+there are no limits and nothing is flagged.
+
+**What the default does and does not say.** The quantile limits always put the smallest and
+the largest site nRMS outside (for 3 or more sites, unless tied), and about 2.3 % of the
+sites on each side for many sites, whatever the data. They name the *extreme* sites; they do
+not say that these are exceptional. Whether a site really stands out is better judged with
+`"mad"` (not inflated by the outliers) or `"sigma"` (the standard deviation grows with a very
+bad site, which can hide the next one). On a synthetic test set with one very bad and one
+very good site, `"quantile"` flagged both and some ordinary extremes as well, `"sigma"` only the
+worst one, and `"mad"` six sites; the real behaviour depends on your data.
+
+Output (the site names come from `site.dat` as for `"curves"`: `CURVES_SITE_DAT`,
+`CURVES_SITE_MATCH`, `CURVES_SITE_ID_OFFSET`, `CURVES_SITE_TOL`):
+
+- `<prefix>_site_outliers.txt` (and the console): a few comment lines (how the limits were
+  found, the limits, the number of sites outside), then a table of the sites outside, largest
+  nRMS first: `rank` (1 = largest nRMS of all used sites), `site_id`, `name`, `site_x`,
+  `site_y`, `n` (residual values), `nrms`, `z` = (nRMS - centre) / spread (see the table above)
+  and `side` (`high` / `low`).
+- `<prefix>_site_outliers.csv`: one comment line, then every site (`site_id,name,site_x,site_y,n,
+  nrms,flag`); `flag` is `high`, `low`, empty (inside) or `unused`. Both text files only
+  with `WRITE_STATS`.
+- `<prefix>_site_outliers.<fmt>` (`PLOT_FORMATS`, `PLOT_DIR`; `OUTLIER_PLOT = False` switches it
+  off): the nRMS of every used site in the order of the site ids, grey inside the limits,
+  vermillion triangles up above the upper limit, blue triangles down below the lower one (the
+  first 40 sites of the table are named), the limits dashed and the centre dotted, and the
+  histogram of the site nRMS values at the right on the same axis (log axis with `OUTLIER_LOG10`).
+  `FIGURE_TITLE` accepts an `"outliers"` entry.
+- `CURVES_SITES = "outliers"` (method `"curves"`): the response curves of exactly these sites,
+  one file per site, largest nRMS first (same `OUTLIER_*` settings).
+
 ## Site map in the curves figures
 
 `CURVES_MAP = True` adds a small map of the sites to every "curves" figure (it is off by default, and then
@@ -309,11 +370,14 @@ all output is as before).
   model origin, shown in km (not UTM). Equal scale in both directions; the window is never flatter (or narrower)
   than 0.4 : 1, so that a profile gets white space around it instead of becoming a sliver. `CURVES_MAP_TICKS =
   False` draws the frame only, without any ticks or labels.
-- **Placement.** `"right"` / `"left"` give the map its own column, `CURVES_MAP_SIZE` inches wide, next to the
-  panels. The four corner names put it as an inset into the last (right) or first (left) panel; it is drawn on top
-  of the curves with a white backdrop and keeps its size in inches whatever the panel size. Do not put the
-  legend (`CURVES_LEGEND_LOC`) into the same corner; the default `"below"` is out of the way. The inset is
-  `CURVES_MAP_SIZE` square, and lower for a flat window (a profile).
+- **Placement.** `"right"` / `"left"` give the map its own column, `CURVES_MAP_SIZE` cm wide, next to the
+  panels; `"top"` / `"bottom"` (also `"above"` / `"below"`) give it an own row, `CURVES_MAP_SIZE` cm high, above /
+  below the panels and across their whole width (the figure gets higher, the map is centred in the row). In both
+  cases the map is outside the data plots. The four corner names put it as an inset into the last (right) or
+  first (left) panel; it is drawn on top of the curves with a white backdrop and keeps its size whatever the panel
+  size. Do not put the legend (`CURVES_LEGEND_LOC`) into the same corner; the default `"below"` is out of the way.
+  The inset is `CURVES_MAP_SIZE` square, and lower for a flat window (a profile). `CURVES_MAP_SIZE` is in cm
+  (default 4.3 cm = 1.7 in); the sizes of the figure (`CURVES_PANEL_SIZE`) are in inches.
 - **Observed only.** With `CURVES_OBSERVED_ONLY` there is no nRMS in the title and none in the map: the points
   are grey, there is no colour bar, the current site is still marked.
 - **Sites without data for the map.** A site without a finite position (for example HTF / NMT rows, which carry no
@@ -332,6 +396,46 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### 2026-11-22 -- method "outliers": sites outside the nRMS limits (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- New method `"outliers"` (add it to `METHODS`): the sites whose nRMS (the value of
+  `<prefix>_site_nrms.txt`) is outside the limits of the distribution of the site nRMS values.
+  `OUTLIER_METHOD` `"quantile"` (default: the 2.275 / 97.725 % quantiles, the 2-sigma tail levels),
+  `"sigma"` or `"mad"`; `OUTLIER_SIGMA`, `OUTLIER_SIDE`, `OUTLIER_LOG10`, `OUTLIER_MIN_N`,
+  `OUTLIER_PLOT`. Writes `<prefix>_site_outliers.txt` (the sites outside), `.csv` (every site with
+  its flag) and a figure. `CURVES_SITES = "outliers"` draws the curves of these sites only.
+- `femtic_misfit.py`: new `normal_tail`, `outlier_limits`, `find_site_outliers`,
+  `format_site_outliers`, `format_site_csv`, `plot_site_outliers`, `run_outliers`,
+  `outlier_summary`, `named_site_info` (the site names that `run_curves` read in its body, now shared)
+  and `_site_search_dirs` (the search directories for `site.dat`, moved out of `process_runs`).
+  `process_runs` runs `"outliers"` before `"curves"` (which ends the run); the drivers count it as a
+  method. The other methods and their output are unchanged.
+- The quantile limits flag the extreme sites by construction (see "Site outliers"); this is the
+  definition asked for, `"mad"` and `"sigma"` are there for the other question.
+- Tested on synthetic per-site tables and datasets (117 tests in `test_femtic_site_outliers.py`:
+  the limits of the three methods, flags, one-sided and log10 variants, table, CSV, figure,
+  the run with its files, `CURVES_SITES = "outliers"` with the plotting replaced, the dispatch in
+  `process_runs`, the defaults of the two scripts; 71 hand-made code changes, 70 caught, the other has no
+  effect on the result). **Not run on results of a real run.**
+
+### 2026-11-21c -- site map in an own row, size in cm (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- `CURVES_MAP_PLACEMENT` `"top"` / `"bottom"` (also spelled `"above"` / `"below"`, as in `CURVES_LEGEND_LOC`): the map
+  gets an own row above / below the panels, across the whole width of the figure, like the own column of `"right"` /
+  `"left"`. The figure gets higher by `CURVES_MAP_SIZE`, and the row is as high as asked: the margins of the figure
+  (title, axis labels, legend below the panels) are measured in one layout pass (no drawing) and taken into account,
+  so the panels give up the room, not the map. New constant `MAP_PLACEMENT_ALIASES`, new functions `map_size_in` and
+  `_fit_map_row`.
+- **`CURVES_MAP_SIZE` is now in cm** (it was in inches; default `4.3` = 1.7 in, so the default figure is the same).
+  A value in inches from the first version of the map (`1.7`) would give a map of 1.7 cm: multiply by 2.54.
+- Without the map (`CURVES_MAP = False`) and with the placements `"right"`, `"left"` and the four corners the code
+  is the same as in 2026-11-21b.
+- Checked with `scripts/general/test_femtic_misfit_map.py` (95 tests, stand-in for `femtic.read_results_data`):
+  row outside the panels and across their width, figure higher and not wider, row height = `CURVES_MAP_SIZE` (3.0, 4.5,
+  5.5 cm, with and without the legend below), panels keep their height within 25 %, observed only, same points and
+  colours as the column, `"above"` / `"below"` spelling, size in cm for column, row and inset, no map = default
+  figure, no layout measurement possible (old Matplotlib) = ratios as set. Deliberately broken copies of the new
+  code (flag swapped, ratios swapped, no conversion to inches, wrong constant, old default, aliases swapped, fit not
+  called or never applied) are all caught. Looked at: `"top"` and `"bottom"` with two panels and the default legend.
 
 ### 2026-11-21b -- site map in the curves figures (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
 - "curves": optional small map of the sites in every figure, the current site marked, all sites coloured by their

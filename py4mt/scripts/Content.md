@@ -171,7 +171,7 @@ Scripts applicable across inversion codes or for data pre/post-processing.
 |--------|---------|
 | `general/mt_data_processor.py` | Batch-process `.edi` files: compute PT/invariants/ρ_a/phase, set/estimate errors, interpolate, rotate, export. |
 | `general/mt_get_averages.py` | Compute Z_ssq, Z_det, and Z_avg = √(Z_xy·Z_yx) log-averages across a site collection with spread estimates and plots. |
-| `general/mt_make_sitelist.py` | Read `.edi` files and write site list in WALDIM, FEMTIC, or CSV format; one common UTM zone for the whole survey, also across zone boundaries (2026-11-20). |
+| `general/mt_make_sitelist.py` | Read `.edi` files and write site list in WALDIM, FEMTIC, CSV, or tab-separated UTM-km (`femticpy`) format; one common UTM zone for the whole survey, also across zone boundaries (2026-11-20); `femticpy` added (2026-11-22). |
 | `general/mt_calc_ptdim.py` | Phase-tensor dimensionality classification (1-D/2-D/3-D) per station and frequency. |
 | `general/mt_kmz_waldim.py` | Export WALDIM dimensionality classification as a KMZ file for Google Earth. |
 

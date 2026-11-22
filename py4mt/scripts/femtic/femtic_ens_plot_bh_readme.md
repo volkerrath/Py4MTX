@@ -321,7 +321,9 @@ models are written to `<MOD_BH_FILE>_perturbed.npz` (header
 `heat_edges_<name>`).
 
 
-The settings of the run are written to `femtic_ens_plot_bh_summary.md` in `ENSEMBLE_DIR`.
+The settings of the run are written to `femtic_ens_plot_bh_summary.md` in `ENSEMBLE_DIR`,
+followed by the contents of the results `.npz` that was read (every key with shape, type
+and meaning). The same list is printed to the console after reading (if `OUT = True`).
 
 ---
 
@@ -364,3 +366,4 @@ perturbed one under the name `MOD_BH_FILE + ENS_PERTURBED_SUFFIX`).
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `MOD_PANEL_TITLES`, `MOD_BH_HEAT_CBAR_LOCATION`, `MOD_BH_HEAT_CBAR_SHRINK`, `MOD_BH_HEAT_CBAR_THICKNESS` (passed as `BoreholeFigureOptions.panel_titles` / `heat_cbar_location` / `heat_cbar_shrink` / `heat_cbar_thickness`); `MOD_TITLE` accepts `{"default": spec}`. The same settings were added to `femtic_ens_plot_bh_SV.py`. Defaults: figures unchanged (checked pixel by pixel in `plot_boreholes`). Needs the `femtic_viz.py` of the same date. |
 | 2026-11-11b | Claude Sonnet 5.5 (Anthropic) | New settings `ENS_MODEL_SOURCE` (`"auto"` = as before, `"converged"`, `"perturbed"`, `"both"`) and `ENS_PERTURBED_SUFFIX`; both were only mentioned in comments and are now defined (the suffix was fixed as `"_perturbed"`). The choice is made by `fem.select_ensemble_source()`; for `"perturbed"` from a `"both"` file the statistics are recomputed from the perturbed models. The same change is in `femtic_ens_plot_bh_SV.py`. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
 | 2026-11-11c | Claude Sonnet 5.5 (Anthropic) | Panel placement with `MOD_BH_HEAT_CBAR_LOCATION` (and `MOD_BH_HEAT_CBAR_THICKNESS`): with several rows of panels (e.g. `MOD_BH_PER_FIG = 2`, `MOD_BH_NCOLS = 1`, converged | perturbed) the x label of a row overlapped the titles of the next row and a wide empty strip was left next to the bar. Fixed in `femtic_viz.plot_boreholes` (the strip for the bar is reserved before the layout); no setting changed in this script. Needs the `femtic_viz.py` of the same date. Default (`MOD_BH_HEAT_CBAR_LOCATION = None`): figures unchanged. AI-generated; review before production use. |
+| 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | **Contents of the results `.npz`.** The list of the arrays of `ENSEMBLE_RESULTS` (key, shape, type, meaning) is printed after reading (if `OUT`) and appended to `femtic_ens_plot_bh_summary.md` (`fem.print_results_contents()`, `fem.append_results_contents()`; the `femtic.py` of the same date). Nothing else changes. Tested on synthetic results files; not on your data. AI-generated; review before production use. |

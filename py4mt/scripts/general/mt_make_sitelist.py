@@ -3,7 +3,8 @@
 """
 Produce a site list (name, coordinates, elevation) from EDI files.
 
-Output formats are tailored for WALDIM, FEMTIC, or general use.
+Output formats (WHAT_FOR) are tailored for WALDIM, FEMTIC, KML/general use,
+or a tab-separated UTM list in km with depth ("femticpy").
 
 @author: sb & vr dec 2019
 Cleanup: 4 Mar 2026 by Claude (Anthropic)
@@ -21,11 +22,23 @@ Modified: 2026-11-20 -- sites may lie in different UTM zones: by default ONE
     zone at the top of the FEMTIC/CSV list (WRITE_ZONE_HEADER; all py4mt
     readers skip "#" lines).  All EDIs are read first, the file is written
     afterwards.  Claude Sonnet 5.5 (Anthropic)
+Modified: 2026-11-22 -- WHAT_FOR option "femticpy" (called "utm_py" in
+    mt_make_sitelist_more.py) merged in: tab-separated list written to
+    WORK_DIR + "Sitelist_UTM.csv" with name, easting [km], northing [km]
+    (2 decimals) and depth = -elev; no "#" lines.  The format is now resolved
+    once from WHAT_FOR (FORMAT: wal / femtic_site / kml / femticpy / other)
+    and used for the zone step, the file name and the rows; the file name is
+    printed after it is known.  A missing ELEV stops "femticpy" before
+    anything is written.  The FEMTIC site list option is now called
+    "femtic_site" (was "fem"/"femtic", default is "femtic_site"); options are
+    matched by their exact names, so "fem" and "femtic" now count as unknown
+    (same seven-column file, with a console note).  Common-zone logic of
+    2026-11-20 unchanged.  Claude Sonnet 5.5 (Anthropic)
 
-Provenance (changes of 2026-11-20)
-----------------------------------
+Provenance (changes of 2026-11-20 and 2026-11-22)
+-------------------------------------------------
 Author    : Claude (Claude Sonnet 5.5, Anthropic)
-Generated : 2026-11-20
+Generated : 2026-11-20 (common UTM zone), 2026-11-22 (WHAT_FOR "femticpy")
 Notice    : AI-generated code; review and test it before production use.
 """
 
@@ -59,8 +72,27 @@ print(titstrng + "\n\n")
 # =============================================================================
 #  Configuration
 # =============================================================================
+#: Column delimiter of the "femtic_site", "kml" and other lists ("wal" uses a
+#: blank, "femticpy" a tab).
 DELIM = ","
-WHAT_FOR = "fem"     # Options: "wal", "femtic", "kml"
+
+#: Output format of the site list (matched as a lower-case substring):
+#:   "wal"          WALDIM: blank-separated; first line "Sitename Latitude
+#:                  Longitude", second line the number of sites, then one
+#:                  line per site: name, lat, lon.  No UTM coordinates.
+#:   "femtic_site"  DELIM-separated, written to EDI_DIR + "site.dat": name,
+#:                  lat, lon, elev, sitenum, easting [m], northing [m].
+#:                  First lines are "#" comments with the UTM zone
+#:                  (WRITE_ZONE_HEADER).  Read by the FEMTIC plot scripts.
+#:   "femticpy"     tab-separated, NO header or "#" lines, written to
+#:                  WORK_DIR + "Sitelist_UTM.csv": name, easting [km],
+#:                  northing [km] (both rounded to 2 decimals = 10 m),
+#:                  depth = -elev [m].
+#:   "kml"          the same seven columns as "femtic_site".
+#:   other          anything else (this includes the former names "fem",
+#:                  "femtic" and "utm_py"): the same seven columns as
+#:                  "femtic_site", with a note on the console.
+WHAT_FOR = "femtic_site"
 
 
 #: How the UTM zone is chosen.
@@ -89,14 +121,35 @@ WRITE_ZONE_HEADER = True
 
 #WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/ubinas//"
 # WORK_DIR = "/home/vrath/Py4MTX/py4mt/data/rto/misti//"
-# WORK_DIR = "/media/vrath/LargeBack/Ensembles/krafla2026/krafla_ens_fine/"
+WORK_DIR = "/media/vrath/LargeBack/Ensembles/sabancaya2026/l-curve/"
 # WORK_DIR = "/home/vrath/ACTIVE/mt_processor/2022_25/"
-WORK_DIR = "/home/vrath/ACTIVE/mt_processor/edi_files/"
-EDI_DIR = WORK_DIR # + "/edi_files/"
+#WORK_DIR = "/home/vrath/ACTIVE/mt_processor/edi_files/"
+EDI_DIR = WORK_DIR + "/edi_files/"
 
 print(" Edifiles read from: %s" % EDI_DIR)
 
 CSV_FILE = EDI_DIR + "site.dat"
+
+# =============================================================================
+#  Output format and file name (derived from WHAT_FOR)
+# =============================================================================
+_wf = WHAT_FOR.lower()
+if "wal" in _wf:
+    FORMAT = "wal"
+elif "femticpy" in _wf:
+    FORMAT = "femticpy"
+elif "femtic_site" in _wf:
+    FORMAT = "femtic_site"
+elif "kml" in _wf:
+    FORMAT = "kml"
+else:
+    FORMAT = "other"
+    print(" WHAT_FOR = %r not recognised (known: wal, femtic_site, femticpy,"
+          " kml): writing the generic seven-column list (as for"
+          " 'femtic_site')." % (WHAT_FOR,))
+
+if FORMAT == "femticpy":
+    CSV_FILE = WORK_DIR + "Sitelist_UTM.csv"
 print("Writing data to file: " + CSV_FILE)
 
 # =============================================================================
@@ -124,10 +177,18 @@ for sitenum, filename in enumerate(edi_files):
     sites.append(dict(name=name, sitenum=sitenum, lat=float(lat),
                       lon=float(lon), elev=edi_dict["elev"]))
 
+if FORMAT == "femticpy":
+    # depth = -elev is written, so every site needs a valid elevation
+    no_elev = [st["name"] for st in sites
+               if st["elev"] is None or not np.isfinite(st["elev"])]
+    if no_elev:
+        sys.exit("WHAT_FOR = 'femticpy' writes depth = -elev, but these EDI "
+                 "files have no valid ELEV: " + ", ".join(no_elev))
+
 # =============================================================================
 #  UTM zone(s) and coordinates
 # =============================================================================
-if "wal" not in WHAT_FOR.lower():
+if FORMAT != "wal":
     for st in sites:
         st["zone_native"], st["north_native"] = utl.utm_zone_from_latlon(
             st["lat"], st["lon"])
@@ -204,15 +265,18 @@ if "wal" not in WHAT_FOR.lower():
 # =============================================================================
 with open(CSV_FILE, "w") as f:
 
-    if "wal" in WHAT_FOR.lower():
+    # csv.writer bakes in its delimiter at construction time, so it is chosen
+    # here, before the writer is created.
+    if FORMAT == "wal":
         sitelist = csv.writer(f, delimiter=" ")
         sitelist.writerow(["Sitename", "Latitude", "Longitude"])
         sitelist.writerow([ns, " ", " "])
+    elif FORMAT == "femticpy":
+        # tab-separated, no header and no "#" lines (WRITE_ZONE_HEADER is not
+        # used): the zone is reported on the console only.
+        sitelist = csv.writer(f, delimiter="\t")
     else:
         sitelist = csv.writer(f, delimiter=DELIM)
-        # sitelist.writerow(
-            # ["Sitename", "Latitude", "Longitude", "Site#", "Easting", "Northing"])
-        # sitelist.writerow([ns, " ", " "])
         if WRITE_ZONE_HEADER:
             if UTM_ZONE_MODE == "common" or len(used) == 1:
                 sitelist.writerow(
@@ -234,9 +298,17 @@ with open(CSV_FILE, "w") as f:
                      " in different grids"])
 
     for st in sites:
-        if "wal" in WHAT_FOR.lower():
+        if FORMAT == "wal":
             sitelist.writerow([st["name"], st["lat"], st["lon"]])
+        elif FORMAT == "femticpy":
+            # km with 2 decimals (10 m); depth below sea level = -elev
+            sitelist.writerow(
+                [st["name"],
+                 float(np.around(st["easting"] * 0.001, 2)),
+                 float(np.around(st["northing"] * 0.001, 2)),
+                 0.0 - float(st["elev"])])
         else:
+            # "femtic_site", "kml" and other: seven columns
             sitelist.writerow(
                 [st["name"], st["lat"], st["lon"], st["elev"], st["sitenum"],
                  st["easting"], st["northing"]])

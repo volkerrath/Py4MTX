@@ -30,6 +30,13 @@ Provenance:
                        out_dir=NEW_ENSEMBLE_DIR). Needs the util.py of the
                        same date (new out_dir argument). AI-generated;
                        review before production use.
+    2026-11-22  Claude Sonnet 5.5 (Anthropic)
+                       femtic_ens_from_covar_summary.md now ends with the
+                       contents of the results .npz that was read
+                       (COVAR_RESULTS): every key with shape, type and
+                       meaning (fem.append_results_contents(), femtic.py of
+                       the same date). Nothing else changes. AI-generated;
+                       review before production use.
 """
 
 import os
@@ -95,4 +102,6 @@ print(f"Ensemble ({NEW_ENSEMBLE_SIZE} members) saved to {NEW_ENSEMBLE_FILE}")
 # ---------------------------------------------------------------------------
 # Parameter summary
 # ---------------------------------------------------------------------------
-utl.write_param_summary(__file__, out_dir=NEW_ENSEMBLE_DIR)
+_summary_path = utl.write_param_summary(__file__, out_dir=NEW_ENSEMBLE_DIR)
+# The contents of the results .npz that was read (key, shape, type, meaning).
+fem.append_results_contents(COVAR_RESULTS, _summary_path, __file__)

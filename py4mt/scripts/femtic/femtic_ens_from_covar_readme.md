@@ -20,6 +20,7 @@ Generate a synthetic model ensemble from a posterior covariance matrix.
 | 2026-03-03 | Claude | Renamed user-set parameters to UPPERCASE.    |
 | 2026-08-13 | Claude Sonnet 5 | Added `femtic_ens_from_covar_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_ens_from_covar_summary.md` is now written to `NEW_ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=NEW_ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
+| 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | `femtic_ens_from_covar_summary.md` ends with the contents of the results `.npz` that was read (`COVAR_RESULTS`): every key with shape, type and meaning (`fem.append_results_contents()`; needs the `femtic.py` of the same date). Nothing else changes. AI-generated; review before production use. |
 
 ## Purpose
 
@@ -48,6 +49,7 @@ tomography: method and applications. *Geophysical Prospecting*, 61,
 | File | Contents |
 |------|----------|
 | `<NEW_ENSEMBLE_FILE>.npz` | `new_ens` (ensemble matrix, N×M), `sqrtcov` (Cholesky factor), `ref` (reference model). |
+| `femtic_ens_from_covar_summary.md` | The UPPERCASE settings of the run (in `NEW_ENSEMBLE_DIR`), followed by the contents of `COVAR_RESULTS` (every key with shape, type and meaning). |
 
 ## Configuration
 

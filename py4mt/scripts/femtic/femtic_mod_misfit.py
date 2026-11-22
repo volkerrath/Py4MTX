@@ -18,6 +18,9 @@ set of figures and tables per run, for the iteration chosen by ITERATION
   "qq"         normal Q-Q plots of the same residuals in the same bands
   "curves"     optional: observed data with errors against the calculated
                response, per site
+  "outliers"   optional: the sites whose nRMS is outside the limits of the
+               distribution of the site nRMS values (default: the 2-sigma
+               quantiles, 2.275 / 97.725 %); table, CSV and figure
 
 The ensemble counterpart is femtic_ens_misfit.py (also: RMS2 on request, member
 curves, nRMS histogram of all scanned members). Both call femtic_misfit.py (the
@@ -57,6 +60,21 @@ local site.dat, any case, and/or site ids) writes one file per site and format
 
 Changelog
 ---------
+2026-11-22  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            new method "outliers" (add it to METHODS): the sites whose nRMS is
+            outside the limits of the distribution of the site nRMS values;
+            OUTLIER_METHOD "quantile" (default; the 2.275 / 97.725 % quantiles
+            = the tails of +-OUTLIER_SIGMA = 2), "sigma" or "mad", OUTLIER_SIDE,
+            OUTLIER_LOG10, OUTLIER_MIN_N, OUTLIER_PLOT. Writes
+            <prefix>_site_outliers.txt / .csv and a figure. CURVES_SITES =
+            "outliers" draws the curves of these sites only. The work is done
+            in femtic_misfit.py of the same date; nothing else changes.
+2026-11-21c Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            CURVES_MAP_PLACEMENT "top" | "bottom" (also "above" | "below"):
+            the site map in an own row above / below the panels, across the
+            width of the figure (the figure gets higher by CURVES_MAP_SIZE).
+            CURVES_MAP_SIZE is now in cm (default 4.3 cm = 1.7 in; was in
+            inches). The work is done in femtic_misfit.py of the same date.
 2026-11-21b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             "curves": optional small map of the sites in every figure, the
             current site marked, all sites coloured by their nRMS (one
@@ -137,8 +155,8 @@ RUN_PATHS: List[str] = [
 ITERATION: Union[str, int] = "best"      # "best" | "last" | integer
 ITER_PATTERN: str = "results_iter*.h5"   # searched in each run directory
 METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq", "curves")
-#   "curves" is optional (needs data_viz.py); "nrms" is for ensembles only
-#   (femtic_ens_misfit.py)
+#   "curves" is optional (needs data_viz.py), so is "outliers"; "nrms" is for
+#   ensembles only (femtic_ens_misfit.py)
 
 # --- sites ---
 SITE_MERGE_BY_POSITION: bool = True   # data types often number the same station
@@ -228,6 +246,30 @@ QQ_MIN_N: int = 10                  # skip bands with fewer values
 QQ_NCOLS: int = 4
 QQ_PANEL_SIZE: float = 3.0
 
+# --- site outliers (optional method "outliers"; add it to METHODS) ---
+# The sites whose nRMS (conventional RMS1 normalization, as in
+# <prefix>_site_nrms.txt) is outside the limits of the distribution of the
+# site nRMS values. Site names as for "curves" (CURVES_SITE_DAT,
+# CURVES_SITE_MATCH, CURVES_SITE_ID_OFFSET, CURVES_SITE_TOL). Output:
+# <prefix>_site_outliers.txt (the sites outside, worst first), .csv (every site,
+# with its flag) and a figure <prefix>_site_outliers.<fmt> (PLOT_FORMATS).
+# CURVES_SITES = "outliers" draws the response curves of these sites only.
+OUTLIER_METHOD: str = "quantile"   # "quantile": the limits are the quantiles of the
+                                   # site nRMS values at the normal-distribution tail
+                                   # levels of OUTLIER_SIGMA (2 -> 2.275 and 97.725 %);
+                                   # these always flag the extreme site(s), whatever
+                                   # the data
+                                   # "sigma": mean +- OUTLIER_SIGMA * std
+                                   # "mad":   median +- OUTLIER_SIGMA * 1.4826 * MAD
+                                   # (robust against a few very bad sites)
+OUTLIER_SIGMA: float = 2.0         # > 0
+OUTLIER_SIDE: str = "both"         # "both" | "high" (poorly fitted sites only)
+                                   # | "low" (nRMS below the lower limit only)
+OUTLIER_LOG10: bool = False        # "sigma" / "mad": work with log10(nRMS) (nRMS is
+                                   # positive and skewed); no effect on "quantile"
+OUTLIER_MIN_N: int = 1             # sites with fewer residual values are not used
+OUTLIER_PLOT: bool = True          # the figure
+
 # --- response curves (optional method "curves"; add it to METHODS) ---
 # Needs data_viz.py on the path. One figure per site, one panel per entry of
 # CURVES_WHAT; PLOT_FORMATS/PLOT_DPI/OUT_DIR/OUT_PREFIX apply as usual.
@@ -266,7 +308,9 @@ CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = None
 # of the local site.dat (case-insensitive;
 # "A01, A02" as one string also works). A
 # list gives one file per site (see
-# CURVES_MULTIPAGE), e.g. ["A01", "a02", 17]
+# CURVES_MULTIPAGE), e.g. ["A01", "a02", 17];
+# "outliers" = the sites found by the method
+# "outliers" (OUTLIER_*)
 CURVES_SITE_ORDER: str = "even"    # for an int CURVES_SITES: "even" (spread
                                    # over the site list), "id" (first N),
                                    # "worst" / "best" (by site nRMS)
@@ -322,11 +366,16 @@ CURVES_PHASE_WRAP_RANGE: Tuple[float, float] = (-180.0, 180.0)
 CURVES_MAP: bool = False           # True = draw the map
 CURVES_MAP_PLACEMENT: str = "right"   # "right" | "left": an own column next to the
                                    # panels (the figure gets wider by CURVES_MAP_SIZE);
+                                   # "top" | "bottom" (or "above" | "below"): an own row
+                                   # above / below the panels (the figure gets higher
+                                   # by CURVES_MAP_SIZE);
                                    # "upper right" | "upper left" | "lower right" |
                                    # "lower left": inset in the corner of the last
                                    # (right) / first (left) panel, on top of the
                                    # curves (do not put the legend there)
-CURVES_MAP_SIZE: float = 1.7       # [in] side of the map block (map and colour bar)
+CURVES_MAP_SIZE: float = 4.3       # [cm] side of the map block (map and colour bar):
+                                   # width of the column, height of the row, size of
+                                   # the inset (4.3 cm = 1.7 in)
 CURVES_MAP_TICKS: bool = True      # True = ticks and labels in model coordinates
                                    # [km]; False = no ticks, no labels (frame only)
 CURVES_MAP_AXES: str = "ne"        # "ne": site_x = north (vertical), site_y = east

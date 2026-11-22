@@ -362,6 +362,27 @@ Modified: 2026-11-20 (b) by Claude Sonnet 5.5 (Anthropic) -- edi_list_to_observe
     _mt_rhoa_phase_from_Z() no longer pass a negative or non-finite error as
     scale to numpy (read_observe_dat / observe_to_site_viz_list raised on files
     with negative errors). AI-generated code -- review before production use.
+Modified: 2026-11-22 (b) by Claude Sonnet 5.5 (Anthropic) -- new
+    npz_inventory(path) (key, shape, dtype of every array of an .npz, read from
+    the headers, no data loaded), results_key_doc(name) (what a key of the
+    results file of femtic_ens_post.py holds), results_contents_md(path)
+    (that list as a Markdown section) and append_results_contents(path,
+    summary_path, script_file) (appends it to the parameter summary, like
+    append_scan_report). Used by the scripts that write or read a results .npz
+    to list its contents in their <script>_summary.md. No existing function
+    changed. Tested on synthetic files. AI-generated code -- review before
+    production use.
+Modified: 2026-11-22 by Claude Sonnet 5.5 (Anthropic) -- the spread of the
+    iter0 models and its ratio to the converged spread written by
+    femtic_ens_post.py (<P>_qdiff0_<lo>_<hi>, <P>_qratio_<lo>_<hi>,
+    <P>_qratio_info): read_ensemble_results() returns them as
+    res["qiter0"] (key -> (n_free,), e.g. "qdiff0_15_9_84_1",
+    "qratio_15_9_84_1"; {} for older files) and res["qiter0_info"] (str or
+    None), ensemble_stat_map() offers them under those names (also as the
+    name in MOD_ALPHA_SOURCE), select_ensemble_source() drops them when the
+    perturbed models alone are drawn. res["qdiff"] is unchanged (only the
+    converged "qdiff_*" keys). Nothing else changed. Tested on synthetic
+    results only. AI-generated code -- review before production use.
 """
 from __future__ import annotations
 
@@ -9364,6 +9385,13 @@ def read_ensemble_results(path, prefix=None, *, percentiles=None, out=True):
         model_source                   "converged" | "perturbed"
         avg, var, err, med, mad (n_free,) ; prc (n_prc, n_free) ; prc_levels
         qdiff {key: (n_free,)} ; var_boot, err_boot, var_boot_se | None
+        qiter0 {key: (n_free,)}        the iter0 spreads "qdiff0_<lo>_<hi>"
+                                        and the ratios "qratio_<lo>_<hi>" =
+                                        qdiff / qdiff0 (iterX over iter0,
+                                        X = the best-nRMS iteration of each
+                                        member) of femtic_ens_post.py of
+                                        2026-11-22; {} for older files
+        qiter0_info str | None          how they were made (text)
         sens {suffix: (n_free,)} ; simrc_coef, simrc_corr | None
         diff_prior, prior (n_free,) | None  model(ens) - model(prior) and
                                         model(prior), log10(rho), signed
@@ -9495,6 +9523,22 @@ def read_ensemble_results(path, prefix=None, *, percentiles=None, out=True):
         for k in sorted(keys):
             if k.startswith(pre):
                 qdiff[k[len(pk) + 1 :]] = np.asarray(z[k], dtype=float)
+        qiter0 = {}  # iter0 spreads and the ratio iterX / iter0 (2026-11-22)
+        for pre in (f"{pk}_qdiff0_", f"{pk}_qratio_"):
+            for k in sorted(keys):
+                if k.startswith(pre) and k != f"{pk}_qratio_info":
+                    _qv = np.asarray(z[k], dtype=float)
+                    if _qv.shape == (ens.shape[1],):
+                        qiter0[k[len(pk) + 1 :]] = _qv
+                    elif out:
+                        print(
+                            f"  results: '{k}' has shape {_qv.shape}, "
+                            f"expected ({ens.shape[1]},) - ignored."
+                        )
+        qiter0_info = (
+            str(np.asarray(z[f"{pk}_qratio_info"]).ravel()[0])
+            if f"{pk}_qratio_info" in keys and qiter0 else None
+        )
         var_boot = err_boot = var_boot_se = None
         if f"{pk}_var_boot" in keys:
             var_boot = _arr("var_boot")
@@ -9631,7 +9675,8 @@ def read_ensemble_results(path, prefix=None, *, percentiles=None, out=True):
     return dict(
         prefix=pk, path=path, ens=ens, pert=pert, model_source=model_source,
         avg=avg, var=var, err=err, med=med, mad=mad, prc=prc,
-        prc_levels=levels, qdiff=qdiff, var_boot=var_boot,
+        prc_levels=levels, qdiff=qdiff, qiter0=qiter0, qiter0_info=qiter0_info,
+        var_boot=var_boot,
         err_boot=err_boot, var_boot_se=var_boot_se, sens=sens,
         sens_kinds=sens_kinds, sens_suffixes=sens_suffixes,
         sens_ranges=sens_ranges,
@@ -9651,7 +9696,8 @@ def ensemble_stat_map(res):
     Returns ``(stat_map, value_keys)``: ``stat_map[key] = (vector over the
     free parameters, description)`` for avg / var / err / med / mad, one
     ``p<level>`` key per percentile level, the qdiff_* spreads, the
-    bootstrap statistics, ``sens_*``, ``simrc_*``, ``diff_prior`` (the signed
+    bootstrap statistics, ``sens_*``, ``simrc_*``, the iter0 spreads
+    ``qdiff0_*`` and the ratios ``qratio_*`` (iterX / iter0), ``diff_prior`` (the signed
     log10 difference ensemble - prior model) and ``abs_diff_prior`` (its
     absolute value, made here) -- whatever the file holds.  ``value_keys``
     are the keys on the resistivity scale (log10(rho): avg, med and the
@@ -9671,6 +9717,11 @@ def ensemble_stat_map(res):
         value_keys.add(key)
     for key, val in res["qdiff"].items():
         stat[key] = (val, f"|{key}| spread")
+    for key, val in (res.get("qiter0") or {}).items():
+        if key.startswith("qratio_"):
+            stat[key] = (val, f"spread ratio iterX / iter0 ({key[len('qratio_'):]})")
+        else:
+            stat[key] = (val, f"|{key}| spread of the iter0 models")
     if res["var_boot"] is not None:
         stat["var_boot"] = (res["var_boot"], "bootstrap variance")
         stat["err_boot"] = (res["err_boot"], "bootstrap error (std)")
@@ -9727,8 +9778,9 @@ def select_ensemble_source(res, source="auto", *, out=True):
         used as it is. For a ``"both"`` file the perturbed models become the
         ensemble (``res["ens"]``, ``res["model_source"] = "perturbed"``) and
         the statistics ``avg, var, err, med, mad, prc`` are recomputed from
-        them; ``qdiff``, the bootstrap, ``sens``, SimRC and ``diff_prior``
-        statistics belong to the converged models and are dropped.
+        them; ``qdiff``, ``qiter0``, the bootstrap, ``sens``, SimRC and
+        ``diff_prior`` statistics belong to the converged models and are
+        dropped.
         ``res["source_swapped"]`` is True, so that a script can give its
         outputs another name. Rows keep
         the order of the members: ``model_list``, ``best_index`` and
@@ -9800,6 +9852,8 @@ def select_ensemble_source(res, source="auto", *, out=True):
         mad=np.median(np.abs(ens - med[np.newaxis, :]), axis=0),
         prc=np.percentile(ens, levels, axis=0),
         qdiff={},
+        qiter0={},
+        qiter0_info=None,
         var_boot=None,
         err_boot=None,
         var_boot_se=None,
@@ -11264,6 +11318,248 @@ def append_scan_report(report_md, summary_path, script_file):
         return target
     except OSError as exc:
         print(f"[scan report] could not be written ({exc}).")
+        return None
+
+
+#: What the keys of the results .npz of femtic_ens_post.py hold, by name without
+#: the prefix <P>_ (see results_key_doc for the keys with a variable part).
+RESULTS_KEY_DOC = {
+    "model_list": "block file, best iteration, nRMS of every member",
+    "ens": "log10(rho) of the ensemble models (members x free parameters)",
+    "avg": "mean over the members, log10(rho)",
+    "var": "variance over the members, log10(rho)^2",
+    "err": "standard deviation, sqrt(var)",
+    "med": "median over the members, log10(rho)",
+    "mad": "median absolute deviation",
+    "prc": "percentiles (levels x free parameters), log10(rho)",
+    "prc_levels": "the percentile levels of prc",
+    "best": "model of the best-nRMS member, log10(rho)",
+    "best_member": "directory name of the best member",
+    "best_file": "block file of the best member",
+    "best_iter": "iteration of the best member",
+    "best_nrms": "nRMS of the best member",
+    "model_source": "which models <P>_ens holds: converged or perturbed",
+    "model_file_name": "block file the models were read from",
+    "ens_perturbed": "perturbed (iter0) models of the same members, log10(rho)",
+    "perturbed_file_name": "name of the perturbed reference file",
+    "qratio_info": "which models the ratio qratio_* is made of (text)",
+    "diff_prior": "model(ens) - model(prior), signed, log10(rho)",
+    "prior": "the prior model that was subtracted, log10(rho)",
+    "diff_prior_info": "statistic, kind of prior and text of diff_prior",
+    "var_boot": "bootstrap variance",
+    "err_boot": "bootstrap standard deviation, sqrt(var_boot)",
+    "var_boot_se": "bootstrap standard error of var_boot",
+    "sensitivity_kinds": "sensitivity kinds held by the sens_* keys",
+    "sensitivity_key_suffixes": "key suffix of every sensitivity kind",
+    "sensitivity_native_range": "native [min, max] of the five sens statistics per kind",
+    "sensitivity_range_stats": "the statistics of sensitivity_native_range",
+    "cell_volume": "volume of every free block, m^3",
+    "simrc_coef": "log10 of the summed |SimRC regression coefficient|",
+    "simrc_corr": "log10 of the summed |SimRC correlation|",
+    "cov": "empirical covariance (free parameters x free parameters)",
+    "cov_eigval": "eigenvalues of the low-rank covariance",
+    "cov_eigvec": "eigenvectors of the low-rank covariance",
+    "subsample_idx": "rows of the accepted members that were drawn",
+    "subsample_n_accepted": "number of accepted members before the draw",
+    "subsample_seed": "seed of the draw (-1 = none)",
+    "nrms_table": "member, best iteration, nRMS, status of every scanned directory",
+    "nrms_max": "NRMS_MAX of the run",
+}
+_SENS_STAT_DOC = {
+    "mean": "mean", "median": "median", "min": "minimum", "max": "maximum",
+    "std": "standard deviation",
+}
+
+
+def results_key_doc(name):
+    """Short description of the key ``name`` (without the prefix) of a results file.
+
+    Knows the keys of femtic_ens_post.py, including the ones with a variable
+    part (``qdiff_<lo>_<hi>``, ``qdiff0_<lo>_<hi>``, ``qratio_<lo>_<hi>``,
+    ``sens_<stat>`` with the kind suffix ``_cum`` / ``_vn``); "" for a key it
+    does not know.
+    """
+    if name in RESULTS_KEY_DOC:
+        return RESULTS_KEY_DOC[name]
+    lv = r"(\d+(?:_\d+)?)_(\d+(?:_\d+)?)$"
+    for pre, text in (
+        ("qdiff0", "|P_hi - P_lo| of the iter0 models, log10(rho)"),
+        ("qdiff", "|P_hi - P_lo| of the converged models, log10(rho)"),
+        ("qratio", "qdiff / qdiff0: spread at iterX over spread at iter0"),
+    ):
+        m = re.match(pre + "_" + lv, name)
+        if m:
+            return text + f" (levels {m.group(1).replace('_', '.')}, {m.group(2).replace('_', '.')})"
+    m = re.match(r"sens_(mean|median|min|max|std|cv)(_cum|_vn)?$", name)
+    if m:
+        what = ("coefficient of variation std / mean (linear)" if m.group(1) == "cv"
+                else f"log10 of the ensemble {_SENS_STAT_DOC[m.group(1)]} sensitivity / its own max")
+        kind = {"_cum": ", raw sensitivity", "_vn": ", volume-normalised sensitivity"}.get(m.group(2) or "", "")
+        return what + kind
+    return ""
+
+
+def npz_inventory(path):
+    """List the arrays of an .npz: ``[(key, shape, dtype), ...]`` in file order.
+
+    Shape and dtype are read from the .npy headers inside the archive, so no
+    data is loaded or decompressed beyond them (a covariance matrix costs
+    nothing). A member of an unusual .npy version is loaded instead. Raises
+    OSError / ValueError for a file that is not a readable .npz.
+    """
+    import zipfile
+
+    out = []
+    try:
+        with zipfile.ZipFile(path) as zf:
+            for info in zf.infolist():
+                if not info.filename.endswith(".npy"):
+                    continue
+                key = info.filename[:-4]
+                with zf.open(info) as fh:
+                    version = np.lib.format.read_magic(fh)
+                    if version == (1, 0):
+                        shape, _, dtype = np.lib.format.read_array_header_1_0(fh)
+                    elif version == (2, 0):
+                        shape, _, dtype = np.lib.format.read_array_header_2_0(fh)
+                    else:
+                        shape = dtype = None
+                if shape is None:
+                    with np.load(path, allow_pickle=False) as z:
+                        arr = z[key]
+                    shape, dtype = arr.shape, arr.dtype
+                out.append((key, tuple(int(v) for v in shape), np.dtype(dtype)))
+    except zipfile.BadZipFile as exc:
+        raise ValueError(f"{path} is not an .npz file ({exc})") from exc
+    return out
+
+
+def _results_rows(path, prefix=None):
+    """(size [bytes], header lines, rows) of an .npz for results_contents_md / _text.
+
+    rows = [(key, shape text, type text, meaning)] in file order. Raises
+    OSError / ValueError for a file that cannot be read.
+    """
+    inv = npz_inventory(path)
+    size = os.path.getsize(path)
+    keys = {k for k, _, _ in inv}
+    prefixes = sorted(
+        k[: -len("_ens")] for k in keys
+        if k.endswith("_ens") and f"{k[: -len('_ens')]}_avg" in keys
+    )
+    if prefix is not None:
+        prefixes = [prefix]
+    shapes = {k: sh for k, sh, _ in inv}
+    head = [f"{len(inv)} arrays, {size / 1.0e6:.2f} MB"]
+    for pk in prefixes:
+        sh = shapes.get(f"{pk}_ens")
+        if sh is not None and len(sh) == 2:
+            head.append(f"ensemble '{pk}': {sh[0]} members, {sh[1]} free parameters")
+    rows = []
+    for key, shape, dtype in inv:
+        meaning = ""
+        for pk in sorted(prefixes, key=len, reverse=True):
+            if key.startswith(pk + "_"):
+                meaning = results_key_doc(key[len(pk) + 1:])
+                break
+        shp = "scalar" if shape == () else str(tuple(shape))
+        typ = "str" if dtype.kind == "U" else dtype.name
+        rows.append((key, shp, typ, meaning))
+    return size, head, rows
+
+
+def results_contents_md(path, prefix=None, *, heading="Contents of the results file"):
+    """The contents of an .npz as a Markdown section (never raises).
+
+    A header (file, size, number of arrays, members and free parameters of
+    the ensemble if the file holds one) and a table with key, shape, type and
+    meaning of every array, in file order. The meaning is known for the keys
+    of femtic_ens_post.py (``<P>_ens``, ...; the prefix ``<P>`` is found from
+    the keys, or given); other files get the table without it. A file that
+    cannot be read gives one line saying so.
+
+    Parameters
+    ----------
+    path : str
+        The .npz.
+    prefix : str | None
+        Key prefix of the ensemble; None = every ``<P>`` with ``<P>_ens`` and
+        ``<P>_avg`` in the file.
+    heading : str
+        Title of the section.
+    """
+    def esc(x):
+        return str(x).replace("|", "\\|").replace("\n", " ")
+
+    lines = ["", f"## {heading}", "", f"- File: `{esc(path)}`"]
+    try:
+        _, head, rows = _results_rows(path, prefix)
+    except (OSError, ValueError) as exc:
+        lines += [f"- Not listed: {esc(exc)}", ""]
+        return "\n".join(lines)
+    lines += [f"- {h[0].upper() + h[1:]}" for h in head]
+    lines += ["", "| Key | Shape | Type | Meaning |", "|---|---|---|---|"]
+    lines += [f"| `{esc(k)}` | {shp} | {typ} | {esc(m)} |" for k, shp, typ, m in rows]
+    return "\n".join(lines) + "\n"
+
+
+def results_contents_text(path, prefix=None):
+    """The contents of an .npz as plain ASCII text with aligned columns (never raises).
+
+    The same list as results_contents_md(): key, shape, type and meaning of
+    every array, in file order, under a header line with the file, the
+    number of arrays and the size.
+    """
+    try:
+        _, head, rows = _results_rows(path, prefix)
+    except (OSError, ValueError) as exc:
+        return f"Contents of {path}: not listed ({exc})"
+    cols = [("key", 0), ("shape", 1), ("type", 2), ("meaning", 3)]
+    width = [max([len(c)] + [len(r[i]) for r in rows]) for c, i in cols]
+    def fmt(vals):
+        return "  ".join(str(v).ljust(w) for v, w in zip(vals, width)).rstrip()
+    out = [f"Contents of {path}:"]
+    out += [f"  {h}" for h in head]
+    out += ["", "  " + fmt([c for c, _ in cols]),
+            "  " + "  ".join("-" * w for w in width)]
+    out += ["  " + fmt(r) for r in rows]
+    return "\n".join(out)
+
+
+def print_results_contents(path, prefix=None):
+    """Print results_contents_text(path, prefix) (never raises)."""
+    print("\n" + results_contents_text(path, prefix) + "\n")
+
+
+def append_results_contents(npz_path, summary_path, script_file, prefix=None):
+    """Append the contents of the results .npz to the parameter summary.
+
+    ``summary_path`` is what ``utl.write_param_summary()`` returned. If it
+    cannot be appended to, the list goes to ``<script>_results_contents.md``
+    next to it (or the script). Never raises on I/O problems or an unreadable
+    .npz -- the list is documentation, not a result. Returns the path written,
+    or None.
+    """
+    md = results_contents_md(npz_path, prefix)
+    if summary_path and os.path.isfile(summary_path):
+        try:
+            with open(summary_path, "a", encoding="utf-8") as fh:
+                fh.write(md)
+            print(f"[results contents] listed in {summary_path}")
+            return summary_path
+        except OSError as exc:
+            print(f"[results contents] cannot append to {summary_path} ({exc}).")
+    stem = os.path.splitext(os.path.basename(script_file))[0]
+    base = (os.path.dirname(summary_path) if summary_path
+            else os.path.dirname(os.path.abspath(script_file)))
+    target = os.path.join(base, stem + "_results_contents.md")
+    try:
+        with open(target, "w", encoding="utf-8") as fh:
+            fh.write(md)
+        print(f"[results contents] summary file not available; written to {target}")
+        return target
+    except OSError as exc:
+        print(f"[results contents] could not be written ({exc}).")
         return None
 
 

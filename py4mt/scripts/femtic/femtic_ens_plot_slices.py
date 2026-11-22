@@ -245,6 +245,33 @@ AI-generated code -- review before production use.
               2026-11-15 (d). Tested on synthetic data (drawing run, Agg
               backend); not on your data. AI-generated; review before
               production use.
+
+2026-11-22  Claude Sonnet 5.5 (Anthropic)
+              Spread of the iter0 models and its ratio to the converged
+              spread. MOD_STATS_WHAT accepts "qdiff0_<lo>_<hi>" (|P_hi - P_lo|
+              of the iter0 / perturbed models, e.g. "qdiff0_15_9_84_1") and
+              "qratio_<lo>_<hi>" (= qdiff / qdiff0, iterX over iter0, X = the
+              best-nRMS iteration of each member; < 1 = narrowed by the data)
+              when femtic_ens_post.py ran with COMPUTE_QDIFF_ITER0 and
+              ENS_MODEL_SOURCE = "both"; MOD_STATS_STYLE has entries for both
+              (qdiff0: as qdiff; qratio: "coolwarm", clim [0, 2], so 1 is
+              the neutral colour). Neither is in the default MOD_STATS_WHAT
+              (commented lines show them); either can be the name in
+              MOD_ALPHA_SOURCE ("qratio_15_9_84_1 < 0.5"). A file without the
+              keys skips the panel with a printed message. No code change in
+              the script body; needs the femtic.py of the same date and a
+              results file of femtic_ens_post.py of the same date. Tested on
+              synthetic results (reader and style entries); not on your data.
+              AI-generated; review before production use.
+
+2026-11-22 (b)  Claude Sonnet 5.5 (Anthropic)
+              The contents of the results .npz that was read
+              (ENSEMBLE_RESULTS: every key with shape, type and meaning) are
+              printed after reading (if OUT) and appended to
+              femtic_ens_plot_slices_summary.md
+              (fem.print_results_contents(), fem.append_results_contents(),
+              femtic.py of the same date). Nothing else changes.
+              AI-generated; review before production use.
 """
 
 from __future__ import annotations
@@ -383,6 +410,12 @@ QDIFF_PAIRS = [(15.9, 84.1), (2.3, 97.7)]
 #: (log10 of the statistic divided by its own max, so each peaks at 0), the
 #: linear ratio "sens_cv", and "simrc_coef"/"simrc_corr" (log10). Which
 #: sensitivity kind (raw / volume-normalised) they show: MOD_SENS_KIND below.
+#: "qdiff0_<lo>_<hi>" (the same spread of the iter0 / perturbed models) and
+#: "qratio_<lo>_<hi>" (= qdiff / qdiff0: spread at iterX over spread at iter0,
+#: X = the best-nRMS iteration of each member; < 1 = narrowed by the data),
+#: e.g. "qratio_15_9_84_1", when femtic_ens_post.py ran with
+#: COMPUTE_QDIFF_ITER0 and ENS_MODEL_SOURCE = "both" (2026-11-22); not
+#: plotted unless listed here (see the commented lines below).
 #: "diff_prior" (signed) and "abs_diff_prior" (absolute value) = the log10
 #: difference model(ens) - model(prior) when femtic_ens_post.py ran with
 #: COMPUTE_PRIOR_DIFF (2026-11-15 (d)); not plotted unless listed here, e.g.
@@ -401,6 +434,8 @@ MOD_STATS_WHAT = (
       ["best", "avg", "med", "err", "mad"]
 #    + ["p" + f"{_p:g}".replace(".", "_") for _p in (2.3, 15.9, 50.0, 84.1, 97.7)]
     + [f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS]
+    # + [f"qdiff0_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS]
+    # + [f"qratio_{_lo:g}_{_hi:g}".replace(".", "_") for _lo, _hi in QDIFF_PAIRS]
     # + ["err_boot"]
     # + [
     #     "sens_mean",
@@ -780,6 +815,15 @@ MOD_STATS_STYLE = {
 for _lo, _hi in QDIFF_PAIRS:
     MOD_STATS_STYLE[f"qdiff_{_lo:g}_{_hi:g}".replace(".", "_")] = dict(
         clim=[0.0, 1.0], label=f"P{_hi:g} - P{_lo:g}  log10(rho)"
+    )
+    # iter0 spread, and the ratio iterX / iter0 (femtic_ens_post.py 2026-11-22):
+    # the ratio is diverging around 1 (blue < 1: narrowed by the data).
+    MOD_STATS_STYLE[f"qdiff0_{_lo:g}_{_hi:g}".replace(".", "_")] = dict(
+        clim=[0.0, 1.0], label=f"iter0 P{_hi:g} - P{_lo:g}  log10(rho)"
+    )
+    MOD_STATS_STYLE[f"qratio_{_lo:g}_{_hi:g}".replace(".", "_")] = dict(
+        cmap="coolwarm", clim=[0.0, 2.0],
+        label=f"P{_hi:g} - P{_lo:g}: iterX / iter0",
     )
 MOD_STATS_STYLE["var_boot"] = dict(
     clim=[0.0, 1.0], label="bootstrap var log10(rho)"
@@ -1173,6 +1217,8 @@ try:
     )
 except (FileNotFoundError, KeyError, ValueError) as _exc:
     sys.exit(f"femtic_ens_plot_slices.py: {_exc}")
+if OUT:
+    fem.print_results_contents(ENSEMBLE_RESULTS, prefix=res["prefix"])
 
 P = res["prefix"]
 ens_matrix = res["ens"]
@@ -1577,3 +1623,5 @@ print("\nfemtic_ens_plot_slices.py complete.")
 # Parameter summary
 # ---------------------------------------------------------------------------
 _summary_path = utl.write_param_summary(__file__, out_dir=ENSEMBLE_DIR)
+# The contents of the results .npz that was read (key, shape, type, meaning).
+fem.append_results_contents(ENSEMBLE_RESULTS, _summary_path, __file__, prefix=NPZ_PREFIX)

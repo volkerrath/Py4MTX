@@ -405,7 +405,7 @@ if MESH_SWAP_XY is not None:
 #: and SITE_NUMBER is not None.
 OBSERVE_FILE = WORK_DIR + "observe.dat"
 
-#: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic").
+#: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic_site").
 #: Format (comma-separated, no header):
 #:   name, lat, lon, elev, sitenum, easting, northing
 #: Easting/northing are UTM metres; model-local x/y is derived via

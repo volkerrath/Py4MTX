@@ -627,7 +627,7 @@ the complex entries.
 ### `read_sitelist(path, site_names=None)`
 
 Parses a comma-separated FEMTIC sitelist produced by `mt_make_sitelist.py`
-with `WHAT_FOR="femtic"`.
+with `WHAT_FOR="femtic_site"`.
 
 **Column order** (no column header; lines starting with `#` are skipped.
 Since 2026-11-20 the list starts with two `#` lines naming the UTM zone,

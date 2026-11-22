@@ -198,7 +198,7 @@ MESH_SWAP_XY = True
 if MESH_SWAP_XY is not None:
     fem.MESH_SWAP_XY = bool(MESH_SWAP_XY)
 
-#: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic").
+#: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic_site").
 #: Format (comma-separated, no header):
 #:   name, lat, lon, elev, sitenum, easting, northing
 #: Used for origin estimation only (no site overlay in borehole figures).

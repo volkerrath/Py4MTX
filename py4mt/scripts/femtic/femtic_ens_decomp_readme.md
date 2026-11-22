@@ -21,6 +21,7 @@ Dimensionality reduction (PCA / ICA) on a FEMTIC model ensemble.
 | 2026-08-13 | Claude Sonnet 5 | Added `femtic_ens_decomp_summary.md` output at end of run: user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_ens_decomp_summary.md` is now written to `ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `CNV_FILE` (one name or a list of candidate names; default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`). The file is found with `fem.find_cnv_file()` and its last row is read by column name (`fem.read_cnv_last()`) instead of the fixed positions 0 and 8, which fitted only the layout with distortion columns. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
+| 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | `femtic_ens_decomp_summary.md` ends with the contents of the results `.npz` written (`ENSEMBLE_RESULTS`): every key with shape and type (`fem.append_results_contents()`; needs the `femtic.py` of the same date). Nothing else changes. AI-generated; review before production use. |
 
 ## Purpose
 
@@ -47,6 +48,7 @@ Each run directory must contain the convergence log (`CNV_FILE`, default `femtic
 | File | Contents |
 |------|----------|
 | `<ENSEMBLE_RESULTS>.npz` | `model_list` (file paths, iteration, nRMS) and `ensemble` (stacked model matrix). |
+| `femtic_ens_decomp_summary.md` | The UPPERCASE settings of the run (in `ENSEMBLE_DIR`), followed by the contents of `ENSEMBLE_RESULTS` (every key with shape and type). |
 
 Console output: per-component explained variance, cumulative variance, and singular values.
 

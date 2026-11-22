@@ -5,8 +5,9 @@ site is an icon coloured by its normalized RMS misfit (nRMS), for frequency band
 and data components. For an ensemble (`WORK_DIR` = the ensemble root with the
 member directories and `templates/`) the colour is a statistic of the member
 nRMS at the site (median by default; mean, min, max, a percentile or the std).
-The DEM is made of SRTM-format tiles that are downloaded by default (and
-cached); a DEM file or no DEM are the alternatives. Profile lines (cross-section
+The DEM is the Copernicus DEM GLO-30 by default (GeoTIFF tiles that are
+downloaded once and cached, read with `rasterio`); GLO-90, the AWS Terrain Tiles,
+tiles of your own, a DEM file or no DEM are the alternatives. Profile lines (cross-section
 lines, with swath, distance ticks and the sites in the swath) and other polylines
 or polygons (faults, coast lines, caldera rims, ...) can be drawn on the maps.
 
@@ -15,7 +16,7 @@ at the top of the script, `WORK_DIR` as the base of all relative paths,
 `-w` / `-i` / `--dem` / `--runs` / `--stat` / `--profile` / `--line` on the command line, `settings()` /
 `run()` for use from other code. For a plot of the one nRMS per site (all bands, all components) see
 also `femtic_plot_nrms.py`; this script adds the bands x components selections,
-the tables and the DEM download.
+the tables and the DEM sources.
 
 ---
 
@@ -78,6 +79,9 @@ the tables and the DEM download.
 ```
 python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26          # settings in the script
 python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --dem none   # without DEM, no download
+python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --dem copernicus30   # Copernicus GLO-30 (the default)
+python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --dem copernicus90   # GLO-90, for large maps
+python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --dem skadi  # AWS Terrain Tiles, no rasterio needed
 python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 -i last
 
 # a whole ensemble: WORK_DIR = the root with krafla_rto_NN/ and templates/
@@ -209,18 +213,18 @@ Everything in the CONFIG block; relative paths refer to `WORK_DIR`.
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `DEM_SOURCE` | `"srtm"` | `"srtm"` (tiles: cache, download), `"file"` (`DEM_FILE`), `"none"` |
-| `DEM_URL_TEMPLATE` | AWS skadi | placeholders `{name}`, `{NS}`, `{lat}`, `{EW}`, `{lon}` |
+| `DEM_SOURCE` | `"copernicus30"` | `"copernicus30"`, `"copernicus90"`, `"skadi"` (tiles: cache, download), `"tiles"` (`DEM_URL_TEMPLATE`), `"file"` (`DEM_FILE`), `"none"`; `"srtm"` is an error (it meant `"skadi"`) |
+| `DEM_URL_TEMPLATE` | `None` | `None` = the tiles of `DEM_SOURCE`; else a mirror of them, or the tiles of `"tiles"`: a URL or a path (relative: from `WORK_DIR`) with the placeholders `{name}`, `{NS}`, `{lat}`, `{EW}`, `{lon}`; `.tif` / `.tiff` (rasterio) or `.hgt`, `.hgt.gz`, `.hgt.zip` |
 | `DEM_DOWNLOAD` | `True` | `False`: only the tiles in `DEM_CACHE_DIR` |
-| `DEM_CACHE_DIR` | `"srtm_cache"` | tiles are kept here (an absolute path shares the cache between runs) |
+| `DEM_CACHE_DIR` | `"dem_cache"` | tiles are kept here (an absolute path shares the cache between runs) |
 | `DEM_FILE` | `None` | GeoTIFF (needs `rasterio`), `.npz` (`lon`, `lat`, `z`) or one `.hgt` tile |
-| `DEM_TIMEOUT`, `DEM_MAX_TILES`, `DEM_MAX_PIXELS` | `60`, `16`, `1600` | s per tile; more tiles are refused; the DEM is thinned to at most this many pixels per side |
+| `DEM_TIMEOUT`, `DEM_MAX_TILES`, `DEM_MAX_PIXELS` | `60`, `16`, `1600` | s per tile; more tiles are refused; the DEM is averaged down to about this many pixels per side |
 | `DEM_FILL_MISSING` | `0.0` | elevation of tiles the server does not have (ocean); `None` = no value |
-| `DEM_STRICT` | `False` | `True`: a failed download stops the script (else a warning and a map without relief) |
+| `DEM_STRICT` | `False` | `True`: a failed download, an unreadable tile or a missing `rasterio` stops the script (else a warning and a map without relief) |
 | `DEM_STYLE`, `DEM_CMAP` | `"hillshade"`, `"gist_earth"` | grey shading, or colour + shading |
 | `HILLSHADE_AZIMUTH`, `HILLSHADE_ALTITUDE`, `HILLSHADE_VERT_EXAG` | `315`, `45`, `1.0` | light direction and height [deg], vertical exaggeration |
 | `BASEMAP_CMAP`, `BASEMAP_ALPHA` | `"Greys"`, `0.9` | |
-| `DEM_CREDIT` | `"auto"` | text at the lower right of every map; `None` = none |
+| `DEM_CREDIT` | `"auto"` | text at the lower right of every map (wrapped to the width of the panel); `"auto"` = the notice of the source (none with `DEM_URL_TEMPLATE`, `"tiles"` or `"file"`); `None` = none |
 
 **Icons and colours**
 
@@ -245,9 +249,28 @@ components) stretch it, set `NRMS_VMAX` (for the Krafla data 3.0 shows the struc
 | `PAGE_BY` | `"band"` | `"band"` (panels = components), `"component"` (panels = bands) or `"all"` |
 | `PANEL_COLS`, `PANEL_SIZE` | `2`, `(4.8, 4.4)` | panels per row, inch |
 | `TITLE` | `"auto"` | `"auto"`, `None` / `""` (none) or text with `{iter}`, `{nrms}`, `{M}`, `{stat}` |
-| `CBAR_LOCATION`, `CBAR_SHRINK` | `None` (right), `0.8` | |
+| `CBAR_LOCATION`, `CBAR_SHRINK` | `None` (right), `0.8` | colour bar at `"right"` (default), `"left"`, `"top"`, `"bottom"`; its length as a fraction (0 .. 1] of the panels along it |
+| `CBAR_LENGTH`, `CBAR_WIDTH` | `None`, `None` | size of the colour bar in **cm**. `CBAR_LENGTH` = the whole length with the extension triangles (`extend`; the coloured part is shorter by 5 % per triangle); wins over `CBAR_SHRINK`; `None` = `CBAR_SHRINK` x the panels. `CBAR_WIDTH` = the thickness; `None` = 1/20 of the length (matplotlib's). Either alone is fine. A length that the panels cannot hold is reduced to the length of the panels, with a message. See "Size of the colour bar" |
 | `TICK_FONTSIZE`, `DPI`, `SHOW` | `8`, `200`, `False` | |
 | `OUTPUT_DIR`, `OUTPUT_BASENAME`, `OUTPUT_FORMATS` | `"sitemap"`, `"femtic_sitemap"`, `["png"]` | |
+
+---
+
+## Size of the colour bar
+
+`CBAR_LENGTH` and `CBAR_WIDTH` [cm] fix what is drawn. The figure is laid out once without
+drawing, the colour bar is made again with the length and the aspect ratio that this shows
+are needed, and measured again (up to 6 passes; the size is held within 1 %, and a message says
+if it is not reached). The title is set before, so the size is that of the finished figure,
+also when the figure is saved.
+
+- `CBAR_LENGTH` is the whole bar, with the extension triangles of a colour scale that has
+  `NRMS_VMIN` / `NRMS_VMAX` inside the data; the coloured part alone is about 5 % (one
+  triangle) or 9 % (two) shorter. It is cut to the panels if it is too long.
+- `CBAR_WIDTH` is the thickness of the coloured part; without it, 1/20 of the length.
+- Neither given: matplotlib's colour bar with `CBAR_SHRINK`, as before (no fit passes; the
+  title is created before the bar. Compared once with the earlier script: the axes of the
+  page have the same positions).
 
 ---
 
@@ -259,11 +282,13 @@ of the DEM and below the site icons.
 
 ```python
 PROFILES = [
-    dict(name="A-A'", start=(-16.83, 65.69), end=(-16.73, 65.73),
+    dict(name="A-A'", start=(-16.83, 65.69, "A"), end=(-16.73, 65.73, "A'"),
          width_km=4.0, ticks_km=2.0, label="Section A"),
     dict(name="B-B'", center=(-16.78, 65.71), azimuth=90.0, length_km=6.0,
          width_km=1.0, ticks_km=1.0, color="tab:red"),
     dict(name="C-C'", file="gis/profile_c.txt", coords="utm", width_km=2.0),
+    dict(name="D-D'", coords="utm", start=(405000, 7291800, "D"), end=(424000, 7287800, "D'"),
+         width_km=4.0, ticks_km=5.0),                      # UTM metres of the site.dat zone
 ]
 LINES = [
     dict(label="Faults", file="gis/faults.txt", color="tab:red", ls="--"),
@@ -280,13 +305,13 @@ LINES = [
 | `name` | name; the end labels follow from it (`"A-A'"` gives `A` and `A'`; a name without a hyphen `"P1"` gives `P1` and `P1'`); default `P1`, `P2`, ... |
 | `points` | `[(a, b), ...]`, at least two different points (a polyline with bends is allowed) |
 | `file` | text, GeoJSON, KML or KMZ file (see below); several parts in the file: the first one is the profile, with a warning |
-| `start`, `end` | the two end points `(a, b)` |
+| `start`, `end` | the two end points `(a, b)`, or `(a, b, "A")` with the label ("marker") of that end: `start=(x, y, "A")`, `end=(x, y, "A'")`. A third entry that is no text is ignored |
 | `center`, `azimuth`, `length_km` | all three: centre `(a, b)`, direction in degrees clockwise from north (in the local km frame of the profile), length [km] |
 | `coords` | `"lonlat"` (default), `"latlon"`, `"utm"` or `"model"` for `points`, `start`, `end`, `center` and a text `file` (see below) |
 | `width_km` | width of the swath [km]; `0` / not given = no swath |
 | `ticks_km` | spacing of the distance ticks along the profile [km] (a tick at 0, at every multiple, none at the end unless it is a multiple); at most 2000 ticks |
 | `tick_labels` | `True` (default): the distance is written at every tick |
-| `labels` | `False` = no end labels, or two texts `("A", "A'")`; default from `name` |
+| `labels` | `False` = no end labels at all (also not the ones in `start` / `end`), or two texts `("A", "A'")`. The label of an end is, in this order: the text in `start` / `end`, `labels`, the half of `name` (see above) |
 | `label` | legend text; without it the profile is not in the legend |
 | `color`, `lw`, `ls` | colour, line width, line style; defaults `PROFILE_COLOR`, `PROFILE_LW`, `"-"` |
 
@@ -349,6 +374,33 @@ Distances are flat-earth km on a sphere (R = 6371.0088 km; the scale of the map)
 around the mean position of the profile; east-west they are about 0.3 % shorter
 than on the WGS84 ellipsoid at mid latitudes. Use profiles of up to a few 100 km.
 
+**Cut at the map box (`OVERLAY_CUT_MARGIN_KM`)**
+
+Profiles and lines are cut at the map box (the extent of `MAP_EXTENT_MODE`, e.g. `MAP_BOX`),
+made smaller by `OVERLAY_CUT_MARGIN_KM` (default **1 km**) on every side, so that both
+ends of a cut profile lie inside the map, at least the margin from its edge (`None` = not cut;
+the edge of the map hides what is outside, as before). For a profile cut this way:
+
+- the line, the swath (flat at the cut) and the rings stop there; the end labels, and the
+  end markers of `PROFILE_END_MARKER`, stand at the ends of what is shown;
+- the ticks and their distances stay those of the whole profile, counted from its real start
+  (a map that starts 7 km along the profile shows the ticks 10, 15, ...);
+- a profile that leaves the box and comes back is shown in parts; one that is outside is not drawn
+  (the warning names it); one that is inside is drawn as before;
+- `_profiles.csv` and `_profile_sites.csv` still describe the whole profile and all its sites
+  (also the ones outside the map); the console says how much was left:
+  `profile 'A-A'' is cut at the map box (margin 1 km): 14.2 of 19.4 km are shown.`
+
+Lines are cut in the same way (the outline of a polygon as a polyline, its fill as a
+polygon). A margin larger than half the map is a warning, and nothing is cut. With
+`MAP_EXTENT_MODE = "sites"` the map box is the box of the sites plus the map margin
+(`MAP_MARGIN_FRAC`, `MAP_MARGIN_MIN_KM`), and **it does not depend on the profiles and lines**
+(`MAP_INCLUDE_PROFILES = False`, the default): what goes beyond the box is cut at the box
+made smaller by `OVERLAY_CUT_MARGIN_KM`. With `MAP_INCLUDE_PROFILES = True` the box is made
+large enough for the profiles instead (a profile is then cut only if the map margin is
+smaller than `OVERLAY_CUT_MARGIN_KM`); lines never change the box. The cut always refers to
+the box that is drawn, whatever `MAP_EXTENT_MODE` is.
+
 **Errors**
 
 - A key that does not exist, a geometry given in two ways, a number that cannot
@@ -370,8 +422,10 @@ than on the WGS84 ellipsoid at mid latitudes. Use profiles of up to a few 100 km
 | `PROFILE_FONTSIZE` | `9.0` | end labels (the distance labels are 2 pt smaller) |
 | `PROFILE_SWATH_ALPHA` | `0.15` | opacity of the swath (one patch, so the overlap at the bends is not darker) |
 | `PROFILE_MARK_SITES` | `True` | rings around the sites in the swath |
+| `PROFILE_END_MARKER` | `None` | a matplotlib marker (`"o"`, `"s"`, `"D"`, `"^"`, ...) at the two ends of every profile (of the part that is shown), in the colour of the profile; `None` = none |
+| `OVERLAY_CUT_MARGIN_KM` | `1.0` | profiles and lines are cut at the map box made smaller by this [km] on every side; `None` = not cut; see "Cut at the map box" |
 | `LINE_COLOR`, `LINE_LW`, `LINE_HALO` | `"tab:green"`, `1.2`, `True` | |
-| `MAP_INCLUDE_PROFILES` | `True` | `MAP_EXTENT_MODE = "sites"`: the extent includes the profiles (with the margin) |
+| `MAP_INCLUDE_PROFILES` | `False` | `MAP_EXTENT_MODE = "sites"`: `False` = the box of the map does not depend on the profiles, they are cut at it (`OVERLAY_CUT_MARGIN_KM`); `True` = the box includes the profiles (with the margin) |
 | `OVERLAY_STRICT` | `False` | `True`: a profile or line that cannot be made stops the script |
 | `LEGEND_LOC` | `"upper left"` | legend (icon "no data" and the labelled profiles and lines) in the first panel of a page: a matplotlib `loc` string, `None` = no legend |
 
@@ -384,37 +438,114 @@ combined with the two options).
 
 ## DEM source
 
-- Default: the "skadi" tile set of the AWS Terrain Tiles (public bucket
-  `elevation-tiles-prod`, no key, no login),
-  `https://s3.amazonaws.com/elevation-tiles-prod/skadi/N37/N37W105.hgt.gz`.
-  The tiles are 1 x 1 degree, in the SRTM `.hgt` format (16-bit big-endian,
-  3601 x 3601 or 1201 x 1201 samples, first row at the northern edge, void
-  -32768), gzipped.
-- **They are a composite**, not pure SRTM: SRTM is the main source between about
-  56 S and 60 N; other sources are used elsewhere (high latitudes, e.g. Iceland).
-  The original NASA / USGS distribution of SRTM needs an Earthdata login (not
-  done here). The tile provider asks for attribution of the underlying sources
-  when the tiles are used for analysis or display (see
-  https://aws.amazon.com/public-datasets/terrain/): check it before publishing a
-  figure. The default credit line is "Relief: SRTM-format AWS terrain tiles (SRTM
-  courtesy of USGS)" (`DEM_CREDIT`).
-- Tiles are downloaded once into `DEM_CACHE_DIR` (`.part` file, then renamed).
-  A tile that is there (`.hgt`, `.hgt.gz`, `.hgt.zip`) is never downloaded again;
-  tiles of another server can be put there by hand or by `DEM_URL_TEMPLATE`.
+| `DEM_SOURCE` | Data | Tiles | Needs |
+|---|---|---|---|
+| `"copernicus30"` (default) | Copernicus DEM GLO-30, 1 arc second (30 m) | GeoTIFF (COG), bucket `copernicus-dem-30m` | `rasterio` |
+| `"copernicus90"` | Copernicus DEM GLO-90, 3 arc seconds (90 m) | GeoTIFF (COG), bucket `copernicus-dem-90m` | `rasterio` |
+| `"skadi"` | AWS Terrain Tiles (Mapzen), a composite | `.hgt.gz` | numpy only |
+| `"tiles"` | your own | `.tif` or `.hgt` files, URL or path pattern | `rasterio` for `.tif` |
+| `"file"` | one file | `.tif`, `.npz`, `.hgt` | `rasterio` for `.tif` |
+
+- **Copernicus DEM** (ESA, based on TanDEM-X; the open data on AWS need no key and
+  no login): 1 x 1 degree tiles,
+  `https://copernicus-dem-30m.s3.amazonaws.com/Copernicus_DSM_COG_10_N65_00_W017_00_DEM/Copernicus_DSM_COG_10_N65_00_W017_00_DEM.tif`
+  (GLO-90: `copernicus-dem-90m`, `Copernicus_DSM_COG_30_...`). It is a **surface
+  model** (buildings, vegetation) with heights above the **EGM2008 geoid**; for a
+  hillshade this does not matter, but do not take the heights as ellipsoidal or as
+  a bare-earth terrain. The GLO-30 tiles have fewer pixels in longitude at high
+  latitudes (e.g. 1800 at 60 - 70 N); the script takes the pixel size from the
+  file. There are **no tiles over the open ocean** (the server answers 403 / 404:
+  the map gets `DEM_FILL_MISSING` there), and a few tiles of some countries are
+  not public in GLO-30 (they are reported as failed or missing; use GLO-90 there).
+- **The credit** the licence asks for is the default `DEM_CREDIT`: "produced using
+  Copernicus WorldDEM-30 (c) DLR e.V. 2010-2014 and (c) Airbus Defence and Space
+  GmbH 2014-2018 provided under COPERNICUS by the European Union and ESA; all rights
+  reserved" (WorldDEM-90 for GLO-90). Check the licence for your use.
+- **"skadi"** (the former `"srtm"`): the AWS Terrain Tiles,
+  `https://s3.amazonaws.com/elevation-tiles-prod/skadi/N37/N37W105.hgt.gz`, in the SRTM `.hgt`
+  format. They are a **composite** of several elevation data sets (SRTM between
+  about 60 N and 56 S, other sources at high latitudes, e.g. Iceland), not one model;
+  the tile provider asks for attribution of the underlying sources (see
+  https://registry.opendata.aws/terrain-tiles). Use it when `rasterio` is not
+  installed.
+- **How the tiles are read**: a tile of a URL is downloaded whole into
+  `DEM_CACHE_DIR` (a `.part` file, then renamed; the file name is the last part of
+  the URL) and never downloaded again; a GeoTIFF tile is then read with `rasterio`,
+  only the window inside the map (plus a margin of two pixels), averaged down to
+  about `DEM_MAX_PIXELS` pixels per side. A GLO-30 tile is roughly 4 - 40 MB. A
+  cached file that cannot be read is downloaded again once. A path pattern
+  (`"tiles"`, or `DEM_URL_TEMPLATE` with a path) is used as it is, nothing is copied.
+  A raster in a projected coordinate system (a national DEM in UTM) is warped to
+  lon / lat first (`WarpedVRT`); a rotated raster is refused.
+- **Windows of several tiles** are put on one grid with the coarsest pixel size of
+  the windows (nearest pixel); the ocean tiles are added as `DEM_FILL_MISSING`
+  over the map and a margin of three pixels, not over the whole tile.
 - A missing tile (HTTP 403 / 404 = ocean) is filled with `DEM_FILL_MISSING`; any
-  other failure gives a warning and a map without relief (`DEM_STRICT = True`:
-  an error).
+  other failure, an unreadable tile or no `rasterio` gives a warning and a map
+  without relief (`DEM_STRICT = True`: an error). If all tiles are missing there is
+  no DEM (a warning), so a wrong URL cannot give a flat sea-level map.
 - The relief is a hillshade (`matplotlib.colors.LightSource`, spacing in metres from
-  the pixel size in degrees); the map is limited to `DEM_MAX_TILES` tiles and the
-  DEM is thinned to `DEM_MAX_PIXELS`. Extents that cross the antimeridian are not
-  supported.
+  the pixel size in degrees); the map is limited to `DEM_MAX_TILES` tiles. Extents
+  that cross the antimeridian are not supported.
 
-Sources for the tile set: Registry of Open Data on AWS, "Terrain Tiles"
-(https://registry.opendata.aws/terrain-tiles); Mapzen, "Terrain Tiles v1.1 Update"
-(https://www.mapzen.com/blog/terrain-tiles-v1.1/; the S3 path
-`elevation-tiles-prod/skadi/{N|S}{y}/{N|S}{y}{E|W}{x}.hgt.gz`).
+### Examples: Copernicus GLO-30
 
-Reference for SRTM:
+In the CONFIG block of the script (`rasterio` has to be installed; the tiles of the
+map are downloaded once; a map inside one degree square needs one tile, e.g. N65 W017):
+
+```python
+DEM_SOURCE = "copernicus30"                      # the default
+DEM_CACHE_DIR = "/data/dem_cache"                # a cache shared by all runs and maps
+DEM_STYLE = "terrain"; DEM_CMAP = "gist_earth"   # colour + shading instead of the grey hillshade
+DEM_MAX_PIXELS = 2400                            # finer relief of a small map (default 1600)
+```
+
+Offline, with tiles that are already on the disk. Put the files under their original
+names into `DEM_CACHE_DIR` (e.g. `Copernicus_DSM_COG_10_N65_00_W017_00_DEM.tif`) and stop the
+download:
+
+```python
+DEM_SOURCE = "copernicus30"
+DEM_DOWNLOAD = False
+DEM_CACHE_DIR = "/data/dem_cache"
+```
+
+Tiles under other names or in another folder (a path pattern is used as it is, nothing
+is copied; `{NS}{lat:02d}` is N65, `{EW}{lon:03d}` is W017):
+
+```python
+DEM_SOURCE = "tiles"
+DEM_URL_TEMPLATE = "/data/cop30/Copernicus_DSM_COG_10_{NS}{lat:02d}_00_{EW}{lon:03d}_00_DEM.tif"
+```
+
+A mirror of the bucket, same file names: `DEM_SOURCE = "copernicus30"` with
+`DEM_URL_TEMPLATE = "https://mirror.example.org/cop30/{name}.tif"`.
+
+One GeoTIFF that you cut out yourself (e.g. `gdal_translate -projwin -17.3 65.9 -16.2 65.3 in.vrt krafla_cop30.tif`):
+
+```python
+DEM_SOURCE = "file"
+DEM_FILE = "/data/krafla_cop30.tif"
+```
+
+From Python, without editing the script:
+
+```python
+import femtic_plot_sitemap as sm
+cfg = sm.settings("/data/krafla/krafla_rto_26", DEM_SOURCE="copernicus30",
+                  DEM_CACHE_DIR="/data/dem_cache", DEM_STYLE="terrain")
+sm.run(cfg)
+```
+
+Sources: Registry of Open Data on AWS, "Copernicus Digital Elevation Model (DEM)"
+(https://registry.opendata.aws/copernicus-dem/); "Terrain Tiles"
+(https://registry.opendata.aws/terrain-tiles; Mapzen, "Terrain Tiles v1.1 Update",
+the S3 path `elevation-tiles-prod/skadi/{N|S}{y}/{N|S}{y}{E|W}{x}.hgt.gz`).
+
+References:
+
+Copernicus GLO-30 Digital Elevation Model, data record of OpenTopography:
+doi:10.5069/G9028PQB (data: ESA, DLR, Airbus Defence and Space).
 
 Farr, T. G., Rosen, P. A., Caro, E., Crippen, R., Duren, R., Hensley, S., Kobrick,
 M., Paller, M., Rodriguez, E., Roth, L., Seal, D., Shaffer, S., Shimada, J.,
@@ -466,8 +597,8 @@ all bands       Zdiag        8608  1.167    100  0.825   1.159  1.565           
 What was checked, and how. `h5py` and `rasterio` were not available and there was
 no network where the script was written.
 
-- **Unit and run tests**: `scripts/general/test_femtic_plot_sitemap.py`, 417
-  tests (about 50 s), on synthetic results files (the HDF5 reader replaced by a
+- **Unit and run tests**: `scripts/general/test_femtic_plot_sitemap.py`, 779
+  tests (about 75 s; the whole `scripts/general` suite: 1291 passed, 2 skipped, 112 s), on synthetic results files (the HDF5 reader replaced by a
   stand-in that returns the same structure) and synthetic tiles: names and URLs
   of tiles, the `.hgt` reader (both sizes, void values, the overlapping edge row
   and column), the mosaic and the cache, the download with a mocked `urlopen`
@@ -490,6 +621,16 @@ no network where the script was written.
   round joins); the swath (one patch, same pixel value in the overlap); ticks;
   the specs (every error path), drawing (z-order, styles, labels, rings,
   legend), the tables, the summary, the extent, `run` and the command line.
+  DEM sources (2026-11-22): names, URLs and the notice of every source; the tile
+  kind from the extension; the download into the cache (whole tile, `.part` file,
+  403 / 404, other errors, a broken cached file loaded once more); the window
+  reader against an analytic surface (window and margin, averaging to
+  `DEM_MAX_PIXELS`, nodata, flipped axes, projected rasters through a stand-in
+  `WarpedVRT`, rotated and south-up rasters refused); `merge_dems` (pixel sizes,
+  first valid value wins, ocean boxes in whole pixels, so that the land pixels do
+  not move); `load_dem_raster` (missing tiles, ocean fill, all tiles missing),
+  files, settings, credit line and `run` with every source. `rasterio` is a
+  stand-in in `sys.modules` (pickled rasters, a fake `urlopen` server).
 - **Mutation testing**: about 70 hand-made changes of the main logic (comparison
   signs, constants, indices, ordering, dropped checks) and 106 of the ensemble
   code; every one that changes the behaviour is caught by a test (two of the 106
@@ -502,6 +643,16 @@ no network where the script was written.
   the longitudes, which the mean +- 1 zone covers; the `min` in the tick position,
   which only removes a rounding error; `not overlays` against `overlays is None`
   with an empty dict). The 24 that survived the first round led to new tests.
+  For the DEM code (2026-11-22) about 209 changes (tile names, URLs, kind of tile,
+  cache and download, window and margin, averaging, nodata, warping, merging,
+  ocean boxes, clipping, `load_dem_file`, settings, credit line, command line):
+  about 205 are caught; the four that survive do not change the result (two
+  latitude arguments of the window reader that only matter for rotated rasters,
+  the order of two lookups in `load_dem_file`, a clip of the ocean boxes that the
+  merge repeats, and `fill=None` in the merge with no box). Two real defects
+  were found this way and are fixed: ocean boxes were not clipped to the map when
+  no fill value was given, and boxes that were not a whole number of pixels wide
+  shifted the land pixels.
 - **Real data**: the script was run on the Krafla RTO member `krafla_rto_26`
   (iteration 8, 8608 data rows, 100 sites, 22 frequencies, MT only) with the real
   `templates/site.dat`; the HDF5 file was read with a libhdf5 reader written for the
@@ -525,12 +676,28 @@ no network where the script was written.
   centre, azimuth and length gave 14 sites in a 1 km swath; a polygon (text and
   GeoJSON) and a two-part fault file were drawn with `DISPLAY_COORDS` `"km"` and
   `"latlon"`, and the figures were looked at. The files were made for the test.
+- **Colour bar size and the cut of profiles and lines** (2026-11-22): tests on synthetic figures
+  (`TestColorbarSize`: sizes at the four locations with length, width, both, and a length that is
+  too long; extension triangles; with and without a title; no leftover bar; no fit pass without
+  a size) and on synthetic geometry
+  (`TestClipPolyline` against dense sampling of polylines, `TestClipPolygon` against a grid
+  count, `TestCutBox`, `TestCutProfile`, `TestCutLine`, `TestCutDrawing`, `TestCutRun`;
+  `TestProfileEndLabels`, `TestProfileEndMarker`). 116 mutations of the new code (clipping,
+  cut box, cut of profiles and lines, drawing, end labels, validation, colour bar fit and
+  its measure): 108 are caught by the tests; the 8 that are not are equivalent (redundant
+  guards, e.g. the length check of a clipped part, a zero-length guard that no profile can
+  reach, or early returns that only save time). The colour bar sizes were checked on
+  matplotlib 3.11.2 only (the layout code of the colour bar differs between versions).
+  Not looked at with real data.
 - **Not tested**: the readers on files that come from GIS programs (QGIS, Google
-  Earth, `ogr2ogr`; only hand-made files); the download from the real server (the sandbox proxy refused
-  s3.amazonaws.com; the URL pattern is the one of the AWS documentation), the
-  GeoTIFF reader (needs `rasterio`), and a real DEM in the real-data run. The
-  Krafla area (65.7 N) is north of the SRTM coverage, so the tiles there come from
-  the other sources of the composite.
+  Earth, `ogr2ogr`; only hand-made files); `rasterio` itself (not installed where
+  this was written: only the stand-in), so the reading of a real GeoTIFF / COG and
+  the warping of a raster in a projected system (`WarpedVRT`) have not run; the
+  download from the AWS buckets (no network; the file names are those of the bucket
+  documentation); and a real DEM in the real-data run. The default `"copernicus30"`
+  needs `rasterio` on your machine; `"skadi"` does not. The Krafla area (65.7 N) is
+  north of the SRTM coverage, so the "skadi" tiles there come from the other sources
+  of the composite; the Copernicus DEM covers it.
 
 ---
 
@@ -553,6 +720,13 @@ no network where the script was written.
 - A profile in `"model"` coordinates needs the sites assigned by position; with
   `SITE_MATCH = "id"` use `"lonlat"` or `"utm"`.
 - `modules/topo.py` has its own DEM download (USGS); it is not used here.
+- The Copernicus DEM is a surface model with EGM2008 heights; GLO-30 has no tiles
+  over the open ocean and lacks a few countries (use GLO-90 or your own DEM there).
+- Where tiles of different pixel size meet (the latitude zones of GLO-30, or windows
+  that are thinned differently) the grid has the coarsest pixel size, and the
+  outermost pixel rows outside the map can be empty; the map itself is not affected.
+- Only whole tiles are downloaded (no remote windows of the COG), so a map of one
+  small area still costs a tile of about 4 - 40 MB the first time.
 - The colour scale is common to all pages and has no robust automatic limit; set
   `NRMS_VMAX` if outliers dominate.
 
@@ -565,5 +739,8 @@ no network where the script was written.
 | 2026-11-21 | Claude Sonnet 5.5 (Anthropic) | Created. Per-site nRMS for bands x components as coloured icons on a shaded relief from SRTM-format tiles (download with a cache, or a DEM file, or none); tables and summary; `site.dat` searched in `TEMPLATES_DIR`, `WORK_DIR` and next to `WORK_DIR`; ids at one position get the co-located `site.dat` entries in the order of their numbers. AI-generated; review before use. Checked on synthetic data and on the Krafla RTO member (see "Verification performed"); the DEM download and the GeoTIFF reader were not run. |
 | 2026-11-21 | Claude Sonnet 5.5 (Anthropic) | A full ensemble is read: `WORK_DIR` = ensemble root (members and `templates/`), or `RUN_PATHS`; `ENS_STAT` (mean, median, min, max, std, percentile) over the members for every site and selection; `MEMBER_NRMS_MAX`; unreadable members are skipped; new tables `_members.csv`, `_ens_stats.csv`; ensemble summary, titles, colour bar label and a sequential scale for the std; `--runs`, `--stat`. Single-run output unchanged. AI-generated; review before use. Checked on synthetic ensembles and on a pseudo-ensemble of three real Krafla iterations. |
 | 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | Profile lines and other polylines: `PROFILES` (points, file, start + end, centre + azimuth + length; swath, ticks, end labels, the sites in the swath with `along_km` / `offset_km`) and `LINES` (points, segments, text / GMT, GeoJSON, KML, KMZ; polygons with fill); coordinates lonlat, latlon, utm (own Krueger series, zone found from `site.dat`) and model; legend (`LEGEND_LOC`); map extent with the profiles; new tables `_profiles.csv`, `_profile_sites.csv`; `--profile`, `--line`, `--no-overlays`. Without `PROFILES` and `LINES` the output is unchanged. AI-generated; review before use. Checked on synthetic data (417 tests) and on the real Krafla results; the readers were not tried on files from GIS programs. |
+| 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | DEM: default Copernicus DEM GLO-30 (`DEM_SOURCE` `"copernicus30"`, also `"copernicus90"`, `"tiles"` with own URL or path pattern, GeoTIFF or `.hgt`); GeoTIFF / COG read with `rasterio` (window, averaging to `DEM_MAX_PIXELS`, warping of projected rasters), tiles merged, ocean tiles filled; the AWS Terrain Tiles are now `"skadi"` and `"srtm"` is refused; `DEM_URL_TEMPLATE` default None, `DEM_CACHE_DIR` default `dem_cache`; credit line = the licence notice; example lines for the GLO-30 (cache, colour relief, offline, own tile names, one GeoTIFF, Python). AI-generated; review before use. Checked with 596 tests and about 209 mutations on a `rasterio` stand-in; `rasterio`, the real GeoTIFF reading, the warping and the AWS download were not run. |
+| 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | `CBAR_LENGTH`, `CBAR_WIDTH` [cm]: the size of the colour bar (the figure title is now set before the bar). Profiles and lines are cut at the map box made smaller by `OVERLAY_CUT_MARGIN_KM` (default 1 km): both ends of a cut profile are inside the map, end labels, swath, rings and ticks follow (ticks keep the distances of the whole profile). End labels in `start` / `end`: `start=(x, y, "A")`, `end=(x, y, "A'")`; `PROFILE_END_MARKER`. AI-generated, review before use. Checked with 779 tests and 116 mutations on synthetic data; not run on real results. |
+| 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | `MAP_INCLUDE_PROFILES` now defaults to `False`: the map box (`"sites"`: sites + margin) is not enlarged by profiles that go beyond it; they are cut at that box (`OVERLAY_CUT_MARGIN_KM`). `True` gives the earlier behaviour. This changes the extent of maps with profiles that went beyond the sites. AI-generated, review before use. |
 
 Author: Volker Rath (DIAS)

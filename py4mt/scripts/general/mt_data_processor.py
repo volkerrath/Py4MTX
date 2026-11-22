@@ -78,7 +78,7 @@ DATA_DIR_IN = WORK_DIR
 DATA_DIR_OUT = WORK_DIR + "/proc/"
 
 NAME_STR = ""
-COLL_NAME = "Review"
+COLL_NAME = "Test"
 
 # Tokens (comma separated): edi, npz, hdf, mat, ncd, observe
 #   "observe" = one FEMTIC observe.dat for all stations (see the OBSERVE block)
@@ -90,7 +90,7 @@ STAT_UPPER = True
 DROP_INVALID = True
 FREQ_ORDER = "dec"   # "inc", "dec", or "keep"
 
-MANUFACTURER = "metronix"   # "metronix", "phoenix", "delta", or "auto"
+MANUFACTURER = "auto"   # "metronix", "phoenix", "delta", or "auto"
                              # Controls FT sign-convention correction at load time.
                              # Phoenix (e+iwt) -> Im(Z) and Im(T) are negated so all
                              # data in the loop are in the standard e-iwt convention.

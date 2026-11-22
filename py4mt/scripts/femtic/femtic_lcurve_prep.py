@@ -89,7 +89,7 @@ print(titstrng + "\n\n")
 
 #: Directory holding the templates/ sub-directory; the run directories are
 #: created here.  femtic_lcurve_plot.py uses the same directory as WORK_DIR.
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/misti2026/l-curve/"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/sabancaya2026/l-curve/"
 #: Run directories are <ENSEMBLE_DIR><ENSEMBLE_NAME><alpha>/ .  Keep "lc_"
 #: for femtic_lcurve_plot.py (SEARCH_STRNG = "lc_*").
 ENSEMBLE_NAME = "lc_"
@@ -100,7 +100,7 @@ TEMPLATES = ENSEMBLE_DIR + "templates/"
 #: [0.01, 0.1, 1., 10., 100.] or list(np.logspace(-2, 2, 9)).  The values
 #: are written into control.dat with up to 10 significant digits and the
 #: directory name uses 6 (duplicates at that precision are refused).
-TRADE_OFF_LIST = [0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0, 30.0, 100.0]
+TRADE_OFF_LIST = [ 0.03, 0.1, 0.2, 0.3, 0.5, 1.0, 2.,  3., 5.,10.]
 
 #: Keyword(s) of the trade-off parameter in control.dat; the first one found
 #: is used.  TRADE_OFF_PARAMETER = FEMTIC-DABIC v2.7.1, TRADE_OFF_PARAM =
@@ -118,7 +118,7 @@ LINK_LIST = ["mesh.dat",
              "observe.dat",
              "resistivity_block_iter0.dat",
              "distortion_iter0.dat",
-             "referencemodel.dat",
+             # "referencemodel.dat",
              "site.dat",
              "run_femtic_dias.sh", "run_femtic_kraken.sh"]
 RELATIVE_LINKS = True   # True: portable relative symlinks (default, survives tgz);

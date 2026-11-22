@@ -21,6 +21,9 @@ Methods (METHODS):
   "nrms"       histogram of the best nRMS of ALL scanned members (accepted /
                rejected), from the results .npz of femtic_ens_post.py; needs
                no results_iterN.h5
+  "outliers"   optional: the sites whose nRMS is outside the limits of the
+               distribution of the site nRMS values (default: the 2-sigma
+               quantiles, 2.275 / 97.725 %); table, CSV and figure
 
 The single-model counterpart is femtic_mod_misfit.py. Both call
 femtic_misfit.py (the engine of femtic_data_misfit.py, which stays as it is
@@ -74,6 +77,29 @@ local site.dat, any case, and/or site ids) writes one file per site and format
 
 Changelog
 ---------
+2026-11-22b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            new method "outliers" (add it to METHODS): the sites whose nRMS is
+            outside the limits of the distribution of the site nRMS values;
+            OUTLIER_METHOD "quantile" (default; the 2.275 / 97.725 % quantiles
+            = the tails of +-OUTLIER_SIGMA = 2), "sigma" or "mad", OUTLIER_SIDE,
+            OUTLIER_LOG10, OUTLIER_MIN_N, OUTLIER_PLOT. Writes
+            <prefix>_site_outliers.txt / .csv and a figure. CURVES_SITES =
+            "outliers" draws the curves of these sites only. The work is done
+            in femtic_misfit.py of the same date; nothing else changes.
+2026-11-22  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            femtic_ens_misfit_summary.md (new; the settings of the run, as
+            written by the other femtic_ens_* scripts) is written after a
+            successful run, into OUT_DIR if set, else into WORK_DIR. If the
+            method "nrms" ran and NRMS_RESULTS is set, the summary ends with
+            the contents of that results .npz: every key with shape, type and
+            meaning (fem.append_results_contents(), femtic.py of the same
+            date). write_summary() is new; nothing else changes.
+2026-11-21c Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            CURVES_MAP_PLACEMENT "top" | "bottom" (also "above" | "below"):
+            the site map in an own row above / below the panels, across the
+            width of the figure (the figure gets higher by CURVES_MAP_SIZE).
+            CURVES_MAP_SIZE is now in cm (default 4.3 cm = 1.7 in; was in
+            inches). The work is done in femtic_misfit.py of the same date.
 2026-11-21b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             "curves": optional small map of the sites in every figure, the
             current site marked, all sites coloured by their nRMS (one
@@ -187,7 +213,8 @@ RUN_PATHS: List[str] = [
 ITERATION: Union[str, int] = "best"      # "best" | "last" | integer
 ITER_PATTERN: str = "results_iter*.h5"   # searched in each run directory
 METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq", "curves", "nrms", )
-#   "curves" is optional; "nrms" needs NRMS_RESULTS or NRMS_CSV (see below)
+#   "curves" and "outliers" are optional; "nrms" needs NRMS_RESULTS or NRMS_CSV
+#   (see below)
 
 # --- ensemble handling ---
 ENSEMBLE_OBS: str = "mean"     # observed values/errors: "mean" over members
@@ -321,6 +348,30 @@ NRMS_TICK_FONTSIZE: int = 16
 NRMS_LABEL_FONTSIZE: int = 16
 NRMS_TITLE_FONTSIZE: Optional[int] = None   # None = Matplotlib's default title size
 
+# --- site outliers (optional method "outliers"; add it to METHODS) ---
+# The sites whose nRMS (conventional RMS1 normalization, as in
+# <prefix>_site_nrms.txt; for the ensemble: of the ensemble mean response, or of REF_MEMBER) is outside the limits of the distribution of the
+# site nRMS values. Site names as for "curves" (CURVES_SITE_DAT,
+# CURVES_SITE_MATCH, CURVES_SITE_ID_OFFSET, CURVES_SITE_TOL). Output:
+# <prefix>_site_outliers.txt (the sites outside, worst first), .csv (every site,
+# with its flag) and a figure <prefix>_site_outliers.<fmt> (PLOT_FORMATS).
+# CURVES_SITES = "outliers" draws the response curves of these sites only.
+OUTLIER_METHOD: str = "quantile"   # "quantile": the limits are the quantiles of the
+                                   # site nRMS values at the normal-distribution tail
+                                   # levels of OUTLIER_SIGMA (2 -> 2.275 and 97.725 %);
+                                   # these always flag the extreme site(s), whatever
+                                   # the data
+                                   # "sigma": mean +- OUTLIER_SIGMA * std
+                                   # "mad":   median +- OUTLIER_SIGMA * 1.4826 * MAD
+                                   # (robust against a few very bad sites)
+OUTLIER_SIGMA: float = 2.0         # > 0
+OUTLIER_SIDE: str = "both"         # "both" | "high" (poorly fitted sites only)
+                                   # | "low" (nRMS below the lower limit only)
+OUTLIER_LOG10: bool = False        # "sigma" / "mad": work with log10(nRMS) (nRMS is
+                                   # positive and skewed); no effect on "quantile"
+OUTLIER_MIN_N: int = 1             # sites with fewer residual values are not used
+OUTLIER_PLOT: bool = True          # the figure
+
 # --- response curves (optional method "curves"; add it to METHODS) ---
 # Needs data_viz.py on the path. One figure per site, one panel per entry of
 # CURVES_WHAT; PLOT_FORMATS/PLOT_DPI/OUT_DIR/OUT_PREFIX apply as usual.
@@ -359,7 +410,9 @@ CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = None
 # of the local site.dat (case-insensitive;
 # "A01, A02" as one string also works). A
 # list gives one file per site (see
-# CURVES_MULTIPAGE), e.g. ["A01", "a02", 17]
+# CURVES_MULTIPAGE), e.g. ["A01", "a02", 17];
+# "outliers" = the sites found by the method
+# "outliers" (OUTLIER_*)
 CURVES_SITE_ORDER: str = "even"    # for an int CURVES_SITES: "even" (spread
                                    # over the site list), "id" (first N),
                                    # "worst" / "best" (by site nRMS)
@@ -426,24 +479,29 @@ CURVES_PHASE_WRAP_RANGE: Tuple[float, float] = (-180.0, 180.0)
 
 # small map of the sites in every figure (current site marked, all sites
 # coloured by their nRMS, the same colour scale on every page)
-CURVES_MAP: bool = True           # True = draw the map
-CURVES_MAP_PLACEMENT: str = "left"   # "right" | "left": an own column next to the
+CURVES_MAP: bool = False           # True = draw the map
+CURVES_MAP_PLACEMENT: str = "right"   # "right" | "left": an own column next to the
                                    # panels (the figure gets wider by CURVES_MAP_SIZE);
+                                   # "top" | "bottom" (or "above" | "below"): an own row
+                                   # above / below the panels (the figure gets higher
+                                   # by CURVES_MAP_SIZE);
                                    # "upper right" | "upper left" | "lower right" |
                                    # "lower left": inset in the corner of the last
                                    # (right) / first (left) panel, on top of the
                                    # curves (do not put the legend there)
-CURVES_MAP_SIZE: float = 3.2       # [in] side of the map block (map and colour bar)
+CURVES_MAP_SIZE: float = 4.3       # [cm] side of the map block (map and colour bar):
+                                   # width of the column, height of the row, size of
+                                   # the inset (4.3 cm = 1.7 in)
 CURVES_MAP_TICKS: bool = True      # True = ticks and labels in model coordinates
                                    # [km]; False = no ticks, no labels (frame only)
 CURVES_MAP_AXES: str = "ne"        # "ne": site_x = north (vertical), site_y = east
                                    # (horizontal), the FEMTIC convention; "en":
                                    # site_x = east, site_y = north
-CURVES_MAP_CMAP: Optional[str] = "jet" #None   # None = single-hue blue ramp, light = low
+CURVES_MAP_CMAP: Optional[str] = None   # None = single-hue blue ramp, light = low
                                    # nRMS, dark = high; or a Matplotlib colormap
 CURVES_MAP_NRMS_RANGE: Optional[Tuple[float, float]] = None   # (lo, hi) of the colour
                                    # scale; None = smallest / largest nRMS of the sites
-CURVES_MAP_MARKER_SIZE: float = 10.0   # [pt^2] of a site (the current one is larger)
+CURVES_MAP_MARKER_SIZE: float = 12.0   # [pt^2] of a site (the current one is larger)
 
 # ---------------------------------------------------------------------------
 # Run
@@ -496,6 +554,30 @@ def settings(work_dir: Optional[str] = None) -> "fm.SimpleNamespace":
     return fm.make_settings(**ours)
 
 
+def write_summary(work_dir: str, opts: "fm.SimpleNamespace") -> Optional[str]:
+    """
+    Write femtic_ens_misfit_summary.md: the settings of this run, and, if the
+    method "nrms" is on and NRMS_RESULTS is set, the contents of that results
+    .npz (every key with shape, type and meaning).
+
+    The file goes to OUT_DIR if that is set (made if missing), else to
+    `work_dir`. Return its path, or None if it could not be written; a failure
+    here is reported and never stops the run (it is documentation).
+    """
+    try:
+        import util as utl
+        out_dir = getattr(opts, "OUT_DIR", None) or work_dir
+        path = utl.write_param_summary(__file__, namespace=globals(), out_dir=out_dir)
+        npz = getattr(opts, "NRMS_RESULTS", None)
+        if npz and "nrms" in (getattr(opts, "METHODS", None) or ()):
+            fm.fem.append_results_contents(
+                npz, path, __file__, prefix=getattr(opts, "NRMS_NPZ_PREFIX", None))
+        return path
+    except Exception as exc:  # documentation only: never stop the run for it
+        print(f"femtic_ens_misfit: summary not written: {exc}")
+        return None
+
+
 def main(argv: Sequence[str]) -> int:
     """
     Run the ensemble misfit diagnostics with all paths taken from WORK_DIR.
@@ -525,9 +607,12 @@ def main(argv: Sequence[str]) -> int:
     cwd = os.getcwd()
     os.chdir(wd)               # the engine's last-resort "auto" site.dat search uses it
     try:
-        return fm.run_ensemble(opts, paths)
+        rc = fm.run_ensemble(opts, paths)
     finally:
         os.chdir(cwd)
+    if rc == 0:
+        write_summary(wd, opts)
+    return rc
 
 
 if __name__ == "__main__":

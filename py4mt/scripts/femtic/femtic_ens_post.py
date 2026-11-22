@@ -5,7 +5,8 @@ femtic_ens_post.py — Ensemble postprocessing for FEMTIC
 
 Collects all converged members of a FEMTIC ensemble (RTO, GST, or any
 directory-based ensemble), computes summary statistics (mean, variance,
-median, MAD, percentiles, inter-quantile spreads, bootstrap variance, the
+median, MAD, percentiles, inter-quantile spreads, the spread of the iter0
+models and its ratio to the converged one, bootstrap variance, the
 difference to the prior model),
 optional ensemble sensitivity measures (per-member cumulative sensitivity,
 SimRC) and the empirical covariance, and writes
@@ -1064,6 +1065,33 @@ Provenance
             the same date ("diff_prior", "abs_diff_prior" in MOD_STATS_WHAT).
             Tested on synthetic results only. AI-generated code -- review
             before production use.
+2026-11-22  Claude Sonnet 5.5 (Anthropic)
+            New statistics: the percentile-pair spreads of the iter0 models
+            and their ratio to the converged ones. For every QDIFF_PAIRS
+            entry: <P>_qdiff0_<lo>_<hi> = |P_hi - P_lo| of the perturbed
+            references (ENS_PERTURBED_FILE, the iter0 / prior draw) of the
+            accepted members, and <P>_qratio_<lo>_<hi> = <P>_qdiff_<lo>_<hi>
+            / <P>_qdiff0_<lo>_<hi>, i.e. the spread at iterX over the spread
+            at iter0, X = the best-nRMS iteration of each member (the model
+            that enters <P>_ens). A ratio below 1 = the data narrowed the
+            ensemble, near 1 = the prior is what is left. Settings:
+            COMPUTE_QDIFF_ITER0 (default True), QRATIO_MIN_ITER0 (ratio is
+            NaN where the iter0 spread is not larger than this). Needs
+            ENS_MODEL_SOURCE = "both" (with "converged" or "perturbed" there
+            is only one of the two ensembles: a message, no keys). Also
+            stored: <P>_qratio_info (text). Helper _iter0_spread_ratio().
+            Nothing else changes (the other keys and the figures are as
+            before). The plotting side reads the keys with the femtic.py and
+            femtic_ens_plot_slices.py of the same date. Tested on synthetic
+            results only. AI-generated code -- review before production use.
+2026-11-22 (b)  Claude Sonnet 5.5 (Anthropic)
+            The contents of the results .npz just written (every key with
+            shape, type and meaning) are printed after "Results saved"
+            (if OUT) and appended to femtic_ens_post_summary.md
+            (fem.print_results_contents(), fem.append_results_contents(),
+            femtic.py of the same date). The list is read back from the
+            file, so it shows what was really stored (e.g. which optional
+            keys are present). Nothing else changes. AI-generated code -- review before production use.
 
     This script targets FEMTIC's current HDF5 output layout only.
     AI-generated code -- review before production use.
@@ -1271,6 +1299,23 @@ PERCENTILES = [2.3, 15.9, 50.0, 84.1, 97.7]
 #: .npz as f"{P}_qdiff_<lo>_<hi>" and available for the statistics panels of
 #: femtic_ens_plot_slices.py (MOD_STATS_WHAT) under the same key.
 QDIFF_PAIRS = [(15.9, 84.1), (2.3, 97.7)]
+
+#: Spread of the iter0 models, and its ratio to the converged ones. The
+#: iter0 models are the members' perturbed references (ENS_PERTURBED_FILE:
+#: the RTO prior draw), the converged ones are <P>_ens (iterX = the best-nRMS
+#: iteration of each member). For every QDIFF_PAIRS entry two keys are stored:
+#:   <P>_qdiff0_<lo>_<hi>  |P_hi - P_lo| of the iter0 models, log10(Ohm.m)
+#:   <P>_qratio_<lo>_<hi>  <P>_qdiff_<lo>_<hi> / <P>_qdiff0_<lo>_<hi>
+#: A ratio < 1 means that the data narrowed the ensemble at that block, ~1
+#: that the prior is what is left. Needs ENS_MODEL_SOURCE = "both" (the
+#: iter0 and the converged models of the same members); otherwise a message
+#: and no keys, never an error. If ENS_PERTURBED_FILE is a symbolic link or
+#: the members are identical, the iter0 spread is zero and the ratio NaN.
+COMPUTE_QDIFF_ITER0 = True
+
+#: The ratio is NaN where the iter0 spread is not larger than this
+#: [log10(Ohm.m)] (no division by zero or by rounding noise).
+QRATIO_MIN_ITER0 = 1.0e-6
 
 # ---------------------------------------------------------------------------
 # Difference to the prior model
@@ -1656,6 +1701,63 @@ def _bootstrap_variance(
     var_boot = sum_v / n_boot
     var_boot_se = np.sqrt(np.maximum(sum_v2 / n_boot - var_boot**2, 0.0))
     return var_boot, var_boot_se
+
+
+def _iter0_spread_ratio(
+    qdiff_x: dict,
+    ens_0: np.ndarray,
+    pairs,
+    min_spread: float = 1.0e-6,
+):
+    """Spread of the iter0 models and its ratio to the converged spread.
+
+    For every pair (lo, hi) of ``pairs`` whose converged spread
+    ``qdiff_<lo>_<hi>`` is in ``qdiff_x`` (pairs that were skipped because
+    their levels are not in PERCENTILES are skipped here too):
+
+    * ``qdiff0_<lo>_<hi>`` = |P_hi - P_lo| of the rows of ``ens_0``, the same
+      percentile estimate (``numpy.percentile`` over the members, linear
+      interpolation) as the converged one, so both are comparable;
+    * ``qratio_<lo>_<hi>`` = ``qdiff_x[qdiff_<lo>_<hi>] / qdiff0``, NaN where
+      ``qdiff0 <= min_spread`` or one of the two is not finite.
+
+    Parameters
+    ----------
+    qdiff_x : dict
+        ``ens_qdiff`` of the converged ensemble: key -> (n_free,) array.
+    ens_0 : ndarray, shape (n_members, n_free)
+        iter0 models of the same members, log10(rho).
+    pairs : sequence of (lo, hi)
+        QDIFF_PAIRS.
+    min_spread : float
+        Smallest iter0 spread that is divided by.
+
+    Returns
+    -------
+    qdiff0, qratio : dict
+        key ("qdiff0_15_9_84_1", "qratio_15_9_84_1", ...) -> (n_free,) array.
+    """
+    ens_0 = np.asarray(ens_0, dtype=float)
+    qdiff0, qratio = {}, {}
+    for lo, hi in pairs:
+        sfx = f"{lo:g}_{hi:g}".replace(".", "_")
+        kx = f"qdiff_{sfx}"
+        if kx not in qdiff_x:
+            continue
+        p_lo, p_hi = np.percentile(ens_0, [lo, hi], axis=0)
+        d0 = np.abs(p_hi - p_lo)
+        dx = np.asarray(qdiff_x[kx], dtype=float)
+        if dx.shape != d0.shape:
+            raise ValueError(
+                f"{kx} has {dx.shape[0]} free parameters, the iter0 models "
+                f"{d0.shape[0]}"
+            )
+        ok = np.isfinite(d0) & np.isfinite(dx) & (d0 > min_spread)
+        ratio = np.full(d0.shape, np.nan)
+        ratio[ok] = dx[ok] / d0[ok]
+        qdiff0[f"qdiff0_{sfx}"] = d0
+        qratio[f"qratio_{sfx}"] = ratio
+    return qdiff0, qratio
 
 
 def _log10_pos(x):
@@ -2469,6 +2571,62 @@ if COMPUTE_PRIOR_DIFF:
         if _why:  # "auto": the reference was not usable, the fallback was
             print(f"  (not used: {'; '.join(_why)})")
 
+# --- (2a2) Spread of the iter0 models and the ratio iterX / iter0 -----------
+# <P>_qdiff0_<lo>_<hi>: |P_hi - P_lo| of the members' perturbed references
+# (iter0, the prior draw); <P>_qratio_<lo>_<hi> = <P>_qdiff_<lo>_<hi> / that,
+# iterX = the best-nRMS iteration of each member (the rows of <P>_ens).
+ens_qdiff0 = {}  # key -> (n_free,) array
+ens_qratio = {}  # key -> (n_free,) array
+qratio_info = None  # text -> .npz
+if COMPUTE_QDIFF_ITER0:
+    if ENS_MODEL_SOURCE != "both" or pert_matrix is None:
+        print(
+            f"\nCOMPUTE_QDIFF_ITER0: needs ENS_MODEL_SOURCE = 'both' (the "
+            f"iter0 and the converged models of the same members); it is "
+            f"'{ENS_MODEL_SOURCE}'. {P}_qdiff0_* and {P}_qratio_* are not "
+            f"written."
+        )
+    elif not ens_qdiff:
+        print(
+            f"\nCOMPUTE_QDIFF_ITER0: no QDIFF_PAIRS entry could be used - "
+            f"{P}_qdiff0_* and {P}_qratio_* are not written."
+        )
+    else:
+        ens_qdiff0, ens_qratio = _iter0_spread_ratio(
+            ens_qdiff, pert_matrix, QDIFF_PAIRS, QRATIO_MIN_ITER0
+        )
+        qratio_info = (
+            f"qratio = qdiff(iterX) / qdiff(iter0): iterX = the best-nRMS "
+            f"iteration of each member (resistivity_block_iter<N>.dat, the "
+            f"rows of {P}_ens), iter0 = {ENS_PERTURBED_FILE} of the same "
+            f"members; |P_hi - P_lo| in log10(Ohm.m); NaN where the iter0 "
+            f"spread <= {QRATIO_MIN_ITER0:g}"
+        )
+        print(
+            f"\nSpread of the iter0 models ({ENS_PERTURBED_FILE}) and the "
+            f"ratio iterX / iter0 ({n_members} members):"
+        )
+        for _k0, _v0 in ens_qdiff0.items():
+            _kr = "qratio" + _k0[len("qdiff0"):]
+            _r = ens_qratio[_kr]
+            _fin = np.isfinite(_r)
+            print(
+                f"  {_k0}: [{np.nanmin(_v0):.4f}, {np.nanmax(_v0):.4f}]"
+                if np.any(np.isfinite(_v0)) else f"  {_k0}: no finite value"
+            )
+            if np.any(_fin):
+                print(
+                    f"  {_kr}: median {np.median(_r[_fin]):.3f}, "
+                    f"{100.0 * np.mean(_r[_fin] < 1.0):.1f} % of the "
+                    f"{int(_fin.sum())} blocks below 1 (narrowed by the "
+                    f"data), {int((~_fin).sum())} NaN"
+                )
+            else:
+                print(
+                    f"  {_kr}: all NaN (iter0 spread <= {QRATIO_MIN_ITER0:g}"
+                    f" - symbolic link or identical members?)"
+                )
+
 # --- (2b) Sensitivity statistics: (1) per-member Jacobian aggregation ------
 # The ensemble statistics are taken of the sensitivity as FEMTIC wrote it
 # (per kind, in its native units) and each one is divided by its own max
@@ -2701,6 +2859,10 @@ ens_dict = {
 }
 for _qkey, _qval in ens_qdiff.items():
     ens_dict[f"{P}_{_qkey}"] = _qval
+for _qkey, _qval in {**ens_qdiff0, **ens_qratio}.items():
+    ens_dict[f"{P}_{_qkey}"] = _qval  # iter0 spread, ratio iterX / iter0
+if qratio_info is not None:
+    ens_dict[f"{P}_qratio_info"] = np.array(qratio_info, dtype=str)
 # best-nRMS member (same row as the "best" panel / QC figure)
 _bi = min(range(len(model_list)), key=lambda i: model_list[i][2])
 ens_dict[f"{P}_best"] = ens_matrix[_bi]  # log10(rho), free blocks
@@ -2786,6 +2948,8 @@ ens_dict[f"{P}_nrms_max"] = float(NRMS_MAX)
 os.makedirs(RESULTS_DIR, exist_ok=True)
 np.savez_compressed(ENSEMBLE_RESULTS, **ens_dict)
 print(f"\nResults saved → {ENSEMBLE_RESULTS}")
+if OUT:
+    fem.print_results_contents(ENSEMBLE_RESULTS, prefix=P)
 
 # --- (4b) nRMS table (CSV) ------------------------------------------------
 # The histogram is made by femtic_data_misfit.py (method "nrms") from the .npz.
@@ -2815,3 +2979,6 @@ _scan_md = fem.build_scan_report(
     index_range   = ENSEMBLE_INDEX_RANGE,
 )
 fem.append_scan_report(_scan_md, _summary_path, __file__)
+
+# The contents of the results .npz written above (key, shape, type, meaning).
+fem.append_results_contents(ENSEMBLE_RESULTS, _summary_path, __file__, prefix=P)
