@@ -151,7 +151,7 @@ print(titstrng + "\n\n")
 
 #: Directory with the run directories; the same as ENSEMBLE_DIR of
 #: femtic_lcurve_prep.py (WORK_DIR of femtic_lcurve_plot.py).
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/krafla2026/l-curve/"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/sabancaya2026/l-curve/"
 #: Run directories are <ENSEMBLE_DIR><ENSEMBLE_NAME>*, as made by
 #: femtic_lcurve_prep.py.
 ENSEMBLE_NAME = "lc_"
