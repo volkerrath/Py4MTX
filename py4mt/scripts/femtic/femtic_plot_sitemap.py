@@ -7,9 +7,11 @@ femtic_plot_sitemap.py
 Site map of a FEMTIC run, or of a whole ensemble, on a DEM (Copernicus) background:
 every site is an icon (marker) coloured by its normalized RMS misfit (nRMS), for
 frequency bands and data components, or by another measure of data fit, or by the
-strength of its galvanic distortion (see "Measures and distortion strength"). For
-an ensemble the colour is a statistic of the member values at the site. Profile
-lines and other polylines (faults, coast lines, ...) can be drawn on the maps.
+strength of its galvanic distortion (see "Measures and distortion strength"), or
+by the dimensionality of its observed impedances (see "Dimensionality"). For an
+ensemble the colour of a fit or distortion measure is a statistic of the member
+values at the site. Profile lines and other polylines (faults, coast lines, ...)
+can be drawn on the maps.
 
 What it does
 ------------
@@ -94,6 +96,45 @@ without distortion (or of another type) give a warning and no distortion map.
 For an ensemble the value of a site is ENS_STAT over the members that have it.
 Sites whose matrix was held fixed are included (C' as given) and marked in
 _distortion.csv.
+
+Dimensionality
+--------------
+Further SITE_MEASURES, of the impedances themselves (modules/dimens.py, which is
+needed only for them), one value per site and frequency band (BANDS, BAND_AXIS,
+BAND_PER_DECADE, BAND_MIN_N, with a site frequency counted as four rows;
+COMPONENTS and the DATATYPES filter do not enter):
+
+    "dim"     class of the WAL rotational invariants (WALDIM 1.2): undetermined,
+              1D, 2D, 3D/2D, 3D, 3D/2Ddiag, 3D/1D2D, ANIS-HINT1, ANIS-HINT2
+    "ptdim"   phase tensor class: undefined, 1D, 2D, 3D
+    "ptskew"  median |beta| of the phase tensor [deg]
+    "ellipt"  median ellipticity of the phase tensor
+    "swift"   median Swift skew
+    "bahr"    median Bahr phase-sensitive skew
+
+DIM_SOURCE "results" (default) takes the observed impedances (data type "MT")
+of the first used member and their errors as in the file (error floors
+included; Ohm, converted to mV/km/nT); only frequencies with the four
+components, finite values and errors > 0. A warning is given if other members
+have other observed data (perturbed data of an RTO ensemble): then the values
+are those of that one member, and DIM_SOURCE should name the original data: an
+EDI directory, EDI files or a .npz collection, whose station names are matched
+to site.dat without regard to case (positions are those of site.dat). Only
+sites with data of the chosen DATATYPES in the results file are mapped.
+Angles (strikes, azimuths) refer to the x axis of the data and are in the
+tables only; no strike is drawn.
+Maps: one figure per measure with a panel per band (DIM_PAGE "all") or one per
+measure and band ("band"); classes have fixed colours (DIM_COLORS) and a colour
+bar of names, the others CMAP_SPREAD linear from 0 to 10 deg (ptskew) or 0.5
+(MEASURE_SCALES changes it). A panel title gives the number of sites n and the
+most frequent classes or the median of the sites. Open icons: no data in the
+band (a class "undetermined" is grey).
+Output: <OUTPUT_BASENAME>_dimensionality.txt / .csv / .npz (all band values
+per site, including strike, twist, shear and phase tensor azimuth), a section
+in _summary.txt, and columns "<measure> | <band>" in _profile_sites.csv (classes
+as codes). Thresholds: DIM_THRESHOLD, DIM_Q_THRESHOLD, DIM_PT_BETA_THRESHOLD,
+DIM_PT_ELLIPTICITY_THRESHOLD; further keywords of
+dimens.classify_dimensionality in DIM_OPTIONS.
 
 Ensemble
 --------
@@ -393,6 +434,16 @@ Changelog
             SHOW = False every figure is closed as soon as it is saved.
             Tested on synthetic data only; the reading of a real /distortion
             group (h5py not installed) has not been run.
+
+2026-11-28  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            (b) Dimensionality of the observed impedances (new module
+            modules/dimens.py): SITE_MEASURES "dim", "ptdim", "ptskew",
+            "ellipt", "swift", "bahr", settings DIM_*, option --dim-source,
+            tables <OUTPUT_BASENAME>_dimensionality.*; a colour bar of class
+            names (turned by 45 deg on a horizontal bar). Outputs of the
+            other measures are unchanged. Tested with synthetic and sample
+            data through a stand-in for the HDF5 results reader (h5py not
+            installed); not run on a real results file.
 """
 from __future__ import annotations
 
@@ -496,6 +547,33 @@ SITE_MEASURES: Union[str, Sequence[str]] = "nrms"   # e.g. ["nrms", "r_mae", "di
 # "distortion" of a run whose results file has no /distortion group: this text file
 # next to the results file ({iter} = iteration; its type cannot be checked); None = no
 DISTORTION_FILE: Optional[str] = "distortion_iter{iter}.dat"
+
+# --- dimensionality (modules/dimens.py) ---
+# Further SITE_MEASURES that describe the impedances, not the fit; one value per
+# site and frequency band (BANDS, BAND_AXIS, BAND_PER_DECADE, BAND_MIN_N; the
+# components of COMPONENTS and the DATATYPES filter do not enter):
+#   "dim"     WAL class of the band (nine classes of WALDIM 1.2, and "undetermined")
+#   "ptdim"   phase tensor class: 1D, 2D, 3D
+#   "ptskew"  median |beta| of the phase tensor [deg]
+#   "ellipt"  median ellipticity of the phase tensor
+#   "swift"   median Swift skew
+#   "bahr"    median Bahr phase-sensitive skew
+DIM_SOURCE: Union[str, Sequence[str]] = "results"   # "results": the observed impedances of
+                                      # the (first used) results file; else EDI directory,
+                                      # EDI file or .npz collection, or a list of these
+                                      # (relative to WORK_DIR; names = site names of site.dat)
+DIM_PAGE: str = "all"                 # one figure per measure with a panel per band ("all"),
+                                      # or one figure per measure and band ("band")
+DIM_ERROR_PERCENT: Optional[float] = None   # error in percent of |Z| instead of the data errors
+DIM_MISSING_ERROR_PERCENT: Optional[float] = 5.0   # DIM_SOURCE files without errors; None = stop
+DIM_THRESHOLD: float = 0.15           # WAL invariants I3 - I7
+DIM_Q_THRESHOLD: float = 0.10         # WAL invariant Q
+DIM_PT_BETA_THRESHOLD: float = 3.0    # [deg] phase tensor: |beta| above it = 3D
+DIM_PT_ELLIPTICITY_THRESHOLD: float = 0.1   # phase tensor: ellipticity above it = 2D, else 1D
+DIM_OPTIONS: Dict[str, Any] = {}      # further keywords of dimens.classify_dimensionality, e.g.
+                                      # dict(n_realizations=200, ft_convention="e-iwt",
+                                      # edi_options=dict(manufacturer="phoenix"))
+DIM_COLORS: Dict[str, str] = {}       # colours of classes, e.g. {"3D": "black"}
 
 # --- basemap: extent and coordinates ---
 MAP_EXTENT_MODE: str = "sites"        # "sites" (sites + margin), "box" or "center"
@@ -720,6 +798,42 @@ _DISTORTION = "distortion"           # the measure that is no fit measure
 _DISTORTION_NAMES = ("distortion", "dist", "distortion_strength")
 _DISTORTION_LABEL = "distortion strength |C - I|"
 _SCALE_KEYS = ("cmap", "reference", "vmin", "vmax")
+_DIM_CLASS_MEASURES = ("dim", "ptdim")            # categorical maps
+_DIM_VALUES = {                                    # measure: band value, scale maximum
+    "ptskew": ("pt_abs_beta_deg", 10.0),
+    "ellipt": ("pt_ellipticity_median", 0.5),
+    "swift": ("swift_skew", 0.5),
+    "bahr": ("bahr_skew", 0.5),
+}
+_DIM_MEASURES = _DIM_CLASS_MEASURES + tuple(_DIM_VALUES)
+_DIM_ALIASES = {"dimensionality": "dim", "waldim": "dim"}
+_DIM_LABELS = {
+    "dim": "dimensionality (WAL class)",
+    "ptdim": "phase tensor dimensionality",
+    "ptskew": "median |beta| [deg]",
+    "ellipt": "median phase tensor ellipticity",
+    "swift": "median Swift skew",
+    "bahr": "median Bahr skew",
+}
+_DIM_CODES = {                                     # classes on the colour bar
+    "dim": (0, 1, 2, 4, 5, 6, 7, 8, 9),            # 3D/2Dtw counts as 3D/2D in a band
+    "ptdim": (0, 1, 2, 3),
+}
+_DIM_CLASS_COLORS = {
+    "undetermined": "#bdbdbd", "undefined": "#bdbdbd", "1D": "#2c7bb6", "2D": "#1a9641",
+    "3D/2D": "#fee08b", "3D": "#d7191c", "3D/2Ddiag": "#fdae61", "3D/1D2D": "#7b3294",
+    "ANIS-HINT1": "#a6611a", "ANIS-HINT2": "#f781bf",
+}
+_DIM_SETTINGS = {                                  # setting: keyword of classify_dimensionality
+    "DIM_ERROR_PERCENT": "error_percent",
+    "DIM_MISSING_ERROR_PERCENT": "missing_error_percent",
+    "DIM_THRESHOLD": "threshold",
+    "DIM_Q_THRESHOLD": "q_threshold",
+    "DIM_PT_BETA_THRESHOLD": "pt_beta_threshold",
+    "DIM_PT_ELLIPTICITY_THRESHOLD": "pt_ellipticity_threshold",
+}
+_DIM_NO_OPTIONS = ("bands", "bands_per_decade", "band_edges", "band_domain")   # BANDS counts
+_OHM_PER_FIELD_UNIT = 4.0e-7 * math.pi * 1.0e3     # Z [Ohm] = this x Z [mV/km/nT]
 _CBAR_LOCATIONS = (None, "right", "left", "top", "bottom")
 
 
@@ -763,6 +877,12 @@ def settings(work_dir: Optional[str] = None, **overrides: Any) -> Dict[str, Any]
         cfg["DEM_URL_TEMPLATE"] = anchor(cfg["DEM_URL_TEMPLATE"], wd)        # path pattern
     if cfg["SITE_DAT"] and cfg["SITE_DAT"] != "auto":
         cfg["SITE_DAT"] = anchor(cfg["SITE_DAT"], wd)
+    src = cfg["DIM_SOURCE"]
+    if src != "results" and src:
+        if isinstance(src, (str, os.PathLike)):
+            cfg["DIM_SOURCE"] = anchor(src, wd)
+        else:
+            cfg["DIM_SOURCE"] = [anchor(p, wd) for p in src]
     runs = cfg["RUN_PATHS"]
     if runs:
         cfg["RUN_PATHS"] = [anchor(p, wd) for p in ([runs] if isinstance(runs, str) else runs)]
@@ -837,6 +957,7 @@ def check_settings(cfg: Dict[str, Any]) -> None:
         raise ValueError("MEMBER_NRMS_MAX must be > 0 (or None)")
     one_of("LEGEND_LOC", _LEGEND_LOCS)
     check_measure_settings(cfg)
+    check_dim_settings(cfg)
     check_overlay_specs(cfg)
 
 
@@ -846,14 +967,16 @@ def check_settings(cfg: Dict[str, Any]) -> None:
 def parse_measures(spec: Any) -> Tuple[str, ...]:
     """
     SITE_MEASURES as a tuple of names, in the order given and without repeats: the
-    fit measures of misfit_measures (aliases "rms", "rmae", "rmed", "bias") and
-    "distortion" (also "dist"). A name, "a, b" or a list; None = ("nrms",).
+    fit measures of misfit_measures (aliases "rms", "rmae", "rmed", "bias"),
+    "distortion" (also "dist") and the dimensionality measures "dim" (also
+    "dimensionality"), "ptdim", "ptskew", "ellipt", "swift", "bahr". A name,
+    "a, b" or a list; None = ("nrms",).
     ValueError for an unknown name or an empty list.
     """
     if spec is None:
         return ("nrms",)
     names = [t for t in re.split(r"[,;\s]+", spec.strip()) if t] if isinstance(spec, str) else spec
-    allowed = ", ".join(mm.FIT_MEASURE_NAMES + (_DISTORTION,))
+    allowed = ", ".join(mm.FIT_MEASURE_NAMES + (_DISTORTION,) + _DIM_MEASURES)
     bad = f"SITE_MEASURES = {spec!r}: one or more of {allowed}"
     try:
         names = [str(t).strip().lower() for t in names]
@@ -861,9 +984,10 @@ def parse_measures(spec: Any) -> Tuple[str, ...]:
         raise ValueError(bad) from None
     out: List[str] = []
     for t in names:
+        t = _DIM_ALIASES.get(t, t)
         if t in _DISTORTION_NAMES:
             t = _DISTORTION
-        else:
+        elif t not in _DIM_MEASURES:
             try:
                 t = mm.site_measures([t])[0]
             except ValueError:
@@ -877,11 +1001,18 @@ def parse_measures(spec: Any) -> Tuple[str, ...]:
 
 def fit_names(measures: Sequence[str]) -> Tuple[str, ...]:
     """The fit measures of `measures` that are computed besides nRMS."""
-    return tuple(m for m in measures if m not in ("nrms", _DISTORTION))
+    return tuple(m for m in measures if m not in ("nrms", _DISTORTION) + _DIM_MEASURES)
+
+
+def dim_names(measures: Sequence[str]) -> Tuple[str, ...]:
+    """The dimensionality measures of `measures`."""
+    return tuple(m for m in measures if m in _DIM_MEASURES)
 
 
 def measure_label(measure: str) -> str:
-    """"nRMS", "rMAE", ..., "distortion strength |C - I|"."""
+    """"nRMS", "rMAE", ..., "distortion strength |C - I|", "median Swift skew", ..."""
+    if measure in _DIM_MEASURES:
+        return _DIM_LABELS[measure]
     return _DISTORTION_LABEL if measure == _DISTORTION else mm.MEASURE_LABELS[measure]
 
 
@@ -909,6 +1040,9 @@ def _scales_of(cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
             name = parse_measures([key])[0]
         except ValueError:
             raise ValueError(f"MEASURE_SCALES: unknown measure {key!r}") from None
+        if name in _DIM_CLASS_MEASURES:
+            raise ValueError(f"MEASURE_SCALES[{key!r}]: a map of classes has no colour "
+                             "scale; set colours with DIM_COLORS")
         if not isinstance(val, dict) or any(k not in _SCALE_KEYS for k in val):
             raise ValueError(f"MEASURE_SCALES[{key!r}] must be a dict with keys of "
                              f"{list(_SCALE_KEYS)}")
@@ -952,6 +1086,11 @@ def measure_scale(measure: str, cfg: Dict[str, Any], *, spread: bool = False) ->
     """
     nrms = dict(cmap=cfg["CMAP_NRMS"], reference=cfg["NRMS_REFERENCE"], vmin=cfg["NRMS_VMIN"],
                 vmax=cfg["NRMS_VMAX"])
+    if measure in _DIM_VALUES:        # from the observed data: no ensemble spread
+        out = dict(cmap=cfg["CMAP_SPREAD"], reference=None, vmin=0.0,
+                   vmax=_DIM_VALUES[measure][1])
+        out.update(_scales_of(cfg).get(measure, {}))
+        return out
     if spread:
         if measure != "nrms":
             return dict(cmap=cfg["CMAP_SPREAD"], reference=None, vmin=0.0, vmax=None)
@@ -1534,6 +1673,294 @@ def compute_nrms(ds: dict, site_index: np.ndarray, n_sites: int,
 
 
 # ---------------------------------------------------------------------------
+# Dimensionality of the observed impedances (modules/dimens.py)
+# ---------------------------------------------------------------------------
+def check_dim_settings(cfg: Dict[str, Any]) -> None:
+    """ValueError for a DIM_* setting that cannot work."""
+    if cfg["DIM_PAGE"] not in ("all", "band"):
+        raise ValueError(f"DIM_PAGE = {cfg['DIM_PAGE']!r}: \"all\" or \"band\"")
+    src = cfg["DIM_SOURCE"]
+    items = [src] if isinstance(src, (str, os.PathLike)) else src
+    if not (isinstance(items, (list, tuple)) and items
+            and all(isinstance(p, (str, os.PathLike)) and str(p) for p in items)):
+        raise ValueError(f"DIM_SOURCE = {src!r}: \"results\", a path or a list of paths")
+    for key in _DIM_SETTINGS:
+        v = cfg[key]
+        if v is None and key in ("DIM_ERROR_PERCENT", "DIM_MISSING_ERROR_PERCENT"):
+            continue
+        if not (isinstance(v, (int, float, np.integer, np.floating))
+                and not isinstance(v, bool) and np.isfinite(v) and v >= 0):
+            raise ValueError(f"{key} = {v!r}: must be a number >= 0")
+    opts = cfg["DIM_OPTIONS"]
+    if not isinstance(opts, dict):
+        raise ValueError("DIM_OPTIONS must be a dict of keywords")
+    for key in opts:
+        if key in _DIM_NO_OPTIONS:
+            raise ValueError(f"DIM_OPTIONS[{key!r}]: the bands are those of BANDS")
+        if key in _DIM_SETTINGS.values():
+            raise ValueError(f"DIM_OPTIONS[{key!r}]: use the setting DIM_...")
+    colors = cfg["DIM_COLORS"]
+    if not isinstance(colors, dict):
+        raise ValueError("DIM_COLORS must be a dict {class name: colour}")
+    if colors:
+        from matplotlib.colors import is_color_like
+        for key, value in colors.items():
+            if key not in _DIM_CLASS_COLORS:
+                raise ValueError(f"DIM_COLORS: unknown class {key!r} (one of "
+                                 f"{', '.join(_DIM_CLASS_COLORS)})")
+            if not is_color_like(value):
+                raise ValueError(f"DIM_COLORS[{key!r}] = {value!r} is no colour")
+
+
+def mt_rows(ds: dict) -> dict:
+    """The impedance rows (data type MT) of a dataset, own observed data."""
+    keep = np.asarray(ds["datatype_name"]) == "MT"
+    keys = ("freq", "site_id", "component_name", "obs_re", "obs_im", "err_re", "err_im")
+    return {k: np.asarray(ds[k])[keep] for k in keys}
+
+
+def impedance_per_site(rows: dict, id_to_site: Dict[int, int]) -> Tuple[Dict[int, dict], dict]:
+    """
+    ({site index: data dict}, stats) from the impedance rows `rows` (mt_rows) of a
+    results file, for dimens.classify_dimensionality: freq (descending), Z in
+    mV/km/nT (the results file holds Ohm), Z_err = variance of the real and the
+    imaginary part each (mean of the two squared errors), err_kind "var". Only
+    frequencies with all four components, finite values and errors > 0 (as in
+    the misfit). A row that repeats site, frequency and component is ignored (the
+    first one counts). stats = n_repeated (rows), n_incomplete (frequencies).
+    """
+    comps = ("Zxx", "Zxy", "Zyx", "Zyy")
+    ids = np.asarray(rows["site_id"]).astype(np.int64)
+    uniq, inv = np.unique(ids, return_inverse=True)
+    lut = np.array([id_to_site.get(int(u), -1) for u in uniq], dtype=np.int64)
+    site = lut[inv] if ids.size else ids
+    freq = np.asarray(rows["freq"], float)
+    code = np.full(ids.size, -1)
+    for k, name in enumerate(comps):
+        code[np.asarray(rows["component_name"]) == name] = k
+    vals = [np.asarray(rows[k], float) for k in ("obs_re", "obs_im", "err_re", "err_im")]
+    ok = (site >= 0) & (code >= 0) & np.isfinite(freq) & (freq > 0.0)
+    for v in vals:
+        ok &= np.isfinite(v)
+    ok &= (vals[2] > 0.0) & (vals[3] > 0.0)
+    # every frequency that occurs at a site, usable or not: to count the incomplete
+    seen = (site >= 0) & (code >= 0)
+    n_seen = len(set(zip(site[seen].tolist(), freq[seen].tolist())))
+    rows_ok = np.flatnonzero(ok)
+    order = rows_ok[np.lexsort((code[rows_ok], -freq[rows_ok], site[rows_ok]))]  # stable
+    first = np.ones(order.size, bool)
+    if order.size > 1:
+        first[1:] = ((np.diff(site[order]) != 0) | (np.diff(freq[order]) != 0)
+                     | (np.diff(code[order]) != 0))
+    n_repeated = int(order.size - first.sum())
+    order = order[first]
+    out: Dict[int, dict] = {}
+    n_full = 0
+    groups = np.split(order, np.flatnonzero(np.diff(site[order])) + 1) if order.size else []
+    for g in groups:
+        f, pos = np.unique(-freq[g], return_inverse=True)
+        z = np.full((f.size, 4), np.nan, dtype=complex)
+        var = np.full((f.size, 4), np.nan)
+        z[pos, code[g]] = (vals[0][g] + 1j * vals[1][g]) / _OHM_PER_FIELD_UNIT
+        var[pos, code[g]] = 0.5 * (vals[2][g] ** 2 + vals[3][g] ** 2) / _OHM_PER_FIELD_UNIT ** 2
+        full = np.all(np.isfinite(var), axis=1)
+        if full.any():
+            out[int(site[g[0]])] = dict(freq=-f[full], Z=z[full].reshape(-1, 2, 2),
+                                        Z_err=var[full].reshape(-1, 2, 2), err_kind="var",
+                                        rot=0.0, Z_units="mV/km/nT")
+            n_full += int(full.sum())
+    return out, dict(n_repeated=n_repeated, n_incomplete=int(n_seen - n_full))
+
+
+def same_impedances(a: Dict[int, dict], b: Dict[int, dict]) -> bool:
+    """True if two results of impedance_per_site hold the same data (values, not errors)."""
+    if set(a) != set(b):
+        return False
+    return all(a[j]["freq"].shape == b[j]["freq"].shape
+               and np.allclose(a[j]["freq"], b[j]["freq"], rtol=1e-6, atol=0.0)
+               and np.allclose(a[j]["Z"], b[j]["Z"], rtol=1e-6, atol=0.0) for j in a)
+
+
+def classify_sites(cfg: Dict[str, Any], sites: Sequence[Dict[str, Any]],
+                   data: Optional[Dict[int, dict]] = None) -> Tuple[Dict[int, dict], List[str]]:
+    """
+    ({site index: result of dimens.classify_dimensionality}, messages). `data` =
+    impedance_per_site of the results file; None: the files of DIM_SOURCE, whose
+    station names are matched to the names of site.dat (case and outer blanks
+    ignored). Station name, lat and lon of the results are those of site.dat.
+    Sites without a usable frequency are left out. OSError, ValueError,
+    KeyError, ImportError of the reading and the analysis are passed on.
+    """
+    import dimens                      # only needed for these measures
+    kw = {word: cfg[key] for key, word in _DIM_SETTINGS.items()}
+    kw.update(cfg["DIM_OPTIONS"])
+    notes: List[str] = []
+    found: Dict[int, dict] = {}
+    if data is not None:
+        keys: Dict[str, int] = {}
+        for j in sorted(data):
+            name = str(sites[j]["name"]).strip() or f"site{j}"
+            keys[name if name not in keys else f"{name}#{j}"] = j
+        records = [dict(data[j], station=name) for name, j in keys.items()]
+        if records:
+            res = dimens.classify_dimensionality(records, **kw)
+            found = {keys[name]: r for name, r in res.items()}
+    else:
+        res = dimens.classify_dimensionality(cfg["DIM_SOURCE"], **kw)
+        by_name: Dict[str, int] = {}
+        for j, st_ in enumerate(sites):
+            by_name.setdefault(str(st_["name"]).strip().casefold(), j)
+        lost = []
+        for name, r in res.items():
+            j = by_name.get(str(name).strip().casefold())
+            if j is None:
+                lost.append(name)
+            elif j in found:
+                notes.append(f"WARNING: DIM_SOURCE: {name!r} is a second data set of site "
+                             f"{sites[j]['name']}; ignored.")
+            else:
+                found[j] = r
+        if lost:
+            notes.append(f"DIM_SOURCE: {len(lost)} of {len(res)} stations are not in site.dat: "
+                         f"{', '.join(map(str, lost[:10]))}{' ...' if len(lost) > 10 else ''}.")
+    out = {j: dict(r, station=sites[j]["name"], lat_deg=sites[j]["lat"],
+                   lon_deg=sites[j]["lon"]) for j, r in sorted(found.items())
+           if r["freq"].size}
+    return out, notes
+
+
+def dim_selections(results: Dict[int, dict], used: np.ndarray, n_sites: int,
+                   measures: Sequence[str], cfg: Dict[str, Any]) -> Tuple[List[dict], dict]:
+    """
+    (selections, banded results) of the sites `used` that have a result. One
+    selection per frequency band of BANDS (made as for nRMS, from the
+    frequencies of these sites, a site frequency counting as four rows for
+    BAND_MIN_N): ib, band, comp "", head, n (sites with data in the band),
+    site_m {measure: array per site index; classes as positions on the colour
+    bar}, codes {class measure: class codes}, glob_m, sub_m. Banded results =
+    {name: result with "bands"} for dimens.write_summary.
+    """
+    import dimens
+    have = [int(j) for j in used if int(j) in results]
+    if not have:
+        return [], {}
+    freq = np.concatenate([results[j]["freq"] for j in have])
+    bounds = np.cumsum([0] + [results[j]["freq"].size for j in have])
+    bands = band_selections(np.repeat(freq, 4), cfg["BANDS"], axis=cfg["BAND_AXIS"],
+                            per_decade=cfg["BAND_PER_DECADE"], min_n=cfg["BAND_MIN_N"])
+    per_site: Dict[int, List[dict]] = {j: [] for j in have}
+    sels: List[dict] = []
+    for ib, (label, mask4) in enumerate(bands):
+        mask = mask4[::4]
+        if not mask.any():
+            continue
+        tmin, tmax = float(1.0 / freq[mask].max()), float(1.0 / freq[mask].min())
+        values = {m: np.full(n_sites, np.nan) for m in measures}
+        codes = {m: np.full(n_sites, np.nan) for m in measures if m in _DIM_CLASS_MEASURES}
+        n = 0
+        for k, j in enumerate(have):
+            members = np.flatnonzero(mask[bounds[k]:bounds[k + 1]])
+            summary = dimens.summarise_band(results[j], members)
+            summary.update(label=label, period_min=tmin, period_max=tmax,
+                           freq_min=1.0 / tmax, freq_max=1.0 / tmin)
+            per_site[j].append(summary)
+            if not members.size:
+                continue
+            n += 1
+            for m in measures:
+                if m in _DIM_CLASS_MEASURES:
+                    code = summary["class_id" if m == "dim" else "pt_class"]
+                    codes[m][j] = code
+                    values[m][j] = _DIM_CODES[m].index(code)
+                else:
+                    values[m][j] = summary[_DIM_VALUES[m][0]]
+        glob_m, sub_m = {}, {}
+        for m in measures:
+            v = values[m][used]
+            v = v[np.isfinite(v)]
+            if m in _DIM_CLASS_MEASURES:
+                names = dimens.CLASS_NAMES if m == "dim" else dimens.PT_CLASS_NAMES
+                c = codes[m][used]
+                c = c[np.isfinite(c)].astype(int)
+                found = sorted(((int(np.sum(c == k)), -k) for k in np.unique(c)), reverse=True)
+                text = ", ".join(f"{names[-k]} {num}" for num, k in found[:3])
+                glob_m[m] = float("nan")
+                sub_m[m] = f"n = {n}: {text}" + (", ..." if len(found) > 3 else "")
+            else:
+                glob_m[m] = float(np.median(v)) if v.size else float("nan")
+                shown = f"{glob_m[m]:.2f}" if v.size else "-"
+                sub_m[m] = f"median of the sites = {shown}, n = {n}"
+        sels.append(dict(ib=ib, ic=0, band=label, comp="", head=label, n=n, site_m=values,
+                         codes=codes, glob_m=glob_m, sub_m=sub_m))
+    banded: Dict[str, dict] = {}
+    for j in have:
+        name = str(results[j]["station"])
+        banded[name if name not in banded else f"{name}#{j}"] = dict(results[j],
+                                                                    bands=per_site[j])
+    return sels, banded
+
+
+def dim_style(measure: str, sels: Sequence[dict], used: np.ndarray,
+              cfg: Dict[str, Any]) -> dict:
+    """dict(cmap, norm, extend, ticks, reference) of the maps of a dimensionality measure."""
+    if measure in _DIM_CLASS_MEASURES:
+        import dimens
+        from matplotlib.colors import BoundaryNorm, ListedColormap
+        table = dimens.CLASS_NAMES if measure == "dim" else dimens.PT_CLASS_NAMES
+        names = [table[k] for k in _DIM_CODES[measure]]
+        colors = dict(_DIM_CLASS_COLORS, **cfg["DIM_COLORS"])
+        cmap = ListedColormap([colors[t] for t in names])
+        norm = BoundaryNorm(np.arange(len(names) + 1) - 0.5, cmap.N)
+        return dict(cmap=cmap, norm=norm, extend="neither", reference=None,
+                    ticks=(list(range(len(names))), names))
+    scale = measure_scale(measure, cfg)
+    allv = np.concatenate([s["site_m"][measure][used] for s in sels] or [[]])
+    norm, extend = make_norm(allv, vmin=scale["vmin"], vmax=scale["vmax"],
+                             reference=scale["reference"], floor=0.0,
+                             name=f"the reference of {measure}")
+    return dict(cmap=scale["cmap"], norm=norm, extend=extend, reference=scale["reference"],
+                ticks=None)
+
+
+def format_dimensionality(sels: Sequence[dict], banded: dict, *,
+                          header: Sequence[str]) -> str:
+    """Plain-text tables for the summary: sites per class and band, medians of the sites."""
+    import dimens
+    table = dimens.survey_summary(banded)
+    labels = [str(v) for v in table["band_label"]]
+    wide = max([len(v) for v in labels] + [4])
+    short = {"undetermined": "undet", "3D/2Dtw": "3/2tw", "3D/2D": "3/2D",
+             "3D/2Ddiag": "3/2dg", "3D/1D2D": "3/12D", "ANIS-HINT1": "ANIS1",
+             "ANIS-HINT2": "ANIS2", "undefined": "undef"}
+    out = list(header)
+    for title, prefix, codes in (("WAL class", "class", _DIM_CODES["dim"]),
+                                 ("phase tensor class", "pt_class", _DIM_CODES["ptdim"])):
+        names = [str(table[prefix + "_names"][k]) for k in codes]
+        head = f"{'band':<{wide}s} {'sites':>5s}" + "".join(
+            f" {short.get(t, t):>6s}" for t in names)
+        out += ["", f"number of sites per band: {title}", "=" * len(head), head, "-" * len(head)]
+        for i, label in enumerate(labels):
+            counts = table[prefix + "_site_counts"][i]
+            out.append(f"{label:<{wide}s} {int(counts.sum()):5d}" + "".join(
+                f" {int(counts[k]):6d}" for k in codes))
+        out.append("-" * len(head))
+    keys = [("pt_abs_beta_deg", "|beta|"), ("pt_ellipticity_median", "ellip"),
+            ("swift_skew", "swift"), ("bahr_skew", "bahr")]
+    head = f"{'band':<{wide}s}" + "".join(f" {t:>7s}" for _, t in keys)
+    out += ["", "median over the sites of the band values (|beta| in deg)", "=" * len(head),
+            head, "-" * len(head)]
+    for i, label in enumerate(labels):
+        line = f"{label:<{wide}s}"
+        for key, _ in keys:
+            v = table[key][:, i]
+            v = v[np.isfinite(v)]
+            line += f" {np.median(v):7.3g}" if v.size else f" {'-':>7s}"
+        out.append(line)
+    out.append("-" * len(head))
+    return "\n".join(out) + "\n"
+
+
+# ---------------------------------------------------------------------------
 # Ensemble: members and statistics over the members
 # ---------------------------------------------------------------------------
 class DataTypeError(ValueError):
@@ -1645,18 +2072,23 @@ def load_member(path: str, cfg: Dict[str, Any]) -> dict:
     """
     Read one member: dict(res, ds, base, n_rows) with the resolve_run result `res`
     (without its data), the dataset of the member (own observed data) restricted
-    to DATATYPES, and the number of rows of the file. OSError, ValueError, KeyError
-    (DataTypeError) if it cannot be read.
+    to DATATYPES, and the number of rows of the file; mt = the impedance rows (for
+    the dimensionality measures with DIM_SOURCE "results", else None), all_ids =
+    the ids of all rows if they are needed besides the filtered ones. OSError,
+    ValueError, KeyError (DataTypeError) if it cannot be read.
     """
     res = fm.resolve_run(path, iteration=cfg["ITERATION"], pattern=cfg["ITER_PATTERN"])
     ds = fm.build_dataset([res["data"]])
     n_rows = int(np.asarray(ds["freq"]).size)
     res = {k: v for k, v in res.items() if k != "data"}
-    all_ids = None                       # distortion is of MT ids, also if DATATYPES leaves MT out
-    if cfg["DATATYPES"] and _DISTORTION in parse_measures(cfg["SITE_MEASURES"]):
+    measures = parse_measures(cfg["SITE_MEASURES"])
+    dim_here = bool(dim_names(measures)) and cfg["DIM_SOURCE"] == "results"
+    all_ids = None             # distortion and impedances are of MT ids, also if DATATYPES leaves MT out
+    if cfg["DATATYPES"] and (_DISTORTION in measures or dim_here):
         all_ids = {k: ds[k] for k in ("freq", "site_id", "datatype_name", "site_x", "site_y")}
+    mt = mt_rows(ds) if dim_here else None
     ds, base = apply_datatypes(ds, cfg["DATATYPES"])
-    return dict(res=res, ds=ds, base=base, n_rows=n_rows, all_ids=all_ids)
+    return dict(res=res, ds=ds, base=base, n_rows=n_rows, all_ids=all_ids, mt=mt)
 
 
 def member_selections(lm: dict, site_index: np.ndarray, n_sites: int,
@@ -3399,7 +3831,8 @@ def _cbar_size_in(cb, vertical: bool) -> Tuple[float, float]:
 def add_colorbar(fig, mappable, axes, *, location: str, shrink: float, extend: str,
                  label: str, length_cm: Optional[float] = None,
                  width_cm: Optional[float] = None, label_fontsize: Optional[float] = None,
-                 tick_fontsize: Optional[float] = None):
+                 tick_fontsize: Optional[float] = None,
+                 ticks: Optional[Tuple[Sequence[float], Sequence[str]]] = None):
     """
     The colour bar of the panels `axes`. Without `length_cm` and `width_cm` it is
     matplotlib's: the length is `shrink` x the length of the panels along the bar
@@ -3411,13 +3844,21 @@ def add_colorbar(fig, mappable, axes, *, location: str, shrink: float, extend: s
     length, `length_cm` alone the proportions (1/20). A length that the panels
     cannot hold is reduced to the length of the panels, with a message. The size
     holds for the layout as it is when this is called (set the figure title first).
-    `label_fontsize`, `tick_fontsize` [pt]: None = matplotlib's.
+    `label_fontsize`, `tick_fontsize` [pt]: None = matplotlib's. `ticks` =
+    (positions, texts) of a bar of classes; None = numbers.
     """
     kw = dict(location=location, extend=extend)
 
     def make(**size):
         bar = fig.colorbar(mappable, ax=axes, **size, **kw)
         bar.set_label(label, **({} if label_fontsize is None else {"fontsize": label_fontsize}))
+        if ticks is not None:
+            bar.set_ticks(list(ticks[0]), labels=list(ticks[1]))
+            bar.ax.tick_params(which="both", length=0)
+            if location in ("top", "bottom"):          # side by side the names would overlap
+                for t in bar.ax.get_xticklabels():
+                    t.set(rotation=45, rotation_mode="anchor",
+                          ha="right" if location == "bottom" else "left")
         if tick_fontsize is not None:
             bar.ax.tick_params(labelsize=tick_fontsize)
         return bar
@@ -3465,7 +3906,8 @@ def plot_page(page: Sequence[dict], *, site_lon: np.ndarray, site_lat: np.ndarra
               relief_extent: Optional[Tuple[float, float, float, float]], norm, extend: str,
               cfg: Dict[str, Any], title: str, credit: Optional[str],
               cbar_label: str = "nRMS", overlays: Optional[dict] = None,
-              measure: str = "nrms"):
+              measure: str = "nrms",
+              cbar_ticks: Optional[Tuple[Sequence[float], Sequence[str]]] = None):
     """
     One figure with the maps of `measure` of the selections of `page`; returns the
     figure. CMAP_NRMS and NRMS_REFERENCE of `cfg` are the colour map and the
@@ -3474,7 +3916,8 @@ def plot_page(page: Sequence[dict], *, site_lon: np.ndarray, site_lat: np.ndarra
     else the global nRMS and n (other measures: s["sub_m"][measure] or their global
     value). The first line is s["head"] if given, else band | components. `overlays` (profiles, lines) are drawn in every
     panel; the legend (LEGEND_LOC, first panel) holds the no-data icon and the
-    profiles and lines that have a label.
+    profiles and lines that have a label. `cbar_ticks` = (positions, texts) of
+    the colour bar of a map of classes.
     """
     import matplotlib.pyplot as plt
     n = len(page)
@@ -3515,7 +3958,7 @@ def plot_page(page: Sequence[dict], *, site_lon: np.ndarray, site_lat: np.ndarra
         cb = add_colorbar(fig, sm, used, location=loc, shrink=float(cfg["CBAR_SHRINK"]),
                           extend=extend, label=cbar_label, length_cm=cfg["CBAR_LENGTH"],
                           width_cm=cfg["CBAR_WIDTH"], label_fontsize=cfg["CBAR_LABEL_FONTSIZE"],
-                          tick_fontsize=cfg["CBAR_TICK_FONTSIZE"])
+                          tick_fontsize=cfg["CBAR_TICK_FONTSIZE"], ticks=cbar_ticks)
         ref = cfg["NRMS_REFERENCE"]
         if ref is not None and norm.vmin <= ref <= norm.vmax:
             (cb.ax.axhline if loc in ("right", "left") else cb.ax.axvline)(
@@ -3839,6 +4282,22 @@ def run(cfg: Dict[str, Any]) -> int:
     # --- nRMS (and the other measures) of every member ---
     measures = parse_measures(cfg["SITE_MEASURES"])
     fits = fit_names(measures)
+    dims = dim_names(measures)
+
+    def ids_of_all_rows(member: dict, lm: dict) -> Dict[int, int]:
+        """{site id: site index} of all rows of a member (also those DATATYPES leaves out)."""
+        if lm.get("all_ids") is None:
+            return member["id_to_site"]
+        with _print_once(seen):                        # DATATYPES: match the ids of all rows
+            return assign_sites(lm["all_ids"], sites, match=cfg["SITE_MATCH"],
+                                tol=1000.0 * cfg["SITE_MATCH_TOL"],
+                                offset=cfg["SITE_ID_OFFSET"])[1]["id_to_site"]
+
+    def add_impedances(member: dict, lm: dict) -> None:
+        """member["z"] = impedance_per_site of a loaded member (DIM_SOURCE "results")."""
+        if lm.get("mt") is not None:
+            member["z"], member["z_stats"] = impedance_per_site(lm["mt"],
+                                                                ids_of_all_rows(member, lm))
 
     def add_distortion(member: dict, lm: dict) -> None:
         """member["dist"] (None = not available) of a loaded member."""
@@ -3850,12 +4309,7 @@ def run(cfg: Dict[str, Any]) -> int:
         if found is None:
             member["dist_why"] = text
             return
-        ids = member["id_to_site"]
-        if lm.get("all_ids") is not None:              # DATATYPES: match the ids of all rows
-            with _print_once(seen):
-                ids = assign_sites(lm["all_ids"], sites, match=cfg["SITE_MATCH"],
-                                   tol=1000.0 * cfg["SITE_MATCH_TOL"],
-                                   offset=cfg["SITE_ID_OFFSET"])[1]["id_to_site"]
+        ids = ids_of_all_rows(member, lm)
         member.update(dist=distortion_per_site(found, ids, len(sites)), dist_source=text)
 
     seen: set = set()                        # messages of the selections: once
@@ -3869,6 +4323,7 @@ def run(cfg: Dict[str, Any]) -> int:
                     keep=True, note="", used=np.unique(site_index[site_index >= 0]),
                     id_to_site=st["id_to_site"])]
     add_distortion(members[0], first)
+    add_impedances(members[0], first)
     for k in range(k0 + 1, n_paths):
         try:
             lm = load_member(paths[k], cfg)
@@ -3890,6 +4345,7 @@ def run(cfg: Dict[str, Any]) -> int:
                             n_rows=lm["n_rows"], sels=sels_k, keep=True, note="",
                             used=np.unique(idx[idx >= 0]), id_to_site=st_k["id_to_site"]))
         add_distortion(members[-1], lm)
+        add_impedances(members[-1], lm)
         if n_paths <= 20 or len(members) % 10 == 0 or k == n_paths - 1:
             _say(f"member {names[k]} ({k + 1} of {n_paths}): iteration {lm['res']['iter']}, "
                  f"nRMS = {lm['res']['rms']:.3f}.")
@@ -3960,6 +4416,53 @@ def run(cfg: Dict[str, Any]) -> int:
             if dsel is None:
                 _say("WARNING: distortion: no value at a site with data. No distortion map.")
 
+    # --- dimensionality ---
+    dim_sels: List[dict] = []
+    dim_banded: dict = {}
+    dim_from = ""
+    if dims:
+        data = None
+        if cfg["DIM_SOURCE"] == "results":
+            ref = kept[0]
+            data = ref.get("z", {})
+            dim_from = "observed impedances of " + (f"member {ref['name']}" if ens
+                                                    else ref["res"]["path"])
+            zs = ref.get("z_stats", {})
+            if zs.get("n_repeated"):
+                _say(f"WARNING: dimensionality: {zs['n_repeated']} repeated impedance rows "
+                     "(several ids of one site?); the first one counts.")
+            if zs.get("n_incomplete"):
+                _say(f"dimensionality: {zs['n_incomplete']} site frequencies without four "
+                     "usable impedance components left out.")
+            other = [m["name"] for m in kept[1:] if not same_impedances(data, m.get("z", {}))]
+            if other:
+                _say(f"WARNING: dimensionality: the observed impedances of {len(other)} members "
+                     f"differ from those of {ref['name']} (perturbed data?); those of "
+                     f"{ref['name']} are used. DIM_SOURCE can name the original data.")
+        else:
+            src = cfg["DIM_SOURCE"]
+            dim_from = "data of " + ", ".join(
+                map(str, [src] if isinstance(src, (str, os.PathLike)) else src))
+        try:
+            found, notes = classify_sites(cfg, sites, data)
+        except (OSError, ValueError, KeyError, TypeError, ImportError) as exc:
+            print(f"{_TAG} dimensionality: {exc}", file=sys.stderr)
+            return 1
+        for msg in notes:
+            _say(msg)
+        try:
+            with _print_once(seen):
+                dim_sels, dim_banded = dim_selections(found, used, len(sites), dims, cfg)
+        except ValueError as exc:
+            print(f"{_TAG} dimensionality: {exc}", file=sys.stderr)
+            return 1
+        if dim_sels:
+            _say(f"dimensionality: {len(dim_banded)} of {used.size} sites with impedances, "
+                 f"{dim_from}.")
+        else:
+            _say("WARNING: dimensionality: no impedances at a site with data (data type MT "
+                 "in the results file, or DIM_SOURCE). No dimensionality map.")
+
     # --- profiles and lines ---
     lon_s = np.array([site_rows[j]["lon"] for j in used])
     lat_s = np.array([site_rows[j]["lat"] for j in used])
@@ -3985,6 +4488,8 @@ def run(cfg: Dict[str, Any]) -> int:
         extra = [(f"{m} | {s['band']} | {s['comp']}", s["site_m"][m]) for m in fits for s in sels]
         if dsel is not None:
             extra.append((_DISTORTION, dsel["site_m"][_DISTORTION]))
+        extra += [(f"{m} | {s['band']}", s["codes"].get(m, s["site_m"][m]))
+                  for m in dims for s in dim_sels]
         files += write_profile_tables(stem, profiles, site_rows, used, sels, extra)
     if ens:
         rms_k = np.array([m["res"]["rms"] for m in kept], float)
@@ -4020,6 +4525,21 @@ def run(cfg: Dict[str, Any]) -> int:
         txt += "\n" + format_summary(sels, header=[f"{measure_label(m)} of the sites"], measure=m)
     if dsel is not None:
         txt += "\n" + format_distortion(dsel, used, ens=ens, stat=cfg["ENS_STAT"], members=kept)
+    if dim_sels:
+        import dimens
+        about = [f"dimensionality of the sites: {dim_from}",
+                 f"WAL thresholds {cfg['DIM_THRESHOLD']:g} (I3-I7), {cfg['DIM_Q_THRESHOLD']:g} "
+                 f"(Q); phase tensor thresholds |beta| {cfg['DIM_PT_BETA_THRESHOLD']:g} deg, "
+                 f"ellipticity {cfg['DIM_PT_ELLIPTICITY_THRESHOLD']:g}",
+                 f"errors: {cfg['DIM_ERROR_PERCENT']:g} percent of |Z|"
+                 if cfg["DIM_ERROR_PERCENT"] is not None else "errors: those of the data",
+                 "angles in the .csv and .npz files refer to the x axis of the data"]
+        if cfg["DIM_OPTIONS"]:
+            about.append(f"DIM_OPTIONS: {cfg['DIM_OPTIONS']}")
+        files += [str(q) for q in dimens.write_summary(
+            dim_banded, out_dir, name=f"{cfg['OUTPUT_BASENAME']}_dimensionality",
+            header=about)]
+        txt += "\n" + format_dimensionality(dim_sels, dim_banded, header=about)
     with open(stem + "_summary.txt", "w") as fh:
         fh.write(txt)
     files.append(stem + "_summary.txt")
@@ -4095,8 +4615,46 @@ def run(cfg: Dict[str, Any]) -> int:
         _say(f"NOTE: PANEL_SIZE = {tuple(cfg['PANEL_SIZE'])} is in cm (inch until 2026-11-26): "
              "small panels.")
     figs, n_figs = [], 0                     # figs: kept open for SHOW only
+
+    def emit(fig, tag: str) -> None:
+        """Save a figure and close it, or keep it for SHOW."""
+        nonlocal n_figs
+        files.extend(save_figure(fig, f"{stem}_{tag}", cfg["OUTPUT_FORMATS"], cfg["DPI"]))
+        n_figs += 1
+        if cfg["SHOW"]:
+            figs.append(fig)
+        else:
+            plt.close(fig)                   # many measures x pages: do not keep them all
+
     with plt.rc_context(font_rc(cfg)):             # also for the text made when saving / showing
         for measure in measures:
+            if measure in _DIM_MEASURES:
+                if not dim_sels:
+                    continue
+                if not any(np.isfinite(s["site_m"][measure][used]).any() for s in dim_sels):
+                    _say(f"{measure_label(measure)}: no value at a site, no map.")
+                    continue
+                style = dim_style(measure, dim_sels, used, cfg)
+                pcfg = dict(cfg, CMAP_NRMS=style["cmap"], NRMS_REFERENCE=style["reference"])
+                label = measure_label(measure)
+                if cfg["TITLE"] == "auto":
+                    title = (f"Site {label}, observed impedances"
+                             if cfg["DIM_SOURCE"] == "results" else f"Site {label}")
+                else:
+                    m_ens = dict(M=len(kept), stat=cfg["ENS_STAT"], iters=its) if ens else None
+                    title = make_title(cfg["TITLE"], ens=m_ens, label=label, **run_title)
+                for tag, page in build_pages(dim_sels, cfg["DIM_PAGE"]):
+                    page_sels = [dict(s, site_m={q: v[used] for q, v in s["site_m"].items()})
+                                 for s in page]
+                    fig = plot_page(page_sels, site_lon=lon_s, site_lat=lat_s,
+                                    site_names=[site_rows[j]["name"] for j in used],
+                                    frame=frame, bbox=bbox, relief=relief,
+                                    relief_extent=relief_extent, norm=style["norm"],
+                                    extend=style["extend"], cfg=pcfg, title=title,
+                                    credit=credit, cbar_label=label, overlays=overlays,
+                                    measure=measure, cbar_ticks=style["ticks"])
+                    emit(fig, f"{measure}_{tag.rstrip('_')}")
+                continue
             if measure == _DISTORTION:
                 if dsel is None:
                     continue
@@ -4138,12 +4696,7 @@ def run(cfg: Dict[str, Any]) -> int:
                                 bbox=bbox, relief=relief, relief_extent=relief_extent, norm=norm,
                                 extend=extend, cfg=pcfg, title=title, credit=credit,
                                 cbar_label=cbar_label, overlays=overlays, measure=measure)
-                files += save_figure(fig, f"{stem}_{tag}", cfg["OUTPUT_FORMATS"], cfg["DPI"])
-                n_figs += 1
-                if cfg["SHOW"]:
-                    figs.append(fig)
-                else:
-                    plt.close(fig)           # many measures x pages: do not keep them all
+                emit(fig, tag)
         _say(f"{len(files)} files in {out_dir}:")
         for p in files:
             print("   " + os.path.basename(p))
@@ -4159,11 +4712,15 @@ def run(cfg: Dict[str, Any]) -> int:
 
 
 def main(argv: Sequence[str]) -> int:
-    """Command line: -w, -i, --dem, --runs, --stat, --measures, --profile, --line, --no-overlays."""
+    """
+    Command line: -w, -i, --dem, --runs, --stat, --measures, --dim-source, --profile,
+    --line, --no-overlays.
+    """
     ap = argparse.ArgumentParser(
         prog="femtic_plot_sitemap.py",
         description="Site map of a FEMTIC run or ensemble: nRMS (or other fit measures per "
-                    "site, band and component, or the distortion strength) on a shaded relief "
+                    "site, band and component, the distortion strength, or the dimensionality "
+                    "of the impedances per site and band) on a shaded relief "
                     "(Copernicus DEM by default). All paths are taken relative to WORK_DIR.")
     ap.add_argument("-w", "--work-dir", default=None, metavar="DIR",
                     help="base of all relative paths (replaces WORK_DIR)")
@@ -4179,7 +4736,11 @@ def main(argv: Sequence[str]) -> int:
                          "(replaces ENS_STAT)")
     ap.add_argument("--measures", nargs="+", default=None, metavar="NAME",
                     help="what the maps show: " + ", ".join(mm.FIT_MEASURE_NAMES)
-                         + ", distortion (replaces SITE_MEASURES)")
+                         + ", distortion, " + ", ".join(_DIM_MEASURES)
+                         + " (replaces SITE_MEASURES)")
+    ap.add_argument("--dim-source", nargs="+", default=None, metavar="PATH",
+                    help="data of the dimensionality measures: \"results\", EDI directories "
+                         "or files, .npz collections (replaces DIM_SOURCE)")
     ap.add_argument("--profile", nargs=5, action="append", default=None,
                     metavar=("NAME", "LON1", "LAT1", "LON2", "LAT2"),
                     help="a profile line from (LON1, LAT1) to (LON2, LAT2), in degrees; can be "
@@ -4219,6 +4780,9 @@ def main(argv: Sequence[str]) -> int:
         over["DEM_SOURCE"] = args.dem
     if args.runs is not None:
         over["RUN_PATHS"] = args.runs
+    if args.dim_source is not None:
+        src = args.dim_source
+        over["DIM_SOURCE"] = src[0] if len(src) == 1 else src
     if args.stat is not None:
         try:
             parse_stat(args.stat)

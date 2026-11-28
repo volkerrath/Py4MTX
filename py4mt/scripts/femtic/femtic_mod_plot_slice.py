@@ -349,7 +349,7 @@ print(titstrng + "\n\n")
 #: relative OUT_DIR, MOD_CATALOG and MOD_QC_FILE start here; it is also the
 #: second place where the per-run files (mesh, site list, ...) are looked for.
 #: None or "" = current directory. Command line: -w / --work-dir.
-WORK_DIR = r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial_nodist/"
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial_nodist_restart/"
 # WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
 # WORK_DIR = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_fine/krafla_ens_fine_paired/"
 
@@ -364,7 +364,7 @@ RUN_PATHS = [
     # single runs / block files instead:
     # "krafla_rto_0/",
     # "krafla_rto_0/resistivity_block_iter10.dat",
-    r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial_restart/ini_*/"
+    r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial_nodist_restart/ini_*/"
 ]
 
 #: Iteration taken from a run directory (not used for files):
@@ -651,7 +651,7 @@ MOD_ROI_ZLIM = [-1.0, 6.0]        # e.g. [-1.0, 6.0]
 # --- Colours ------------------------------------------------------------------
 MOD_DPI = 400
 MOD_CMAP = "jet_r"
-MOD_CLIM = [0.0, 4.0]      # [log10_min, log10_max] Ohm.m; None = auto
+MOD_CLIM = [-1.0, 4.0]      # [log10_min, log10_max] Ohm.m; None = auto
 MOD_OCEAN_COLOR = "lightgrey"   # None = colormap
 MOD_AIR_COLOR = "whitesmoke"    # None = blank
 MOD_AIR_BGCOLOR = None          # axes facecolor for air

@@ -3,7 +3,8 @@
 Site map of a FEMTIC run, or of a whole ensemble, on a DEM background. Every
 site is an icon coloured by its normalized RMS misfit (nRMS), for frequency bands
 and data components, or by other measures of data fit or the strength of its
-galvanic distortion (see "Measures and distortion strength"). For an ensemble (`WORK_DIR` = the ensemble root with the
+galvanic distortion (see "Measures and distortion strength"), or by the
+dimensionality of the observed impedances (see "Dimensionality"). For an ensemble (`WORK_DIR` = the ensemble root with the
 member directories and `templates/`) the colour is a statistic of the member
 nRMS at the site (median by default; mean, min, max, a percentile or the std).
 The DEM is the Copernicus DEM GLO-30 by default (GeoTIFF tiles that are
@@ -14,14 +15,16 @@ or polygons (faults, coast lines, caldera rims, ...) can be drawn on the maps.
 
 Same layout as the other FEMTIC scripts: a CONFIG block of UPPERCASE settings
 at the top of the script, `WORK_DIR` as the base of all relative paths,
-`-w` / `-i` / `--dem` / `--runs` / `--stat` / `--measures` / `--profile` / `--line` on the command line, `settings()` /
+`-w` / `-i` / `--dem` / `--runs` / `--stat` / `--measures` / `--dim-source` /
+`--profile` / `--line` / `--no-overlays` on the command line, `settings()` /
 `run()` for use from other code. For a plot of the one nRMS per site (all bands, all components) see
 also `femtic_plot_nrms.py`; this script adds the bands x components selections,
 the tables and the DEM sources.
 
 Needs in `modules/`: `femtic_misfit.py` (with the modules it imports),
 `misfit_measures.py`, `dem.py` (the DEM routines, see `dem_readme.md`),
-`util.py` and `version.py`.
+`util.py` and `version.py`. For the dimensionality measures also `dimens.py`
+(and, for EDI input, `data_proc.py`).
 
 ---
 
@@ -92,6 +95,10 @@ python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 -i last
 # other measures of fit, and the distortion strength
 python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --measures nrms r_mae mean
 python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --measures distortion
+
+# dimensionality of the observed impedances (see "Dimensionality")
+python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --measures dim ptdim ptskew
+python femtic_plot_sitemap.py -w /data/krafla --measures dim --dim-source ../edi
 
 # a whole ensemble: WORK_DIR = the root with krafla_rto_NN/ and templates/
 python femtic_plot_sitemap.py -w /data/krafla --dem none                  # median of all members
@@ -285,6 +292,96 @@ with a trade-off parameter; the norm used for the maps is not from this paper).
 
 ---
 
+## Dimensionality
+
+Further `SITE_MEASURES` describe the impedances, not the fit. They are computed
+with `modules/dimens.py` (see `dimens_readme.md` for the methods, their
+thresholds and their limits) and give one value per site and frequency band.
+
+| Measure | Map | Value of a site in a band |
+|---|---|---|
+| `"dim"` (`"dimensionality"`) | classes | WALDIM band class of the WAL invariants: undetermined, 1D, 2D, 3D/2D, 3D, 3D/2Ddiag, 3D/1D2D, ANIS-HINT1, ANIS-HINT2 |
+| `"ptdim"` | classes | most frequent phase tensor class: undefined, 1D, 2D, 3D (the higher one in a tie) |
+| `"ptskew"` | values | median \|beta\| of the phase tensor [deg] |
+| `"ellipt"` | values | median ellipticity of the phase tensor |
+| `"swift"` | values | median Swift skew |
+| `"bahr"` | values | median Bahr phase-sensitive skew |
+
+**Bands.** Those of `BANDS`, `BAND_AXIS`, `BAND_PER_DECADE` and `BAND_MIN_N`, made
+from the frequencies of the sites; a site frequency counts as four rows for
+`BAND_MIN_N` (default 20: at least 5 site frequencies). `"all bands"` uses all
+frequencies of a site. `COMPONENTS` and the `DATATYPES` filter do not enter.
+Only sites with data (of the chosen `DATATYPES`) in the results file are mapped.
+
+**Data (`DIM_SOURCE`).**
+
+- `"results"` (default): the observed impedances (data type `MT`; not `NMT2`) of
+  the first used member, converted from Ohm to mV/km/nT, with the errors of the
+  file (**including error floors** set for the inversion). Used are frequencies
+  with all four components, finite values and errors > 0; a message counts the
+  others. Rows that repeat site, frequency and component (several ids of one
+  site): the first counts, with a warning.
+- Ensembles with perturbed data (RTO): a warning says that members differ, and
+  the maps show the data of one member. Name the original data instead:
+- an EDI directory, EDI files or `.npz` collections / station files (one path or
+  a list; relative to `WORK_DIR`). Station names (for EDI files: the file name)
+  are matched to `site.dat` without regard to case; names that do not match are
+  listed. Name, latitude and longitude are those of `site.dat`. The reader is
+  `data_proc.load_edi`; give its options in
+  `DIM_OPTIONS = dict(edi_options=dict(manufacturer="phoenix"))`. `.npz` files
+  hold pickled objects: use only files that you trust.
+
+**Errors.** Those of the data; `DIM_ERROR_PERCENT` replaces them by a percentage of
+\|Z\|; `DIM_MISSING_ERROR_PERCENT` applies to input files without errors. Large
+errors turn WAL classes into "undetermined" or simpler classes, small ones into
+3-D classes: look at the class maps together with the errors that went in.
+
+**Angles.** Strikes and the phase tensor azimuth are in the tables only. They refer
+to the x axis of the data (for the results file: that of the observed data) and
+carry the 90 degree ambiguity.
+
+**Time convention.** The phase tensor needs phases of Zxy in the first quadrant;
+`dimens` takes the convention of each site from its data (`ft_convention =
+"auto"`; force it with `DIM_OPTIONS = dict(ft_convention="e-iwt")`). The
+`_dimensionality.txt` and `.npz` report it (`pt_ft_convention`, `pt_ft_agreement`).
+
+**Maps.** `DIM_PAGE = "all"` (default): one figure per measure, a panel per band
+(`<OUTPUT_BASENAME>_<measure>_all`); `"band"`: one figure per measure and band.
+Class maps have fixed colours (change single ones with `DIM_COLORS`) and a colour
+bar with the class names (turned by 45 deg on a horizontal bar). Value maps use
+`CMAP_SPREAD`, linear from 0 to 10 deg (`ptskew`) or 0.5 (others), with arrows
+for larger values; `MEASURE_SCALES` changes cmap, reference, vmin, vmax. The panel
+title gives the number of sites with data and the three most frequent classes, or
+the median of the sites. Open icons: no data in the band. `TITLE = "auto"` gives
+`Site <measure>, observed impedances` (with another `DIM_SOURCE`: `Site
+<measure>`); an own title may use `{measure}`, and `{iter}`, `{nrms}` still refer
+to the inversion.
+
+**Tables.** `<OUTPUT_BASENAME>_dimensionality.txt` (sites per class and band, one
+line per site and band), `.csv` and `.npz` (all band values, with errors of the
+averages; written by `dimens.write_summary`); in `_summary.txt` the number of
+sites per class and band and the median skews; in `_profile_sites.csv` columns
+`<measure> | <band>` (classes as codes). Per-frequency results and one `.npz` per
+site: script `mt_dimensionality.py`.
+
+Without `dimens.py` the script stops with a message if one of these measures is
+asked for (return code 1); all other measures do not need it. If no site has
+usable impedances, a warning is given and the other maps are made.
+
+References: Marti, A., Queralt, P., Ledo, J. (2009): WALDIM: A code for the
+dimensionality analysis of magnetotelluric data using the rotational invariants of
+the magnetotelluric tensor. Computers & Geosciences 35(12), 2295-2303.
+https://doi.org/10.1016/j.cageo.2009.03.004. Caldwell, T.G., Bibby, H.M., Brown,
+C. (2004): The magnetotelluric phase tensor. Geophysical Journal International
+158(2), 457-469. https://doi.org/10.1111/j.1365-246X.2004.02281.x. Booker, J.R.
+(2014): The magnetotelluric phase tensor: a critical review. Surveys in Geophysics
+35(1), 7-40. https://doi.org/10.1007/s10712-013-9234-2. Bahr, K. (1991):
+Geological noise in magnetotelluric data: a classification of distortion types.
+Physics of the Earth and Planetary Interiors 66(1-2), 24-38.
+https://doi.org/10.1016/0031-9201(91)90101-M.
+
+---
+
 ## Settings
 
 Everything in the CONFIG block; relative paths refer to `WORK_DIR`. The tables
@@ -365,6 +462,19 @@ components) stretch it, set `NRMS_VMAX` (for the Krafla data 3.0 shows the struc
 | `CBAR_LENGTH`, `CBAR_WIDTH` | `None`, `None` | size of the colour bar in **cm**. `CBAR_LENGTH` = the whole length with the extension triangles (`extend`; the coloured part is shorter by 5 % per triangle); wins over `CBAR_SHRINK`; `None` = `CBAR_SHRINK` x the panels. `CBAR_WIDTH` = the thickness; `None` = 1/20 of the length (matplotlib's). Either alone is fine. A length that the panels cannot hold is reduced to the length of the panels, with a message. See "Size of the colour bar" |
 | `DPI`, `SHOW` | `200`, `False` | |
 | `OUTPUT_DIR`, `OUTPUT_BASENAME`, `OUTPUT_FORMATS` | `"sitemap"`, `"femtic_sitemap"`, `["png"]` | |
+
+**Dimensionality** (only for the measures of "Dimensionality")
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `DIM_SOURCE` | `"results"` | observed impedances of the results file, or EDI directory / files / `.npz` (path or list) |
+| `DIM_PAGE` | `"all"` | `"all"`: a figure per measure; `"band"`: per measure and band |
+| `DIM_ERROR_PERCENT` | `None` | errors as percentage of \|Z\| instead of those of the data |
+| `DIM_MISSING_ERROR_PERCENT` | `5.0` | the same for input files without errors; `None` = stop |
+| `DIM_THRESHOLD`, `DIM_Q_THRESHOLD` | `0.15`, `0.10` | WAL thresholds (I3 - I7; Q) |
+| `DIM_PT_BETA_THRESHOLD`, `DIM_PT_ELLIPTICITY_THRESHOLD` | `3.0`, `0.1` | phase tensor class: 3D if \|beta\| [deg] above the first; else 2D if the ellipticity is above the second; else 1D |
+| `DIM_OPTIONS` | `{}` | further keywords of `dimens.classify_dimensionality` (`n_realizations`, `seed`, `waldim_compat`, `ft_convention`, `n_bootstrap`, `stability_thresholds`, `edi_options`, `use_filename_as_station`) |
+| `DIM_COLORS` | `{}` | colours of classes by name, e.g. `{"3D": "black"}` |
 
 **Fonts**
 
@@ -780,6 +890,13 @@ Further files with other `SITE_MEASURES` (`<m>` = the measure):
 `SITE_MEASURES` is; `_members.csv` lists the nRMS only. `_profile_sites.csv` gets
 extra columns `<m> | band | components` and `distortion`.
 
+With dimensionality measures:
+
+| File | Content |
+|---|---|
+| `<OUTPUT_BASENAME>_<measure>_all.<fmt>` or `_<measure>_<tag>.<fmt>` | maps (`DIM_PAGE`) |
+| `<OUTPUT_BASENAME>_dimensionality.txt`, `.csv`, `.npz` | band summaries of all sites |
+
 Only sites with data are listed; sites of `site.dat` without data in the selection
 are drawn as open icons (legend "no data"). The summary lists the profiles (length,
 vertices, swath and number of sites in it) and the lines (parts, vertices).
@@ -803,6 +920,21 @@ all bands       Zdiag        8608  1.167    100  0.825   1.159  1.565           
 ---
 
 ## Verification performed
+
+**2026-11-28 (b)** (dimensionality measures): 27 checks on made-up data (14 sites:
+synthetic 1-D, 2-D, distorted 2-D and 3-D tensors and the four sample EDI files of
+py4mt; two members) through a stand-in for `femtic.read_results_data`: sources
+(results, EDI directory, EDI file, both sample collections, unmatched and missing
+files), `DATATYPES` without MT, perturbed members, incomplete and repeated rows,
+no MT data, settings errors, page options, titles, thresholds, colour bar places,
+profile table, command line. Maps were looked at. For `SITE_MEASURES` without
+these measures the outputs of three set-ups (47 files, console text) are identical
+to those of the previous version (PNG pixels, other files byte by byte). The
+earlier test files of this script were not available and have not been run. **Not
+tested**: a real results file (`h5py` and `pyproj` not installed; `pyproj` and
+`h5py` imports of `util.py` replaced by a stand-in), so the component names, the
+units (Ohm) and the time convention of real FEMTIC output rest on the code of
+`femtic.py`; a DEM background with these maps.
 
 **2026-11-28** (halos off, measures, distortion strength): new test file
 `test_femtic_plot_sitemap_measures.py` (90 tests) and the 816 tests of
@@ -963,6 +1095,13 @@ no network where the script was written.
   small area still costs a tile of about 4 - 40 MB the first time.
 - The colour scale is common to all pages and has no robust automatic limit; set
   `NRMS_VMAX` if outliers dominate.
+- Dimensionality: band values only (no map per frequency), no strike bars or phase
+  tensor ellipses; the errors of the results file include the floors of the
+  inversion; the values of an ensemble are those of one data set, not statistics
+  over members; only data type `MT`.
+- A horizontal colour bar below many rows of panels can have its title cut off at
+  the lower edge (seen with 17 panels, also before this change); use the bar at
+  the right or fewer panels per page.
 - Distortion: only the matrix-difference type; the type of a text file is not
   checked; one scalar per site (no map of the single elements, gain or rotation).
 
@@ -981,5 +1120,7 @@ no network where the script was written.
 | 2026-11-26 | Claude Sonnet 5.5 (Anthropic) | All user settings are km: `SITE_MATCH_TOL` (`0.015`; before `15.0` m) and `"utm"` / `"model"` positions of `PROFILES` / `LINES` typed in the settings (before: m; the default profile is the same one written in km). Personal settings in metres must be converted; values that look like metres are refused. Coordinates read from files stay in m. `--profile` (degrees) is unchanged. Tested on synthetic data only. AI-generated; review before production use. |
 | 2026-11-27 | Claude Sonnet 5.5 (Anthropic) | (1) The DEM routines moved to the new module `modules/dem.py`. (2) Fonts are user settings (`FONT_FAMILY`, `FONT_RC`, sizes and weights). (3) Profiles and lines: the "Vuache fault" entry was not drawn because its (longitude, latitude) pairs were read with `coords="latlon"`; it is now `"lonlat"`, with `labels=False` and a legend label. Style settings and per-entry keys for profiles and lines; the warning for an overlay outside the map gives the ranges and a hint on swapped coordinates. (4) `PANEL_SIZE` is in cm (before: inch), default `(12.2, 11.2)`. AI-generated; review before use. Tested on synthetic data only. |
 | 2026-11-28 | Claude Sonnet 5.5 (Anthropic) | Halos off by default (`PROFILE_HALO`, `LINE_HALO` `False`; new `MAP_HALO` `False` for site names, scale bar and DEM credit). New `SITE_MEASURES`, `DISTORTION_FILE`, `MEASURE_SCALES`, `--measures`: maps and tables of the fit measures (`misfit_measures.py`) and of the galvanic distortion strength `\|C - I\|`. With `SHOW = False` every figure is closed once saved. AI-generated, review before use. Checked with synthetic data only (see "Verification performed"). |
+
+| 2026-11-28 | Claude Sonnet 5.5 (Anthropic) | Dimensionality of the observed impedances (new module `dimens.py`): measures `dim`, `ptdim`, `ptskew`, `ellipt`, `swift`, `bahr`, settings `DIM_*`, `--dim-source`, tables `_dimensionality.*`, class colour bar. Outputs of the other measures unchanged. AI-generated, review before use. Checked with made-up and sample data and a stand-in results reader only. |
 
 Author: Volker Rath (DIAS)

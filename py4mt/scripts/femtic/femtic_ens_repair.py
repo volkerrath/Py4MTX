@@ -33,20 +33,22 @@ members:
    site data, run scripts, ...) -- it is a ready-to-run restart
    directory, not just a bare starting model.
 
-3. **RESTART procedure** (optional, MOD_RESTART) -- for every run
-   directory with a usable iteration, points ``control.dat`` at the last
-   completed iteration so FEMTIC continues from there instead of from
-   iteration 0. Nothing else in the directory is touched. The content of
-   the original ``control.dat`` (which may be a symbolic link to a shared
-   template) is first copied to ``control.orig`` (never overwritten once
-   it exists); ``control.dat`` is then replaced by a regular file in which
-   only the initial-iteration value is changed (keyword RESTART_KEY, value
-   token RESTART_VALUE_INDEX). A link is replaced, never written through,
-   so the shared template stays unchanged. Directories created by REPAIR
-   (name ending in MOD_REPAIR_SUFFIX) are skipped: they are meant to start
-   afresh from their new iteration-0 model. With RESTART_UNCONDITIONAL the
-   iteration is simply the last one listed in the convergence file, whether
-   or not its model files exist (missing files are only reported).
+3. **RESTART procedure** (optional, MOD_RESTART) -- restarts the runs,
+   usually with new parameter settings. For every run directory with a
+   usable iteration N, the old ``control.dat`` (which may be a symbolic link)
+   is copied to ``control.orig``; then the control file of the templates
+   (RESTART_TEMPLATE) is copied into the run directory as ``control.dat``,
+   a regular file, with only the initial-iteration value (keyword
+   RESTART_KEY, value token RESTART_VALUE_INDEX) set to N. The template is
+   only read, and a link in the run directory is replaced, never written
+   through. ``control.orig`` is never overwritten once it exists; a later
+   old file whose settings are not saved yet goes to ``control.orig.1``,
+   ``.2``, ... Nothing else in the directory is touched. Directories created
+   by REPAIR (name ending in MOD_REPAIR_SUFFIX) are skipped: they are meant
+   to start afresh from their new iteration-0 model. With
+   RESTART_UNCONDITIONAL the iteration is taken from the convergence file
+   alone, whether or not its model files exist (missing files are only
+   reported).
 
 This was originally prototyped as an addition to femtic_ens_post.py, then
 split out into this standalone script once the design settled, so
@@ -55,6 +57,7 @@ covariance, QC/statistics slice plots over converged members only).
 
 Author: Claude Sonnet 5 (Anthropic)
 Created 2026-08-12, at the request of Volker Rath (DIAS).
+@modified 2026-11-28
 
 Provenance:
     2026-08-12  Claude Sonnet 5 (Anthropic)
@@ -229,6 +232,21 @@ Provenance:
                 the argument check_files (True = previous behaviour, which
                 is unchanged for the default). AI-generated code; review
                 before production use.
+    2026-11-28  Claude Sonnet 5.5 (Anthropic), AI-generated, review before
+                use: RESTART now starts from the control file of the
+                templates (new RESTART_TEMPLATE, default
+                <ENSEMBLE_DIR>templates/control.dat), so that runs can be
+                restarted with different parameter settings. The old
+                control.dat of the run directory is saved to control.orig
+                (later, unsaved settings to control.orig.1, .2, ...), then
+                the template is written as control.dat with the initial
+                iteration set; before, only that value was changed in the
+                run's own file. A file is rewritten whenever its content
+                differs, also at an unchanged iteration. A missing or broken
+                old control.dat no longer stops a restart. apply_restart()
+                has the new required argument template; its result has the
+                keys saved, missing, changed, linked_template (orig_made is
+                gone). Tested on synthetic ensembles only, not with FEMTIC.
 """
 from __future__ import annotations
 
@@ -279,7 +297,7 @@ ENSEMBLE_NAME = "ini_"
 # ENSEMBLE_NAME = "ann_rto_orig-err_"
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "sabancaya_ini_nodist-restart"
+ENSEMBLE_PREFIX = "sabancaya_nodist_restart"
 
 #: Expected member numbers as (first, last), inclusive, e.g. (0, 255) for 256
 #: members named <ENSEMBLE_NAME>0 ... <ENSEMBLE_NAME>255. Only used by the
@@ -296,7 +314,7 @@ CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 #: Maximum normalised RMS accepted from the convergence file. Applied to the
 #: member's BEST nRMS over all iterations > 0 (as in femtic_ens_post.py), not
 #: to its last iteration.
-NRMS_MAX = 1.5
+NRMS_MAX = 99.
 
 #: A member's model is taken from its best-nRMS iteration N
 #: (resistivity_block_iter<N>.dat). If that file does not exist (FEMTIC wrote
@@ -404,24 +422,31 @@ MOD_REPAIR_SEED = None
 MOD_REPAIR_MIN_MEMBERS = 2
 
 # ---------------------------------------------------------------------------
-# RESTART -- point control.dat of every run directory at its last iteration
+# RESTART -- new control.dat (from the templates) for every run directory
 # ---------------------------------------------------------------------------
 #: Set True to run the RESTART procedure (step (4), after the scan, the
 #: convergence diagnostic and REPAIR). For every scanned run directory that
 #: has a usable iteration (see RESTART_FROM) it
-#:   1. copies the CONTENT of control.dat (a symbolic link, e.g. to the
-#:      templates, is followed) to control.orig -- only if control.orig does
-#:      not exist yet, so the true original is never overwritten by a second
-#:      RESTART;
-#:   2. replaces control.dat by a regular file that is identical except for
-#:      the initial-iteration value (RESTART_KEY / RESTART_VALUE_INDEX),
-#:      which is set to the iteration found. A symbolic control.dat is
-#:      replaced, never written through, so a shared template is not touched.
+#:   1. copies the old control.dat of the directory (a symbolic link, e.g. to
+#:      the templates, is followed) to control.orig. control.orig is never
+#:      overwritten; if it exists, an old file with settings not saved yet
+#:      goes to control.orig.1, control.orig.2, ...
+#:   2. copies RESTART_TEMPLATE into the directory as control.dat (a regular
+#:      file; a link is replaced, never written through), identical to the
+#:      template except for the initial-iteration value (RESTART_KEY /
+#:      RESTART_VALUE_INDEX), which is set to the iteration found.
 #: Nothing else in the run directory is changed. Directories whose name ends
 #: with MOD_REPAIR_SUFFIX (created by REPAIR) are skipped: they are meant to
 #: start afresh from their new iteration-0 model. Off by default since it
 #: rewrites control.dat in every run directory.
 MOD_RESTART = True
+
+#: The control file with the parameter settings of the restarted runs. All
+#: run directories get these settings. If the control.dat of the runs is a
+#: LINK to this very file, editing it in place also changes what the old
+#: control.dat "was": to keep the previous settings, put the new ones in a
+#: file of their own (e.g. templates/control_restart.dat) and name it here.
+RESTART_TEMPLATE = ENSEMBLE_DIR + "templates/control.dat"
 
 #: Which iteration a run is restarted from. Only iterations > 0 listed in the
 #: convergence file are considered, and only those with a complete model:
@@ -444,7 +469,8 @@ RESTART_FROM = "best"
 #: directories ending in MOD_REPAIR_SUFFIX are still left alone.
 RESTART_UNCONDITIONAL = True
 
-#: The control file and the name its original content is saved under.
+#: The control file of the run directories and the name its old content is
+#: saved under.
 RESTART_CONTROL_FILE = "control.dat"
 RESTART_ORIG_NAME    = "control.orig"
 
@@ -476,7 +502,7 @@ _MOD_PLOT_FORMATS = (
     [MOD_PLOT_FORMAT] if isinstance(MOD_PLOT_FORMAT, str) else list(MOD_PLOT_FORMAT)
 )
 
-MOD_DPI            = 200   # figure DPI (raster formats only)
+MOD_DPI            = 400   # figure DPI (raster formats only)
 MOD_TICK_FONTSIZE  = 8
 MOD_LABEL_FONTSIZE = 9
 
@@ -735,60 +761,129 @@ def select_restart_iteration(rows, d, mode="last", check_files=True):
     return dict(numit=numit, nrms=usable[numit], note=note)
 
 
+def _ctl_read(path):
+    """Content of a control file; latin-1 and newline="" keep every byte."""
+    with open(path, "r", encoding="latin-1", newline="") as fh:
+        return fh.read()
+
+
+def _ctl_masked(text, key, index):
+    """``text`` with the initial-iteration value blanked (unchanged if there is
+    none): equal results mean equal settings."""
+    lines = text.split("\n")
+    try:
+        i, a, b, _, _ = locate_restart_value(lines, key, index)
+    except ValueError:
+        return text
+    lines[i] = lines[i][:a] + "\0" + lines[i][b:]
+    return "\n".join(lines)
+
+
+def save_old_control(ctl, orig, new_text, key, index):
+    """Keep the control file ``ctl`` before it is replaced by ``new_text``.
+
+    It is copied to ``orig`` if that does not exist. Otherwise it is copied to
+    ``orig``.<n> (first free n >= 1), but only if its settings (all but the
+    initial-iteration value) are neither those of ``new_text`` nor saved
+    already. Returns the name of the file written, or None.
+    """
+    target = orig
+    if os.path.lexists(orig):
+        mine = _ctl_masked(_ctl_read(ctl), key, index)
+        saved = [orig]
+        n = 1
+        while os.path.lexists(f"{orig}.{n}"):
+            saved.append(f"{orig}.{n}")
+            n += 1
+        if mine == _ctl_masked(new_text, key, index) or any(
+                os.path.isfile(p) and _ctl_masked(_ctl_read(p), key, index) == mine
+                for p in saved):
+            return None
+        target = f"{orig}.{n}"
+    shutil.copyfile(ctl, target)         # content of the target if ctl is a link
+    shutil.copymode(ctl, target)
+    return os.path.basename(target)
+
+
 def apply_restart(d, numit, key, index, maxiter_index=None,
                   control_file="control.dat", orig_name="control.orig",
-                  dry_run=False):
-    """Set the initial iteration in the control file of run directory ``d``.
+                  dry_run=False, *, template):
+    """Write the control file of a restart into run directory ``d``.
 
-    1. The content of ``control_file`` (a symbolic link is followed) is
-       copied to ``orig_name`` unless that exists already, so the first
-       original is never overwritten.
-    2. ``control_file`` is rewritten with the value token set to ``numit`` --
-       through a temporary file that is renamed over ``control_file``. If
-       ``control_file`` is a symbolic link, the rename replaces the LINK; the
-       file it pointed to (a shared template) is neither written nor changed.
-       The result is a regular file with the permissions of the old one plus
-       owner-write.
-    Nothing is written if the value already equals ``numit`` or ``dry_run``.
+    1. The new content is that of ``template`` with the initial-iteration value
+       set to ``numit``.
+    2. The old ``control_file`` of ``d`` (a symbolic link is followed) is saved
+       by save_old_control(): ``orig_name``, never overwritten, then
+       ``orig_name``.1, .2, ...
+    3. The new content is written to ``control_file`` through a temporary file
+       that is renamed over it. If ``control_file`` is a symbolic link, the
+       rename replaces the LINK; the file it pointed to is not changed. The
+       result is a regular file with the permissions of the template plus
+       owner-write. The template is only read.
+    Nothing is written if ``control_file`` has that content already, or with
+    ``dry_run``.
 
-    Returns dict(action, old, new, was_link, orig_made, warn); ``action`` is
-    "written", "unchanged" or "dry-run". Raises ValueError (control file
-    missing or without a usable keyword) or OSError.
+    Returns dict(action, old, new, was_link, saved, missing, changed,
+    linked_template, warn): ``action`` is "written", "unchanged" or "dry-run";
+    ``old`` / ``new`` the initial iteration before ("-" if it cannot be read)
+    and after; ``saved`` the name the old file was copied to (or None);
+    ``missing`` there was no readable old file; ``changed`` its settings differ
+    from the new ones beyond the initial iteration; ``linked_template`` it was
+    a link to the template. Raises ValueError (template missing or without a
+    usable keyword, ``control_file`` a directory or the template itself) or
+    OSError.
     """
     ctl = os.path.join(d, control_file)
     orig = os.path.join(d, orig_name)
-    if not os.path.exists(ctl):
-        raise ValueError(f"{control_file} not found"
-                         + (" (broken symbolic link)" if os.path.islink(ctl) else ""))
-    # latin-1 round-trips any byte, newline="" keeps CR/LF exactly as found
-    with open(ctl, "r", encoding="latin-1", newline="") as fh:
-        lines = fh.read().split("\n")
-    i, a, b, old, maxv = locate_restart_value(lines, key, index, maxiter_index)
+    if not os.path.isfile(template):
+        raise ValueError(f"template {template} not found")
+    lines = _ctl_read(template).split("\n")
+    try:
+        i, a, b, _, maxv = locate_restart_value(lines, key, index, maxiter_index)
+    except ValueError as exc:
+        raise ValueError(f"template {template}: {exc}")
     new = str(int(numit))
+    lines[i] = lines[i][:a] + new + lines[i][b:]
+    text = "\n".join(lines)
     warn = None
     if maxv is not None and maxv <= int(numit):
         warn = (f"maximum iteration {maxv} <= start iteration {new}: the "
                 f"restarted run would not iterate")
+
+    if os.path.isdir(ctl):
+        raise ValueError(f"{control_file} is a directory")
     was_link = os.path.islink(ctl)
-    res = dict(action="unchanged", old=old, new=new, was_link=was_link,
-               orig_made=False, warn=warn)
-    if old == new:
+    if not was_link and os.path.realpath(ctl) == os.path.realpath(template):
+        raise ValueError(f"{control_file} of this directory is the template itself")
+    old_text = _ctl_read(ctl) if os.path.isfile(ctl) else None
+    old = "-"
+    if old_text is not None:
+        try:
+            old = locate_restart_value(old_text.split("\n"), key, index)[3]
+        except ValueError:
+            pass
+    res = dict(action="unchanged", old=old, new=new, was_link=was_link, saved=None,
+               missing=old_text is None,
+               changed=(old_text is not None
+                        and _ctl_masked(old_text, key, index)
+                        != _ctl_masked(text, key, index)),
+               linked_template=(was_link and old_text is not None
+                                and os.path.samefile(ctl, template)),
+               warn=warn)
+    if old_text == text:
         return res
     if dry_run:
         res["action"] = "dry-run"
         return res
 
-    if not os.path.lexists(orig):
-        shutil.copyfile(ctl, orig)       # content of the target if ctl is a link
-        shutil.copymode(ctl, orig)
-        res["orig_made"] = True
+    if old_text is not None:
+        res["saved"] = save_old_control(ctl, orig, text, key, index)
 
-    lines[i] = lines[i][:a] + new + lines[i][b:]
     tmp = ctl + ".tmp_restart"
     try:
         with open(tmp, "w", encoding="latin-1", newline="") as fh:
-            fh.write("\n".join(lines))
-        shutil.copymode(ctl, tmp)        # mode of the old file / link target
+            fh.write(text)
+        shutil.copymode(template, tmp)
         os.chmod(tmp, os.stat(tmp).st_mode | stat.S_IWUSR)
         os.replace(tmp, ctl)             # replaces a link itself, not its target
     except BaseException:
@@ -1067,7 +1162,7 @@ if MOD_REPAIR:
         print(f"REPAIR: {_n_repaired}/{len(_non_converged)} "
               f"non-converged directory/ies repaired.")
 
-# --- (4) RESTART - control.dat of every run directory -> last iteration -----
+# --- (4) RESTART - control.dat from the templates for every run directory ---
 # Runs after REPAIR on purpose: REPAIR copies the directories as they are, so
 # a _restart copy made in this run still has the original control.dat.
 restart_log = []      # one dict per scanned directory (report)
@@ -1078,6 +1173,7 @@ if MOD_RESTART:
              if RESTART_UNCONDITIONAL else "")
           + f", keyword {RESTART_KEY} (value #{RESTART_VALUE_INDEX})"
           + ("  --  DRY RUN, nothing is written" if RESTART_DRY_RUN else "") + " ...")
+    print(f"RESTART: {RESTART_CONTROL_FILE} taken from {RESTART_TEMPLATE}")
     for c in conv_list:
         _ent = dict(label=c["label"], status=c["status"], numit=None,
                     old=None, new=None, result="", note="")
@@ -1101,15 +1197,23 @@ if MOD_RESTART:
                         c["dir"], _sel_r["numit"], RESTART_KEY,
                         RESTART_VALUE_INDEX, RESTART_MAXITER_INDEX,
                         control_file=RESTART_CONTROL_FILE,
-                        orig_name=RESTART_ORIG_NAME, dry_run=RESTART_DRY_RUN)
+                        orig_name=RESTART_ORIG_NAME, dry_run=RESTART_DRY_RUN,
+                        template=RESTART_TEMPLATE)
                 except (ValueError, OSError) as _e:
                     _ent.update(result="FAILED", note=str(_e))
                 else:
                     _notes = [n for n in (_sel_r["note"], _res["warn"]) if n]
-                    if _res["was_link"]:
+                    if _res["missing"]:
+                        _notes.append(f"no readable old {RESTART_CONTROL_FILE}")
+                    elif _res["changed"]:
+                        _notes.append("settings differ from the old file")
+                    if _res["linked_template"]:
+                        _notes.append(f"{RESTART_CONTROL_FILE} was a link to the "
+                                      f"template (old = its present content)")
+                    elif _res["was_link"]:
                         _notes.append(f"{RESTART_CONTROL_FILE} was a link")
-                    if _res["orig_made"]:
-                        _notes.append(f"{RESTART_ORIG_NAME} written")
+                    if _res["saved"]:
+                        _notes.append(f"old file saved as {_res['saved']}")
                     _ent.update(old=_res["old"], new=_res["new"],
                                 result=_res["action"], note="; ".join(_notes))
         _msg = f"  RESTART: {c['label']:<28s} {_ent['result']:<9s}"
@@ -1156,11 +1260,12 @@ fem.append_scan_report(_scan_md, _summary_path, __file__)
 # its own file in ENSEMBLE_DIR (never over the scan-report fallback file).
 if MOD_RESTART and restart_log:
     _rl = ["", "## RESTART report", "",
+           f"{RESTART_CONTROL_FILE} copied from {RESTART_TEMPLATE}. "
            f"Initial iteration set from the {RESTART_FROM} iteration"
            + (" (UNCONDITIONAL: model files not required)"
               if RESTART_UNCONDITIONAL else "")
            + f"; keyword {RESTART_KEY}, value token #{RESTART_VALUE_INDEX}; "
-           f"original saved as {RESTART_ORIG_NAME}"
+           f"old file saved as {RESTART_ORIG_NAME}"
            + (" (DRY RUN: nothing was written)." if RESTART_DRY_RUN else "."),
            "",
            "| directory | status | result | iteration | "
