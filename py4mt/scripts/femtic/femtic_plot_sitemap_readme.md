@@ -332,7 +332,8 @@ Only sites with data (of the chosen `DATATYPES`) in the results file are mapped.
   hold pickled objects: use only files that you trust.
 
 **Errors.** Those of the data; `DIM_ERROR_PERCENT` replaces them by a percentage of
-\|Z\|; `DIM_MISSING_ERROR_PERCENT` applies to input files without errors. Large
+max(\|Re\|, \|Im\|) of each impedance element (`dimens_readme.md`);
+`DIM_MISSING_ERROR_PERCENT` applies the same to input files without errors. Large
 errors turn WAL classes into "undetermined" or simpler classes, small ones into
 3-D classes: look at the class maps together with the errors that went in.
 
@@ -469,7 +470,7 @@ components) stretch it, set `NRMS_VMAX` (for the Krafla data 3.0 shows the struc
 |---|---|---|
 | `DIM_SOURCE` | `"results"` | observed impedances of the results file, or EDI directory / files / `.npz` (path or list) |
 | `DIM_PAGE` | `"all"` | `"all"`: a figure per measure; `"band"`: per measure and band |
-| `DIM_ERROR_PERCENT` | `None` | errors as percentage of \|Z\| instead of those of the data |
+| `DIM_ERROR_PERCENT` | `None` | percentage errors per element (see "Errors") instead of those of the data |
 | `DIM_MISSING_ERROR_PERCENT` | `5.0` | the same for input files without errors; `None` = stop |
 | `DIM_THRESHOLD`, `DIM_Q_THRESHOLD` | `0.15`, `0.10` | WAL thresholds (I3 - I7; Q) |
 | `DIM_PT_BETA_THRESHOLD`, `DIM_PT_ELLIPTICITY_THRESHOLD` | `3.0`, `0.1` | phase tensor class: 3D if \|beta\| [deg] above the first; else 2D if the ellipticity is above the second; else 1D |
@@ -1122,5 +1123,6 @@ no network where the script was written.
 | 2026-11-28 | Claude Sonnet 5.5 (Anthropic) | Halos off by default (`PROFILE_HALO`, `LINE_HALO` `False`; new `MAP_HALO` `False` for site names, scale bar and DEM credit). New `SITE_MEASURES`, `DISTORTION_FILE`, `MEASURE_SCALES`, `--measures`: maps and tables of the fit measures (`misfit_measures.py`) and of the galvanic distortion strength `\|C - I\|`. With `SHOW = False` every figure is closed once saved. AI-generated, review before use. Checked with synthetic data only (see "Verification performed"). |
 
 | 2026-11-28 | Claude Sonnet 5.5 (Anthropic) | Dimensionality of the observed impedances (new module `dimens.py`): measures `dim`, `ptdim`, `ptskew`, `ellipt`, `swift`, `bahr`, settings `DIM_*`, `--dim-source`, tables `_dimensionality.*`, class colour bar. Outputs of the other measures unchanged. AI-generated, review before use. Checked with made-up and sample data and a stand-in results reader only. |
+| 2026-11-28 | Claude Sonnet 5.5 (Anthropic) | Wording only: `DIM_ERROR_PERCENT` is a percentage of max(\|Re\|, \|Im\|) of each element, not of \|Z\|. AI-generated, review before use. |
 
 Author: Volker Rath (DIAS)

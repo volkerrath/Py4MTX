@@ -444,6 +444,10 @@ Changelog
             other measures are unchanged. Tested with synthetic and sample
             data through a stand-in for the HDF5 results reader (h5py not
             installed); not run on a real results file.
+
+2026-11-28  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            (c) Wording only: DIM_ERROR_PERCENT is a percentage of
+            max(|Re|, |Im|) of each element, not of |Z|.
 """
 from __future__ import annotations
 
@@ -564,7 +568,7 @@ DIM_SOURCE: Union[str, Sequence[str]] = "results"   # "results": the observed im
                                       # (relative to WORK_DIR; names = site names of site.dat)
 DIM_PAGE: str = "all"                 # one figure per measure with a panel per band ("all"),
                                       # or one figure per measure and band ("band")
-DIM_ERROR_PERCENT: Optional[float] = None   # error in percent of |Z| instead of the data errors
+DIM_ERROR_PERCENT: Optional[float] = None   # percent errors per element instead of the data errors
 DIM_MISSING_ERROR_PERCENT: Optional[float] = 5.0   # DIM_SOURCE files without errors; None = stop
 DIM_THRESHOLD: float = 0.15           # WAL invariants I3 - I7
 DIM_Q_THRESHOLD: float = 0.10         # WAL invariant Q
@@ -4531,7 +4535,7 @@ def run(cfg: Dict[str, Any]) -> int:
                  f"WAL thresholds {cfg['DIM_THRESHOLD']:g} (I3-I7), {cfg['DIM_Q_THRESHOLD']:g} "
                  f"(Q); phase tensor thresholds |beta| {cfg['DIM_PT_BETA_THRESHOLD']:g} deg, "
                  f"ellipticity {cfg['DIM_PT_ELLIPTICITY_THRESHOLD']:g}",
-                 f"errors: {cfg['DIM_ERROR_PERCENT']:g} percent of |Z|"
+                 f"errors: {cfg['DIM_ERROR_PERCENT']:g} percent per element (rule of dimens)"
                  if cfg["DIM_ERROR_PERCENT"] is not None else "errors: those of the data",
                  "angles in the .csv and .npz files refer to the x axis of the data"]
         if cfg["DIM_OPTIONS"]:

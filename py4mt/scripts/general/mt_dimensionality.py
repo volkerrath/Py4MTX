@@ -46,6 +46,9 @@ Changelog
 2026-11-28  Claude Sonnet 5.5 (Anthropic): initial version. Replaces the
             driver mt_dimens.py: EDI files and .npz collections, phase tensor
             classes, skews, survey summary in .txt, .csv and .npz.
+2026-11-28  Claude Sonnet 5.5 (Anthropic): (b) corrected the description of
+            the percentage errors in the summary head (they refer to
+            max(|Re|, |Im|) of each element, not to |Z|).
 """
 
 from __future__ import annotations
@@ -92,7 +95,7 @@ SITE_NPZ_SUFFIX = "_dim"             # file name: <site><suffix>.npz
 WALDIM_TABLES = True                 # tables for mt_kmz_waldim.py
 
 # --- errors ------------------------------------------------------------------
-ERROR_PERCENT = None                 # number: use instead of the data errors
+ERROR_PERCENT = None                 # percent: replaces the data errors
 MISSING_ERROR_PERCENT = 5.0          # for sites without errors; None: stop
 
 # --- WAL classification ------------------------------------------------------
@@ -156,11 +159,13 @@ def settings_lines(inputs: Any) -> List[str]:
     """The settings, for the head of the summary file."""
     items = inputs if isinstance(inputs, list) else [inputs]
     lines = ["input: " + str(item) for item in items]
-    errors = (f"{ERROR_PERCENT} percent of |Z| for all sites"
+    part = "max(Re, Im)" if WALDIM_COMPAT else "max(|Re|, |Im|)"
+    percent = f"percent of {part} of each element"
+    errors = (f"{ERROR_PERCENT} {percent}, all sites"
               if ERROR_PERCENT is not None else
               "from the data; sites without errors: "
               + ("stop" if MISSING_ERROR_PERCENT is None else
-                 f"{MISSING_ERROR_PERCENT} percent of |Z|"))
+                 f"{MISSING_ERROR_PERCENT} {percent}"))
     lines += [
         "errors: " + errors,
         f"WAL thresholds: {THRESHOLD} (I3-I7), {Q_THRESHOLD} (Q); "

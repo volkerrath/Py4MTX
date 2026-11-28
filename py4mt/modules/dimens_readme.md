@@ -7,10 +7,29 @@ Author of this module: Claude (Anthropic), model Claude Sonnet 5.5, generated
 2026-11-28. The code is AI-generated and should be reviewed before production
 use. Original Fortran code (WAL part): A. Marti, P. Queralt and J. Ledo.
 
-Requires Python 3 and NumPy. Reading EDI paths additionally needs
-`data_proc.load_edi` from py4mt (or any function passed as `loader`).
+Script on top of it: `mt_dimensionality.py` (see
+`mt_dimensionality_readme.md`). Maps: `femtic_plot_sitemap.py`.
+
 Until 2026-11-28 the module was called `waldim.py` (script `mt_waldim.py`,
 then `mt_dimens.py`): delete these older files.
+
+Contents: [Files](#files),
+[Requirements and installation](#requirements-and-installation),
+[Quick start](#quick-start), [Functions](#functions),
+[Parameters](#parameters), [Input](#input), [Output](#output),
+[Indicators](#indicators), [Bands](#bands),
+[Time convention](#time-convention),
+[Why undetermined, and how stable is a class](#why-undetermined-and-how-stable-is-a-class),
+[One npz file per site](#one-npz-file-per-site),
+[Survey summary](#survey-summary), [WALDIM tables](#waldim-tables),
+[Method of the WAL classification](#method-of-the-wal-classification-as-in-the-source),
+[`waldim_compat`](#waldim_compat),
+[Source errors corrected in both modes](#source-errors-corrected-in-both-modes),
+[Other differences from the Fortran](#other-differences-from-the-fortran),
+[Messages](#messages), [Limitations](#limitations),
+[Observations on py4mt](#observations-on-py4mt-commit-21807c5-nothing-was-changed-there),
+[Verification](#verification-2026-11-28), [Not ported](#not-ported),
+[References](#references), [Changelog](#changelog).
 
 ## Files
 
@@ -25,6 +44,20 @@ then `mt_dimens.py`): delete these older files.
 | py4mt/scripts/femtic/femtic_plot_sitemap_readme.md | notes on that script |
 | tests/test_dimens.py | pytest suite of the module |
 | tests/check_against_fortran.py | cross-check with the Fortran source |
+
+## Requirements and installation
+
+- Python 3 with NumPy. Tests run with Python 3.13 and NumPy 2.5; the files also
+  compile with Python 3.11.
+- To read EDI files: the py4mt module `data_proc` (`load_edi`) and what it
+  imports, or your own function passed as `loader`. Data dicts and `.npz` files
+  need NumPy only.
+- Install: copy `dimens.py`, `dimens_readme.md` and `dimens.bib` to
+  `<py4mtx>/py4mt/modules/` and have that folder on `sys.path`, for example
+
+```
+export PYTHONPATH=$PY4MTX_ROOT/py4mt/modules:$PYTHONPATH
+```
 
 ## Quick start
 
@@ -57,162 +90,128 @@ res = classify_dimensionality(make_collection("edi/"),
 res = classify_dimensionality(data, error_percent=5.0)   # ignore Z_err
 ```
 
-## Indicators
+## Functions
 
-### WAL class (per frequency and band)
+| function | purpose | writes files |
+|---|---|---|
+| `classify_dimensionality(sites, ...)` | all indicators, per site | no |
+| `summarise_band(result, members, ...)` | summary of one site over chosen rows | no |
+| `site_parameters(result)` | one site as a flat dict | no |
+| `save_site_npz(results, directory, ...)` | one `.npz` per site | yes |
+| `survey_summary(results)` | band summaries as (site, band) arrays | no |
+| `write_summary(results, directory, ...)` | summary as `.txt`, `.csv`, `.npz` | yes |
+| `write_results(results, root)` | WALDIM `_DIM_` and `_BANDCLASS_` tables | yes |
 
-| code | name | meaning | parameters |
-|---|---|---|---|
-| 0 | undetermined | no class could be assigned | - |
-| 1 | 1D | 1D | - |
-| 2 | 2D | 2D | strike (a) |
-| 3 | 3D/2Dtw | 3D/2D, twist only | strike (b), twist, shear |
-| 4 | 3D/2D | 3D/2D, general galvanic distortion | strike (b), twist, shear |
-| 5 | 3D | 3D | - |
-| 6 | 3D/2Ddiag | diagonally distorted case | - |
-| 7 | 3D/1D2D | galvanic distortion, strike not recoverable | - |
-| 8 | ANIS-HINT1 | anisotropy hint (source: "over homogeneous") | strike (a) |
-| 9 | ANIS-HINT2 | anisotropy hint (source: "over 2D") | strike (b) |
+`results` is the dict returned by `classify_dimensionality`; `result` is one of
+its values. Options after `*` must be given by name. Existing files are
+overwritten.
 
-(a) mean of the strikes from the real and the imaginary part; (b) strike from
-the distortion decomposition. Apparent resistivity and phase (from I1 and I2)
-are given for all classes. In band averages, class 3 counts as class 4.
+### classify_dimensionality
 
-### Phase tensor
+```
+classify_dimensionality(sites, *, threshold=0.15, q_threshold=0.10,
+    error_percent=None, missing_error_percent=None, bands=False,
+    bands_per_decade=1.0, band_edges=None, band_domain="period",
+    n_realizations=100, seed=0, waldim_compat=False,
+    stability_thresholds=(0.10, 0.12, 0.18, 0.20), n_bootstrap=0,
+    pt_beta_threshold=3.0, pt_ellipticity_threshold=0.1, ft_convention="auto",
+    use_filename_as_station=True, edi_options=None, loader=None)
+```
 
-Phi = X^-1 Y with Z = X + iY (Caldwell et al. 2004; see also Booker 2014).
+Returns `{site name: result}`. See "Input", "Parameters" and "Output".
 
-| key | definition |
+### summarise_band
+
+```
+summarise_band(result, members, *, waldim_compat=None)
+```
+
+`members` are row numbers (positions in `result["period"]`); the list may be
+empty. Returns the dict of one band (see "Bands") without the band edges.
+`waldim_compat=None` takes the setting of the site; with True the rows should be
+consecutive.
+
+```python
+import numpy as np
+from dimens import classify_dimensionality, summarise_band
+
+res = classify_dimensionality("edi/DELTA_20.edi")
+site = res["DELTA_20"]
+rows = np.flatnonzero((site["period"] > 0.001) & (site["period"] < 0.1))
+band = summarise_band(site, rows)
+print(band["class_name"], band["n_periods"], band["pt_abs_beta_deg"])
+```
+
+### site_parameters, save_site_npz
+
+```
+site_parameters(result)
+save_site_npz(results, directory, *, suffix="_dim")
+```
+
+`site_parameters` returns the dict that `save_site_npz` stores (see "One npz
+file per site"). `save_site_npz` creates the directory and returns the paths. It
+raises `ValueError`, before writing, if two sites get the same file name (case is
+ignored).
+
+### survey_summary, write_summary
+
+```
+survey_summary(results)
+write_summary(results, directory, *, name="mt_dimensionality", header=())
+```
+
+All sites need the same bands, or none has bands. `write_summary` creates the
+directory and returns the three paths; `header` is a list of extra lines for the
+top of the text file. See "Survey summary".
+
+### write_results
+
+```
+write_results(results, root)
+```
+
+`root` is the output path without ending; its directory must exist. All sites
+need the same `threshold`. Returns one path, or two if the results hold bands.
+
+### Constants
+
+| name | content |
 |---|---|
-| `pt`, `pt_err` | tensor and standard deviations, (m,2,2), data coordinates |
-| `pt_phimax_deg`, `pt_phimin_deg` | principal phases; Phi_min keeps its sign (negative if det(Phi) < 0) |
-| `pt_alpha_deg` | atan2(P12 + P21, P11 - P22) / 2 + rot |
-| `pt_beta_deg` | atan2(P12 - P21, P11 + P22) / 2 (skew angle) |
-| `pt_azimuth_deg` | major axis, alpha - beta (including rot), [0, 180) |
-| `pt_ellipticity` | (max - min) / (max + min) of the principal values |
-| `pt_class` | 0 undefined, 1 1D, 2 2D, 3 3D |
+| `CLASS_NAMES` | WAL class code (0 to 9) to name |
+| `PT_CLASS_NAMES` | phase tensor class code (0 to 3) to name |
+| `REASON_NAMES` | reason code (0 to 3) to name |
+| `NO_DATA`, `NO_DATA_NAME` | -1, "no data" (empty band) |
+| `INVARIANT_NAMES` | columns of `invariants` |
+| `STABILITY_THRESHOLDS`, `PT_BETA_THRESHOLD`, `PT_ELLIPTICITY_THRESHOLD` | defaults |
+| `FT_CONVENTIONS` | "auto", "e+iwt", "e-iwt" |
 
-Class: 3D if |beta| > `pt_beta_threshold` (3 deg); else 2D if the ellipticity
-> `pt_ellipticity_threshold` (0.1); else 1D. **The threshold applies to |beta|,
-not to 2 |beta|** (the defaults are those of the constants of
-`mt_calc_ptdim.py` in py4mt). A band gets the most frequent class (the higher
-one in a tie). These thresholds ignore the errors: noisy data look 3D.
+## Parameters
 
-### Skews
+All keywords of `classify_dimensionality`. Last column: counterpart in the
+`param.cfg` file of WALDIM.
 
-With S1 = Zxx + Zyy, S2 = Zxy + Zyx, D1 = Zxx - Zyy, D2 = Zxy - Zyx and
-[a, b] = Re a Im b - Im a Re b:
-
-- `swift_skew` = |S1| / |D2| (Swift 1967)
-- `bahr_skew` = sqrt(|[D1, S2] - [S1, D2]|) / |D2| (Bahr 1988, 1991)
-
-They are reported without a class. A tensor with D2 near 0 (for example a
-purely diagonal one) has very large values.
-
-### Errors of the new indicators
-
-`..._err` of the phase tensor and skews are standard deviations over
-`n_realizations` noisy tensors (angle differences modulo 180 deg). Near a
-singular tensor they are large and unreliable.
-
-## Time convention
-
-The WAL classes, strikes, twist, shear, phases and skews are the same for
-exp(+iwt) and exp(-iwt) data. The **phase tensor is not**: it needs phases of Zxy
-in the first quadrant (exp(+iwt)). For exp(-iwt) data the plain formula gives
--Phi and |beta| near 90 deg. `load_edi` of py4mt stores exp(-iwt) as its
-standard, but the sample files differ: Phoenix2025.edi arrives as exp(-iwt),
-BONN_22_synth_proc.edi, DELTA_20.edi and Metronix.edi as exp(+iwt) (read with
-`manufacturer="metronix"`).
-
-`ft_convention="auto"` (default) takes for each site the sign of the trace of
-Phi at most frequencies and conjugates exp(-iwt) data for the phase tensor.
-The result is reported in `pt_ft_convention` and `pt_ft_agreement` (share of
-frequencies that agree; 0.94 for Phoenix2025, 1.0 for the other three). A low
-agreement means data near the quadrant limits, errors or mixed conventions: set
-`ft_convention` yourself then. The Monte Carlo errors of the WAL part differ
-marginally between the two conventions (other random signs).
-
-`data_proc.compute_pt` applies X^-1 Y to the stored Z, so for exp(-iwt) data
-it returns -Phi (see "Observations on py4mt").
-
-## Why undetermined, and how stable is a class
-
-**Reason codes** (`reason_id`, `reason_name`, `reason_counts`):
-
-| code | name | meaning |
-|---|---|---|
-| 0 | classified | - |
-| 1 | bias test | true and Monte Carlo mean of one of I3 ... I6 differ by more than a standard deviation |
-| 2 | error bars | one of I3 ... I6 cannot be decided against the threshold within its error |
-| 3 | no rule | the combination of flags has no class |
-
-`flags` (m,5) shows I3 ... I7 below (0) or above (1) the threshold, -1 undecided.
-
-**Thresholds** (`stability_thresholds`, default 0.10, 0.12, 0.18, 0.20 plus the
-one in use): `class_by_threshold` (m,k) and `threshold_agreement`, the share of
-these thresholds that give the class of the run. `q_threshold` stays fixed.
-
-On the 170 frequencies of the four sample files (default settings, 5 percent
-errors for Phoenix2025): 34 undetermined (22 no rule, 10 error bars, 2 bias
-test); the class differs from that at 0.15 for 40 frequencies at 0.10, 21 at
-0.12, 27 at 0.18 and 37 at 0.20.
-
-**Bootstrap** (`n_bootstrap`, default 0): the classification is repeated with
-noise of the size of the errors added to Z. `bootstrap_agreement` is the share
-of repetitions with the class of the data.
-
-Test with synthetic data (600 tensors each of 1D, 2D, 3D/2D and 3D, 200
-repetitions, seed 5; percent of all tensors with the correct class):
-
-| noise (% of largest element) | single classification | most frequent bootstrap class |
-|---|---|---|
-| 0.5 | 98.4 | 98.5 |
-| 1 | 92.6 | 91.8 |
-| 2 | 77.0 | 68.6 |
-| 5 | 35.3 | 23.6 |
-
-(Seed 11: 98.3 / 98.4, 91.6 / 90.9, 77.0 / 68.1, 35.7 / 23.0.) At 2 percent
-noise 2D falls from 57.5 to 41.3 and 3D/2D from 58.3 to 40.2 percent.
-
-- The bootstrap majority is **not** a better estimate: the noise is added a
-  second time, which favours complex classes. `class_id` is never replaced by it.
-- The agreement is useful as a flag. Of the classified tensors, 86, 58, 36 and
-  14 percent (noise 0.5, 1, 2, 5) reach an agreement of 0.95 or more, and of
-  these 100, 99.9, 99.1 and 98.0 percent are correct (seed 11 at 5 percent: 95).
-  As a ranking of right against wrong classes it did better than
-  `threshold_agreement` (area under the ROC curve 0.98, 0.88, 0.72, 0.61
-  against 0.85, 0.66, 0.58, 0.50).
-- It is not a calibrated probability: the labels of simple structures stay
-  nearly always right even with low agreement. The main use is for "3D": at 1 to
-  2 percent noise such a label is right about 98 percent of the time with an
-  agreement of 0.95 or more, and about 16 to 24 percent otherwise.
-- Cost: about `n_bootstrap` times that of one classification (some 5 s for 2400
-  tensors and 200 repetitions here).
-
-## Parameters of `classify_dimensionality`
-
-| keyword | default | WALDIM param.cfg equivalent |
-|---|---|---|
-| threshold | 0.15 | threshold for I3 to I7 |
-| q_threshold | 0.10 | Q threshold |
-| error_percent | None | error percentage (all sites) |
-| missing_error_percent | None | the same, only for sites without errors |
-| bands | False | average in bands |
-| bands_per_decade | 1.0 | number of bands per decade |
-| band_edges | None | replaces min/max period |
-| band_domain | "period" | - |
-| n_realizations | 100 | fixed to 100 in the source |
-| seed | 0 | clock-seeded in the source |
-| waldim_compat | False | - |
-| stability_thresholds | (0.10, 0.12, 0.18, 0.20) | - |
-| n_bootstrap | 0 | - |
-| pt_beta_threshold | 3.0 | - |
-| pt_ellipticity_threshold | 0.1 | - |
-| ft_convention | "auto" | - |
-| use_filename_as_station | True | - |
-| edi_options | None | EDI reading |
-| loader | None | - |
+| keyword | default | meaning | WALDIM |
+|---|---|---|---|
+| `threshold` | 0.15 | limit of the invariants I3 to I7, 0 to 1 | threshold |
+| `q_threshold` | 0.10 | limit of Q, 0 to 1 | Q threshold |
+| `error_percent` | None | ignore `Z_err`; standard error = this percentage of max(\|Re\|, \|Im\|) of each element, all sites | error percentage |
+| `missing_error_percent` | None | the same, only for sites without errors; None: such a site raises an error | - |
+| `bands` | False | also summarise in period bands | band option |
+| `bands_per_decade` | 1.0 | bands per decade; edges at 10**(k/n), common to all sites | bands per decade |
+| `band_edges` | None | own edges (switches banding on, overrides `bands_per_decade`) | min/max period |
+| `band_domain` | "period" | `band_edges` in s ("period") or Hz ("frequency") | - |
+| `n_realizations` | 100 | noisy tensors for the bias test and the errors, at least 2 | fixed to 100 |
+| `seed` | 0 | random seed, used afresh for each site; None: not reproducible | from the clock |
+| `waldim_compat` | False | True: rules of WALDIM 1.2 (see "waldim_compat") | - |
+| `stability_thresholds` | (0.10, 0.12, 0.18, 0.20) | also classify with these `threshold` values; None or empty: not done | - |
+| `n_bootstrap` | 0 | repetitions of the classification with added noise; 0: none | - |
+| `pt_beta_threshold` | 3.0 | deg; phase tensor class 3D if \|beta\| exceeds it | - |
+| `pt_ellipticity_threshold` | 0.1 | otherwise 2D if the ellipticity exceeds it | - |
+| `ft_convention` | "auto" | time convention of Z for the phase tensor | - |
+| `use_filename_as_station` | True | EDI files: site name from the file name, else DATAID | - |
+| `edi_options` | None | further keywords of the EDI reader | EDI reading |
+| `loader` | None | own reader `(path, **edi_options) -> dict` | - |
 
 ## Input
 
@@ -292,7 +291,70 @@ Units and conventions: rho_a = 0.2 |Z|^2 / f. Angles in degrees. Strikes include
 the strike reported with it. All errors are 1 sigma; the errors without the
 prefix `analytic_errors` are Monte Carlo standard deviations.
 
+## Indicators
+
+### WAL class (per frequency and band)
+
+| code | name | meaning | parameters |
+|---|---|---|---|
+| 0 | undetermined | no class could be assigned | - |
+| 1 | 1D | 1D | - |
+| 2 | 2D | 2D | strike (a) |
+| 3 | 3D/2Dtw | 3D/2D, twist only | strike (b), twist, shear |
+| 4 | 3D/2D | 3D/2D, general galvanic distortion | strike (b), twist, shear |
+| 5 | 3D | 3D | - |
+| 6 | 3D/2Ddiag | diagonally distorted case | - |
+| 7 | 3D/1D2D | galvanic distortion, strike not recoverable | - |
+| 8 | ANIS-HINT1 | anisotropy hint (source: "over homogeneous") | strike (a) |
+| 9 | ANIS-HINT2 | anisotropy hint (source: "over 2D") | strike (b) |
+
+(a) mean of the strikes from the real and the imaginary part; (b) strike from
+the distortion decomposition. Apparent resistivity and phase (from I1 and I2)
+are given for all classes. In band averages, class 3 counts as class 4.
+
+### Phase tensor
+
+Phi = X^-1 Y with Z = X + iY (Caldwell et al. 2004; see also Booker 2014).
+
+| key | definition |
+|---|---|
+| `pt`, `pt_err` | tensor and standard deviations, (m,2,2), data coordinates |
+| `pt_phimax_deg`, `pt_phimin_deg` | principal phases; Phi_min keeps its sign (negative if det(Phi) < 0) |
+| `pt_alpha_deg` | atan2(P12 + P21, P11 - P22) / 2 + rot |
+| `pt_beta_deg` | atan2(P12 - P21, P11 + P22) / 2 (skew angle) |
+| `pt_azimuth_deg` | major axis, alpha - beta (including rot), [0, 180) |
+| `pt_ellipticity` | (max - min) / (max + min) of the principal values |
+| `pt_class` | 0 undefined, 1 1D, 2 2D, 3 3D |
+
+Class: 3D if |beta| > `pt_beta_threshold` (3 deg); else 2D if the ellipticity
+> `pt_ellipticity_threshold` (0.1); else 1D. **The threshold applies to |beta|,
+not to 2 |beta|** (the defaults are those of the constants of
+`mt_calc_ptdim.py` in py4mt). A band gets the most frequent class (the higher
+one in a tie). These thresholds ignore the errors: noisy data look 3D.
+
+### Skews
+
+With S1 = Zxx + Zyy, S2 = Zxy + Zyx, D1 = Zxx - Zyy, D2 = Zxy - Zyx and
+[a, b] = Re a Im b - Im a Re b:
+
+- `swift_skew` = |S1| / |D2| (Swift 1967)
+- `bahr_skew` = sqrt(|[D1, S2] - [S1, D2]|) / |D2| (Bahr 1988, 1991)
+
+They are reported without a class. A tensor with D2 near 0 (for example a
+purely diagonal one) has very large values.
+
+### Errors of phase tensor and skews
+
+`..._err` of the phase tensor and skews are standard deviations over
+`n_realizations` noisy tensors (angle differences modulo 180 deg). Near a
+singular tensor they are large and unreliable.
+
 ## Bands
+
+Each entry of `result["bands"]` holds `period_min`, `period_max`, `freq_min`,
+`freq_max`, `data_period_min`, `data_period_max`, `n_periods`, `n_classified`,
+`n_averaged`, `class_id`, `class_name`, `pt_class`, `counts`, `pt_counts`,
+`reason_counts` and the values described below.
 
 - Edges lie at 10**(k / bands_per_decade), cover all data and are common to all
   sites. Each band is (period_min, period_max].
@@ -302,8 +364,8 @@ prefix `analytic_errors` are Monte Carlo standard deviations.
   ignored; the most frequent class wins and ties go to the lowest code; if 3D
   wins, another class with at least half of the classified values replaces it.
   0 means nothing classified, -1 means no data.
-- Strike, twist and shear are averaged over the frequencies of the band class
-  (classes 2, 4, 8, 9; twist and shear for class 4). By default strikes are
+- `strike_deg`, `twist_deg`, `shear_deg` are averaged over the frequencies of
+  the band class (classes 2, 4, 8, 9; twist and shear for class 4). By default strikes are
   averaged with 90 degree periodicity and shear signs are matched to the mean
   strike.
 - Phase tensor means over **all** frequencies of the band: `pt_phimax_deg`,
@@ -311,8 +373,9 @@ prefix `analytic_errors` are Monte Carlo standard deviations.
   `pt_ellipticity`.
 - Medians over all frequencies, without errors: `pt_abs_beta_deg`,
   `pt_ellipticity_median`, `swift_skew`, `bahr_skew`.
-- Also `pt_class`, `pt_counts`, `reason_counts`, and the threshold and bootstrap
-  results of the band.
+- Also `pt_class`, `pt_counts`, `reason_counts`; with the threshold test
+  `class_by_threshold` and `threshold_agreement`; with the bootstrap
+  `bootstrap_class_prob` and `bootstrap_agreement`.
 
 **Errors of the averages.** `..._err_prop` is propagated from the data errors,
 sqrt(sum err^2) / N; `..._err_scatter` is the standard error from the scatter of
@@ -321,6 +384,81 @@ two. On the sample files the scatter term was the larger one in 7 to 10 of 22
 band averages of the phase tensor angles and ellipticity: propagated errors
 alone understate the uncertainty there. With `waldim_compat=True` the errors of
 strike, twist and shear are the propagated ones.
+
+## Time convention
+
+The WAL classes, strikes, twist, shear, phases and skews are the same for
+exp(+iwt) and exp(-iwt) data. The **phase tensor is not**: it needs phases of Zxy
+in the first quadrant (exp(+iwt)). For exp(-iwt) data the plain formula gives
+-Phi and |beta| near 90 deg. `load_edi` of py4mt stores exp(-iwt) as its
+standard, but the sample files differ: Phoenix2025.edi arrives as exp(-iwt),
+BONN_22_synth_proc.edi, DELTA_20.edi and Metronix.edi as exp(+iwt) (read with
+`manufacturer="metronix"`).
+
+`ft_convention="auto"` (default) takes for each site the sign of the trace of
+Phi at most frequencies and conjugates exp(-iwt) data for the phase tensor.
+The result is reported in `pt_ft_convention` and `pt_ft_agreement` (share of
+frequencies that agree; 0.94 for Phoenix2025, 1.0 for the other three). A low
+agreement means data near the quadrant limits, errors or mixed conventions: set
+`ft_convention` yourself then. The Monte Carlo errors of the WAL part differ
+marginally between the two conventions (other random signs).
+
+`data_proc.compute_pt` applies X^-1 Y to the stored Z, so for exp(-iwt) data
+it returns -Phi (see "Observations on py4mt").
+
+## Why undetermined, and how stable is a class
+
+**Reason codes** (`reason_id`, `reason_name`, `reason_counts`):
+
+| code | name | meaning |
+|---|---|---|
+| 0 | classified | - |
+| 1 | bias test | true and Monte Carlo mean of one of I3 ... I6 differ by more than a standard deviation |
+| 2 | error bars | one of I3 ... I6 cannot be decided against the threshold within its error |
+| 3 | no rule | the combination of flags has no class |
+
+`flags` (m,5) shows I3 ... I7 below (0) or above (1) the threshold, -1 undecided.
+
+**Thresholds** (`stability_thresholds`, default 0.10, 0.12, 0.18, 0.20 plus the
+one in use): `class_by_threshold` (m,k) and `threshold_agreement`, the share of
+these thresholds that give the class of the run. `q_threshold` stays fixed.
+
+On the 170 frequencies of the four sample files (default settings, 5 percent
+errors for Phoenix2025): 34 undetermined (22 no rule, 10 error bars, 2 bias
+test); the class differs from that at 0.15 for 40 frequencies at 0.10, 21 at
+0.12, 27 at 0.18 and 37 at 0.20.
+
+**Bootstrap** (`n_bootstrap`, default 0): the classification is repeated with
+noise of the size of the errors added to Z. `bootstrap_agreement` is the share
+of repetitions with the class of the data.
+
+Test with synthetic data (600 tensors each of 1D, 2D, 3D/2D and 3D, 200
+repetitions, seed 5; percent of all tensors with the correct class):
+
+| noise (% of largest element) | single classification | most frequent bootstrap class |
+|---|---|---|
+| 0.5 | 98.4 | 98.5 |
+| 1 | 92.6 | 91.8 |
+| 2 | 77.0 | 68.6 |
+| 5 | 35.3 | 23.6 |
+
+(Seed 11: 98.3 / 98.4, 91.6 / 90.9, 77.0 / 68.1, 35.7 / 23.0.) At 2 percent
+noise 2D falls from 57.5 to 41.3 and 3D/2D from 58.3 to 40.2 percent.
+
+- The bootstrap majority is **not** a better estimate: the noise is added a
+  second time, which favours complex classes. `class_id` is never replaced by it.
+- The agreement is useful as a flag. Of the classified tensors, 86, 58, 36 and
+  14 percent (noise 0.5, 1, 2, 5) reach an agreement of 0.95 or more, and of
+  these 100, 99.9, 99.1 and 98.0 percent are correct (seed 11 at 5 percent: 95).
+  As a ranking of right against wrong classes it did better than
+  `threshold_agreement` (area under the ROC curve 0.98, 0.88, 0.72, 0.61
+  against 0.85, 0.66, 0.58, 0.50).
+- It is not a calibrated probability: the labels of simple structures stay
+  nearly always right even with low agreement. The main use is for "3D": at 1 to
+  2 percent noise such a label is right about 98 percent of the time with an
+  agreement of 0.95 or more, and about 16 to 24 percent otherwise.
+- Cost: about `n_bootstrap` times that of one classification (some 5 s for 2400
+  tensors and 200 repetitions here).
 
 ## One npz file per site
 
@@ -375,6 +513,20 @@ d = data_proc.load_npz("out/sites/SITE_dim.npz")  # scalars as Python values
 - `<name>.npz`: the arrays of `survey_summary(results)`: per site (ns,), per
   band (nb,), per site and band (ns,nb), and counts of sites per band and class
   (nb,10) and (nb,4). Loads without pickle.
+
+Arrays in `<name>.npz`:
+
+| keys | shape |
+|---|---|
+| station, lat_deg, lon_deg, n_freq, n_dropped, error_source, pt_ft_convention, pt_ft_agreement | (ns,) |
+| site_class_counts, site_pt_class_counts | (ns,10), (ns,4) |
+| band_label, band_period_min, band_period_max | (nb,) |
+| n_periods, n_classified, class_id (-1: no data), pt_class | (ns,nb) |
+| strike_deg, twist_deg, shear_deg, pt_azimuth_deg (+ _err_deg) | (ns,nb) |
+| pt_abs_beta_deg, pt_ellipticity_median, swift_skew, bahr_skew | (ns,nb) |
+| threshold_agreement, bootstrap_agreement (if computed) | (ns,nb) |
+| class_codes, class_names; pt_class_codes, pt_class_names | (10,); (4,) |
+| class_site_counts, pt_class_site_counts (sites per band and class) | (nb,10), (nb,4) |
 
 All sites need the same bands. Without bands, each site is summarised over all
 its frequencies.
@@ -471,6 +623,47 @@ The source gives the propagated error only (see "Bands").
 - Added: phase tensor, skews, reason codes, threshold test, bootstrap, survey
   summary.
 
+## Messages
+
+**Errors** (exception, nothing is returned or written):
+
+| message (start) | cause | remedy |
+|---|---|---|
+| `<site>: no Z_err; set error_percent or ...` | data without errors | set `missing_error_percent` |
+| `<site>: Z must have shape` (also `Z_err`, `rot`) | wrong array shapes | check the data dict |
+| `<site>: unknown err_kind` | `err_kind` not "var" or "std" | correct the data dict |
+| `duplicate site name` | two inputs with one name | rename, or pass a mapping {name: input} |
+| `<name>: <path> holds N stations` / `is a directory` | a mapping entry must be one site | pass the path without a name |
+| `no EDI files in` | empty or wrong directory | check the path |
+| `neither a collection ... nor a station file` | unknown `.npz` layout | use `save_list_of_dicts_npz` or `save_npz` files |
+| `reading EDI paths needs py4mt data_proc.load_edi` | py4mt modules not found | extend `sys.path`, or pass `loader` |
+| `... must lie in [0, 1]`, `... must be >= 0` and similar | invalid parameter | see "Parameters" |
+| `band_edges ...` | edges not positive, or fewer than two | correct the edges |
+| `some sites have bands and others not`, `the bands of the sites differ` | summary of mixed results | classify all sites in one call, or give the same `band_edges` |
+| `results were computed with different thresholds` | `write_results` | classify with one `threshold` |
+| `site names ... unique` | table or file names clash | rename the sites |
+
+**Warnings** (the run goes on):
+
+| message (part) | meaning |
+|---|---|
+| `no valid frequency` | all rows were removed; check impedances and errors (a component without any valid error removes them unless `missing_error_percent` is set) |
+| `... is zero at all frequencies` | probably a missing block in the EDI file: do not use this site |
+| `no valid rotation angle, 0 is assumed` | strikes refer to the data coordinates |
+| `Z_units is ..., expected mV/km/nT` | apparent resistivity will be wrong |
+
+## Limitations
+
+- The WAL thresholds and the phase tensor thresholds are conventions; classes
+  change with them and with the errors (see above). Indicators that disagree are
+  information, not a fault: WAL uses the errors and distortion, the phase tensor
+  class does not.
+- The phase tensor is blind to galvanic distortion of the electric field; its 1D
+  or 2D refers to the regional structure.
+- No test against data of independently known dimensionality (synthetic tensors
+  and sample files only).
+- Sites are processed one after the other.
+
 ## Observations on py4mt (commit 21807c5; nothing was changed there)
 
 1. `data_proc.compute_pt` forms X^-1 Y from the stored Z. For exp(-iwt) data,
@@ -492,18 +685,6 @@ The source gives the propagated error only (see "Bands").
 5. `mt_kmz_waldim.py`, frequency mode, selects rows with `np.isclose` on
    log10(f) with rtol 1e-2, so one row can enter several frequency folders: 170
    table rows gave 225 points in 156 folders.
-
-## Limitations
-
-- The WAL thresholds and the phase tensor thresholds are conventions; classes
-  change with them and with the errors (see above). Indicators that disagree are
-  information, not a fault: WAL uses the errors and distortion, the phase tensor
-  class does not.
-- The phase tensor is blind to galvanic distortion of the electric field; its 1D
-  or 2D refers to the regional structure.
-- No test against data of independently known dimensionality (synthetic tensors
-  and sample files only).
-- Sites are processed one after the other.
 
 ## Verification (2026-11-28)
 
@@ -590,3 +771,6 @@ Not in dimens.bib (no DOI confirmed):
   summarise_band(), survey_summary(), write_summary(); script
   mt_dimensionality.py replaces mt_dimens.py; dimensionality maps in
   femtic_plot_sitemap.py. AI-generated; review before production use.
+- 2026-11-28  Claude Sonnet 5.5 (Anthropic): readme completed (requirements,
+  function reference, parameter meanings, summary arrays, messages) and
+  reordered; no change of the module.
