@@ -12,7 +12,7 @@ members and sites are collected, plotted as histograms and summarised.
 @author vrath
 @project py4mt
 @created 2026-11-13
-@modified 2026-11-14
+@modified 2026-11-27
 
 AI-GENERATED CODE NOTICE
 ------------------------
@@ -120,6 +120,10 @@ Provenance
                 members ("best", names, patterns, numbers); the file names
                 carry the members' names; PER_SITE needs two or more members.
                 AI-generated; review before production use.
+    2026-11-27  Claude Sonnet 5.5 (Anthropic)
+                FIGSIZE_PANEL is in cm (before: inch); the default
+                (9.144, 7.366) is the former (3.6, 2.9). Multiply own values
+                by 2.54. AI-generated; review before production use.
 """
 
 from __future__ import annotations
@@ -241,11 +245,11 @@ PLOT_MEMBERS = "best"
 PRINT_BEST = True
 
 # --- figure / output ------------------------------------------------------------
-#: Size in inches of one panel (axes and labels); the figure is made from it, and
-#: the title and caption are added to the height. Make it larger for large fonts
-#: (3.6 x 2.9 holds font sizes up to 12; matplotlib then warns "Tight layout not
-#: applied" for panels that are too small).
-FIGSIZE_PANEL = (3.6, 2.9)
+#: Size in cm (width, height) of one panel (axes and labels); the figure is made
+#: from it, and the title and caption are added to the height. Make it larger for
+#: large fonts (9.144 x 7.366 cm holds font sizes up to 12; matplotlib warns
+#: "Tight layout not applied" for panels that are too small).
+FIGSIZE_PANEL = (9.144, 7.366)
 #: Resolution in dpi of the raster formats (png, jpg, tif, webp); pdf, svg, eps
 #: and ps are vector formats and ignore it.
 DPI = 400
@@ -290,6 +294,11 @@ def find_member_dirs(ensemble_dir: str, ensemble_name: str) -> List[str]:
     """Sub-directories of ``ensemble_dir`` named ``ensemble_name*``, sorted by name."""
     pat = os.path.join(glob.escape(str(ensemble_dir)), glob.escape(ensemble_name) + "*")
     return sorted(d for d in glob.glob(pat) if os.path.isdir(d))
+
+
+def _figsize(size_cm) -> tuple:
+    """Figure size (width, height) given in cm, in the inches Matplotlib uses."""
+    return tuple(round(float(v) / 2.54, 6) for v in size_cm)
 
 
 def best_iteration(rows: Sequence[dict]) -> Tuple[Optional[int], Optional[float], List[Tuple[int, float]]]:
@@ -952,7 +961,7 @@ def main() -> int:
     pooled = {q: quantity_values(Cp, q, DISTORTION_KIND) for q in QUANTITIES}
     common = dict(kind=DISTORTION_KIND, bins=BINS, density=DENSITY, ranges=RANGE,
                   show_percentiles=SHOW_PERCENTILES, show_reference=SHOW_REFERENCE,
-                  panel_size=FIGSIZE_PANEL, color=HIST_COLOR, ink=INK, ink2=INK_SECONDARY,
+                  panel_size=_figsize(FIGSIZE_PANEL), color=HIST_COLOR, ink=INK, ink2=INK_SECONDARY,
                   surface=SURFACE, grid=GRID_COLOR, tick_fs=TICK_FONTSIZE,
                   label_fs=LABEL_FONTSIZE_AXES)
     kind_txt = "C = I + C'" if DISTORTION_KIND == "full" else "C'"

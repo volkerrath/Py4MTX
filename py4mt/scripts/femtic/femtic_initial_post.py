@@ -87,7 +87,7 @@ print(titstrng + "\n\n")
 
 #: Directory with the run directories; the same as ENSEMBLE_DIR of
 #: femtic_initial_prep.py.
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial/"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial_nodist/"
 #: Run directories are <ENSEMBLE_DIR><ENSEMBLE_NAME>*, as made by
 #: femtic_initial_prep.py.
 ENSEMBLE_NAME = "ini_"
@@ -322,22 +322,29 @@ np.savez_compressed(PLOT_NAME + "_best.npz",
 cm = 1 / 2.54  # cm -> inch
 fig, ax = plt.subplots(figsize=(PLOT_SIZE_CM[0] * cm, PLOT_SIZE_CM[1] * cm))
 
+
 ax.plot(logf, best, color="green", marker="o", linestyle="dashed",
         linewidth=1, markersize=7, markeredgecolor="red",
-        markerfacecolor="white", zorder=2, label="runs")
+        markerfacecolor="white", zorder=4, label="runs")
 
 if PLOT_ANNOTATE:
     for k in range(n):
-        ax.annotate(format(fill[k], ".4g"), xy=(logf[k], best[k]),
-                    xytext=(6, 6), textcoords="offset points",
-                    fontsize=FONTSIZE - 1)
+        ax.annotate(format(fill[k], ".2g"), xy=(logf[k], best[k]),
+                    xytext=(8, 8), textcoords="offset points",
+                    fontsize=FONTSIZE - 1, arrowprops=dict(
+            arrowstyle="-",
+            linewidth=0.5,
+            color="0.5",
+            shrinkA=0.1,
+            shrinkB=0.1, relpos=(0.0, 0.0),))
+        
     ax.margins(x=0.10, y=0.12)      # room for the labels at the edges
 
 ax.plot([logf[i_best]], [best[i_best]], linestyle="none",
         marker=BEST_MARKER, markersize=BEST_SIZE,
         markerfacecolor=BEST_COLOR, markeredgecolor="black", zorder=5,
         label=r"best: %s $\Omega$m, nRMS %s"
-              % (format(fill[i_best], ".3g"), format(best[i_best], ".3g")))
+              % (format(fill[i_best], ".2g"), format(best[i_best], ".2g")))
 
 if PLOT_LOG_Y:
     ax.set_yscale("log")

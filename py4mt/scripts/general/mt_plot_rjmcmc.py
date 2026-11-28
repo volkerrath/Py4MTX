@@ -17,6 +17,9 @@ Revision History:
     2024/04  V. Rath — python 3.11 / mtpy-v2
     2026/11  FIGURE_TITLE (title of the figures; Claude Sonnet 5.5, Anthropic,
              AI-generated, review before use)
+    2026/11  PLOT_SIZE: figure size in cm (before: "11x8" inch, fixed in
+             the code; Claude Sonnet 5.5, Anthropic, 2026-11-27,
+             AI-generated, review before use)
 
 @author: vrath
 Cleanup: 4 Mar 2026 by Claude (Anthropic)
@@ -49,6 +52,11 @@ titstrng = utl.print_title(
 )
 print(titstrng + "\n\n")
 
+def _figsize(size_cm) -> tuple:
+    """Figure size (width, height) given in cm, in the inches Matplotlib uses."""
+    return tuple(round(float(v) / 2.54, 6) for v in size_cm)
+
+
 # =============================================================================
 #  Configuration
 # =============================================================================
@@ -69,6 +77,7 @@ COLOR_MAP = "rainbow"
 # {station} (other braces are used as they stand); or a dict
 # {"<station>": spec, "default": spec}
 FIGURE_TITLE = "auto"
+PLOT_SIZE = (27.94, 20.32)  # [cm] width, height of the station figures
 
 PDF_CATALOG = True
 PDF_CATALOG_NAME = WORK_DIR + "Ubaye_results.pdf"
@@ -122,7 +131,7 @@ for count, filename in enumerate(result_files, start=1):
     r = pmc.Results(
         infile,
         outfile,
-        plotSizeInches="11x8",
+        plotSizeInches="x".join(f"{v:g}" for v in _figsize(PLOT_SIZE)),
         maxDepth=DEPTH_PLOT_LIM,
         resLims=RHO_PLOT_LIM,
         zLog=LOG_DEPTH,

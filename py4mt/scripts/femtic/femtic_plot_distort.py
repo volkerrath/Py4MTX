@@ -23,7 +23,7 @@ limitations), and plotted as a 2x2 grid of per-parameter maps.
 @author vrath
 @project py4mt
 @created 2026-09-13
-@modified 2026-09-13
+@modified 2026-11-27
 
 AI-GENERATED CODE NOTICE
 -------------------------
@@ -39,6 +39,18 @@ numerically (200 random positive-determinant matrices reconstructed to
 an independent reference implementation or real MT data -- see
 `_gb_decompose` for details and known limitations (negative-determinant
 sites).
+
+2026-11-27  Claude Sonnet 5.5 (Anthropic)
+              FIGSIZE and GB_FIGSIZE are in cm (before: inch); the default
+              (20.32, 17.78) and (22.86, 20.32) are the former (8, 7) and (9, 8).
+              Multiply own values by 2.54. AI-generated; review before
+              production use.
+
+2026-11-26 (km)  Claude Sonnet 5.5 (Anthropic)
+              UTM_ORIGIN_E / _N are UTM km (before: m); values that look
+              like metres raise fem.KmUnitError. Needs femtic.py of the same
+              date. Tested on synthetic files only. AI-generated; review
+              before production use.
 
 2026-11-11 (Claude Sonnet 5.5): title and colour bar settings in the form of
 all plot scripts. TITLE takes "auto" (the default text), None / False / ""
@@ -88,6 +100,12 @@ import util as utl  # noqa: F401  (imported for consistency with py4mt scripts;
                      # not called directly -- fem.utm_to_model/latlon_to_model
                      # already wrap the util.py zone-aware conversions)
 
+
+def _figsize(size_cm) -> tuple:
+    """Figure size (width, height) given in cm, in the inches Matplotlib uses."""
+    return tuple(round(float(v) / 2.54, 6) for v in size_cm)
+
+
 # =====================================================================
 # CONFIG -- user-editable parameters
 # =====================================================================
@@ -105,8 +123,8 @@ DISPLAY_COORDS = "latlon"
 
 UTM_ZONE     = 19
 UTM_NORTHERN = False            # False = southern hemisphere
-UTM_ORIGIN_E = 0.0              # UTM easting  of model origin [m] (only used for "model")
-UTM_ORIGIN_N = 0.0              # UTM northing of model origin [m] (only used for "model")
+UTM_ORIGIN_E = 0.0              # UTM easting  of model origin [km] (only used for "model")
+UTM_ORIGIN_N = 0.0              # UTM northing of model origin [km] (only used for "model")
 
 # --- distortion matrix options --------------------------------------------
 # "full"  -> plot C = C' + I   (undistorted site -> unit circle)
@@ -143,7 +161,7 @@ GB_DECOMP_ENABLE   = False
 GB_MARKER_SIZE     = 60
 GB_CMAP            = "coolwarm"
 GB_UNDEFINED_COLOR = "0.6"      # marker colour for det(C) <= 0 sites
-GB_FIGSIZE         = (9.0, 8.0)
+GB_FIGSIZE         = (22.86, 20.32)   # [cm] width, height
 GB_BASENAME_SUFFIX = "_gb"      # GB figure saved as f"{OUTPUT_BASENAME}{GB_BASENAME_SUFFIX}.{fmt}"
 
 # --- SRTM basemap ----------------------------------------------------------
@@ -159,7 +177,7 @@ BASEMAP_CMAP        = "Greys"
 BASEMAP_ALPHA       = 0.9
 
 # --- figure / output -----------------------------------------------------
-FIGSIZE             = (8.0, 7.0)
+FIGSIZE             = (20.32, 17.78)   # [cm] width, height
 DPI                 = 200
 TICK_FONTSIZE       = 8
 LABEL_FONTSIZE_AXES = 9
@@ -503,6 +521,12 @@ def _get_srtm_hillshade(bounds, target_epsg, cache_dir, product, local_file):
         return None
 
 
+def _origin_m():
+    """Model origin in UTM metres (the settings UTM_ORIGIN_E / _N are km)."""
+    return fem.utm_km_to_m(
+        UTM_ORIGIN_E, UTM_ORIGIN_N, name="UTM_ORIGIN_E / _N")
+
+
 def _plot_coords(site, display_coords):
     """Site (x, y) in plot units for the chosen DISPLAY_COORDS."""
     if display_coords == "latlon":
@@ -511,7 +535,7 @@ def _plot_coords(site, display_coords):
         return site["easting"] / 1000.0, site["northing"] / 1000.0
     if display_coords == "model":
         xm, ym = fem.utm_to_model(site["easting"], site["northing"],
-                                   UTM_ORIGIN_E, UTM_ORIGIN_N)
+                                   *_origin_m())
         return xm / 1000.0, ym / 1000.0
     raise ValueError(
         f"DISPLAY_COORDS={display_coords!r} not recognised. "
@@ -545,8 +569,8 @@ def _basemap_extent_for(display_coords, bm):
         return tuple(v / 1000.0 for v in extent)
     if display_coords == "model":
         xmin, xmax, ymin, ymax = extent
-        xmin, ymin = fem.utm_to_model(xmin, ymin, UTM_ORIGIN_E, UTM_ORIGIN_N)
-        xmax, ymax = fem.utm_to_model(xmax, ymax, UTM_ORIGIN_E, UTM_ORIGIN_N)
+        xmin, ymin = fem.utm_to_model(xmin, ymin, *_origin_m())
+        xmax, ymax = fem.utm_to_model(xmax, ymax, *_origin_m())
         return xmin / 1000.0, xmax / 1000.0, ymin / 1000.0, ymax / 1000.0
     return extent
 
@@ -617,7 +641,7 @@ def _plot_ellipse_map(sites, xs, ys, bm, display_coords, color_by,
 
     sev = np.array([_severity(s["C"], color_by) for s in sites])
 
-    fig, ax = plt.subplots(figsize=FIGSIZE)
+    fig, ax = plt.subplots(figsize=_figsize(FIGSIZE))
     _draw_basemap(ax, bm, display_coords)
 
     norm = Normalize(vmin=float(np.nanmin(sev)), vmax=float(np.nanmax(sev)))
@@ -683,7 +707,8 @@ def _plot_gb_panel(sites, xs, ys, bm, display_coords):
         ("anisotropy", "Anisotropy (split s)"),
     )
 
-    fig, axs = plt.subplots(2, 2, figsize=GB_FIGSIZE, sharex=True, sharey=True)
+    fig, axs = plt.subplots(2, 2, figsize=_figsize(GB_FIGSIZE),
+                            sharex=True, sharey=True)
     xlabel, ylabel = _axis_labels(display_coords)
 
     for ax, (key, label) in zip(axs.ravel(), panels):

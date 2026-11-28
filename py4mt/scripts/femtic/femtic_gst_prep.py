@@ -346,6 +346,20 @@ Provenance:
                 fviz.plot_data_ensemble; default "direct" / dotted; "off" =
                 as before). Needs the femtic_viz.py / data_viz.py of the same
                 date. AI-generated; review before production use.
+
+2026-11-26 (km)  Claude Sonnet 5.5 (Anthropic)
+              User settings are km throughout, UTM coordinates too (before:
+              UTM and some per-entry values in metres). Personal settings in
+              metres must be converted; values that look like metres stop
+              with an error (fem.KmUnitError). Concerns MOD_UTM_ORIGIN_E /
+              _N, MOD_SLICES / ENS_SLICES and MOD_MAP_MARKERS. The local
+              slice converter is replaced by fem.slices_km_to_m(), which
+              also converts a plane 'point' and profile entries (before:
+              left in km). Pilot-point box / coordinates, variogram range,
+              plot limits and projection distance were km already and are
+              now checked in the same way. Needs femtic.py of the same date.
+              Tested on synthetic files only. AI-generated; review before
+              production use.
 """
 
 import os
@@ -375,72 +389,55 @@ import femtic_viz as fviz
 from util import stop
 
 
-def _km_to_m(val):
+def _km_to_m(val, name="length"):
     """Convert a scalar distance in km to metres; None passes through.
 
-    Used to convert MOD_PROJECTION_DIST (and similar scalar spatial
-    config parameters, now specified in km) to the metres expected by
-    femtic_viz.py, which works in model-local/UTM metres throughout
-    (matching mesh.dat).
+    Used for MOD_PROJECTION_DIST (and similar scalar spatial config
+    parameters, given in km): femtic_viz.py works in model-local/UTM metres
+    (matching mesh.dat). A value that looks like metres raises
+    fem.KmUnitError (see fem.km_to_m).
     """
-    return None if val is None else float(val) * 1000.0
+    return fem.km_to_m(val, name=name)
 
 
-def _lim_km_to_m(lim):
-    """Convert a [min, max] km limit pair to metres; None passes through.
+def _lim_km_to_m(lim, name="limit"):
+    """Convert a km limit list to metres; None passes through.
 
-    Used to convert MOD_XLIM/MOD_YLIM/MOD_ZLIM/ENS_XLIM/ENS_YLIM/ENS_ZLIM
-    (now specified in km) to the metres expected by femtic_viz.py.
-    Also reused for MOD_PP_BBOX / MOD_PP_ROI, which are longer
-    [xmin,xmax,ymin,ymax,zmin,zmax] lists in the same model-local km
-    convention.
+    Used for MOD_XLIM / MOD_YLIM / MOD_ZLIM (and ENS_* / pilot-point boxes
+    where present), given in km. Values that look like metres raise
+    fem.KmUnitError (see fem.lim_km_to_m).
     """
-    return None if lim is None else [float(v) * 1000.0 for v in lim]
+    return fem.lim_km_to_m(lim, name=name)
 
 
-def _slices_km_to_m(slices):
-    """Convert model-local km slice coordinates (x0/y0/z0) to metres.
-
-    ``slices`` is the MOD_SLICES/ENS_SLICES list of dicts, e.g.
-    ``dict(kind="map", z0=1.0)`` or ``dict(kind="ns", x0=0.0)``. Plain
-    numeric x0/y0/z0 values (model-local km) are converted to metres;
-    (value, "latlon") tuples are left untouched since those are
-    degrees, resolved separately by fem.resolve_slice_positions().
-    None passes through.
-    """
-    if slices is None:
-        return None
-    out = []
-    for spec in slices:
-        spec = dict(spec)
-        for key in ("x0", "y0", "z0"):
-            if key in spec and isinstance(spec[key], (int, float)):
-                spec[key] = spec[key] * 1000.0
-        out.append(spec)
-    return out
-
-
-def _range_km_to_m(rng):
+def _range_km_to_m(rng, name="variogram range"):
     """Convert a scalar or (horizontal, vertical) km range to metres.
 
-    Used for MOD_VARIO_RANGE (variogram correlation length), which may be
-    a single scalar (isotropic) or a 2-tuple (horizontal, vertical).
-    None passes through.
+    Used for the variogram correlation length, which may be a single scalar
+    (isotropic) or a 2-tuple (horizontal, vertical). None passes through.
+    A value that looks like metres raises fem.KmUnitError.
     """
     if rng is None:
         return None
     if isinstance(rng, (int, float)):
-        return float(rng) * 1000.0
-    return tuple(float(v) * 1000.0 for v in rng)
+        return fem.km_to_m(rng, name=name)
+    return tuple(fem.km_to_m(v, name=name) for v in rng)
 
 
-def _coords_km_to_m(coords):
+def _coords_km_to_m(coords, name="pilot-point coordinates"):
     """Convert an (N, 3) array of km pilot-point coordinates to metres.
 
-    Used for MOD_PP_COORDS (explicit pilot-point easting/northing/depth,
-    same model-local km convention as MOD_PP_BBOX). None passes through.
+    Used for explicit pilot-point easting/northing/depth, model-local km like
+    the pilot-point box. None passes through. Values that look like metres
+    raise fem.KmUnitError.
     """
-    return None if coords is None else np.asarray(coords, dtype=float) * 1000.0
+    if coords is None:
+        return None
+    arr = np.asarray(coords, dtype=float)
+    if arr.size:
+        fem.check_km(np.nanmax(np.abs(arr)), name=name,
+                     limit=fem.KM_LIMIT_RANGE)
+    return arr * 1000.0
 
 
 N_THREADS = "32"
@@ -589,7 +586,7 @@ if PERTURB_MOD:
     # MOD_PP_MODE controls how pilot-point locations are determined:
     #   "random"  : MOD_N_PP points drawn uniformly inside MOD_PP_BBOX.
     #   "fixed"   : use the explicit list in MOD_PP_COORDS (Nx3 array,
-    #               columns = easting, northing, depth [m]).
+    #               columns = easting, northing, depth [km]).
     #   "mixed"   : start with MOD_PP_COORDS and add MOD_N_PP random points.
     #   "extrema" : seed pilot points at local log10(rho) minima and/or
     #               maxima of the reference model within MOD_PP_ROI, then
@@ -892,8 +889,8 @@ if PLOT_DATA or PLOT_MODEL:
     #: Set to None when MOD_ORIGIN_METHOD will estimate the origin from MOD_SITE_DAT.
     MOD_UTM_ORIGIN_LAT = None   # decimal degrees, positive = North
     MOD_UTM_ORIGIN_LON = None   # decimal degrees, positive = East
-    MOD_UTM_ORIGIN_E   = None   # UTM easting  [m]
-    MOD_UTM_ORIGIN_N   = None   # UTM northing [m]
+    MOD_UTM_ORIGIN_E   = None   # UTM easting  [km]
+    MOD_UTM_ORIGIN_N   = None   # UTM northing [km]
     MOD_UTM_ZONE_OVERRIDE = None  # override auto-derived zone; None = auto
 
     #: "box"     = midpoint of UTM bounding box of all sites in MOD_SITE_DAT.
@@ -902,8 +899,8 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_ORIGIN_METHOD = "box"   # None | "box" | "average"
 
     # --- Display coordinate system -------------------------------------------
-    #: "model"  — axis ticks in model-local metres (default)
-    #: "utm"    — axis ticks in absolute UTM metres
+    #: "model"  — axis ticks in model-local coordinates (default)
+    #: "utm"    — axis ticks in absolute UTM coordinates
     #: "latlon" — axis ticks in decimal degrees
     MOD_DISPLAY_COORDS = "latlon"
 
@@ -916,7 +913,7 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_SITE_NUMBER = None
     MOD_PLOT_SITES_MAPS   = True   # show markers on map panels
     MOD_PLOT_SITES_SLICES = True   # show markers on curtain / plane panels
-    #: Max distance [m] from a curtain plane for a site to appear on it.
+    #: Max distance [km] from a curtain plane for a site to appear on it.
     MOD_PROJECTION_DIST = .5   # km; None = show all sites on every panel
     MOD_SITE_MARKER = dict(marker="v", color="black", ms=4, zorder=10, label=None)
     MOD_SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10, label=None)
@@ -941,9 +938,10 @@ if PLOT_DATA or PLOT_MODEL:
     MOD_ALPHA_BLANK_THRESH = 0.0
 
     # --- Slice specification -------------------------------------------------
-    #: Slice positions accept plain floats (model-local m) or CRS-tagged tuples:
-    #:   (value, "utm") | (value, "latlon")
-    #: Depth z0 is always model-local metres (no CRS tagging).
+    #: All lengths are km (UTM coordinates too). Slice positions x0 / y0
+    #: accept plain floats (model-local km) or CRS-tagged tuples:
+    #:   (value, "utm") [km] | (value, "latlon") [degrees]
+    #: z0 is the depth in km, positive down (no CRS tagging).
     MOD_SLICES = [
         dict(kind="map", z0=0.0),    # km
         dict(kind="map", z0=1.0),   # km
@@ -1190,9 +1188,9 @@ if PERTURB_MOD:
         mesh_file=MOD_MESH,
         pp_mode=MOD_PP_MODE,
         n_pp=MOD_N_PP,
-        pp_bbox=_lim_km_to_m(MOD_PP_BBOX),
-        pp_coords=_coords_km_to_m(MOD_PP_COORDS),
-        pp_roi=_lim_km_to_m(MOD_PP_ROI),
+        pp_bbox=_lim_km_to_m(MOD_PP_BBOX, "MOD_PP_BBOX"),
+        pp_coords=_coords_km_to_m(MOD_PP_COORDS, "MOD_PP_COORDS"),
+        pp_roi=_lim_km_to_m(MOD_PP_ROI, "MOD_PP_ROI"),
         pp_extrema_k=MOD_PP_EXTREMA_K,
         pp_extrema_which=MOD_PP_EXTREMA_WHICH,
         pp_regen_every=MOD_PP_REGEN_EVERY,
@@ -1201,7 +1199,7 @@ if PERTURB_MOD:
         pp_value_mode=MOD_PP_VALUE_MODE,
         pp_value_delta=MOD_PP_VALUE_DELTA,
         vario_model=MOD_VARIO_MODEL,
-        vario_range=_range_km_to_m(MOD_VARIO_RANGE),
+        vario_range=_range_km_to_m(MOD_VARIO_RANGE, "MOD_VARIO_RANGE"),
         vario_sill=MOD_VARIO_SILL,
         vario_nugget=MOD_VARIO_NUGGET,
         vario_angles=MOD_VARIO_ANGLES,
@@ -1235,8 +1233,8 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
     # --- resolve UTM origin --------------------------------------------------
     _mod_utm_origin_lat = MOD_UTM_ORIGIN_LAT
     _mod_utm_origin_lon = MOD_UTM_ORIGIN_LON
-    _mod_utm_origin_e   = MOD_UTM_ORIGIN_E
-    _mod_utm_origin_n   = MOD_UTM_ORIGIN_N
+    _mod_utm_origin_e, _mod_utm_origin_n = fem.utm_km_to_m(   # metres
+        MOD_UTM_ORIGIN_E, MOD_UTM_ORIGIN_N, name="MOD_UTM_ORIGIN_E / _N")
 
     if MOD_ORIGIN_METHOD is not None:
         _mod_site_dat_path = MOD_SITE_DAT if MOD_SITE_DAT and os.path.isfile(MOD_SITE_DAT) else None
@@ -1263,7 +1261,8 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
                     _mod_utm_origin_e, _mod_utm_origin_n,
                     _mod_utm_zone, _mod_utm_northern)
                 print(f"  Model plot origin ({MOD_ORIGIN_METHOD}): "
-                      f"E={_mod_utm_origin_e:.1f} m, N={_mod_utm_origin_n:.1f} m, "
+                      f"E={_mod_utm_origin_e / 1000.0:.4f} km, "
+                      f"N={_mod_utm_origin_n / 1000.0:.4f} km, "
                       f"lat={_mod_utm_origin_lat:.5f}°, lon={_mod_utm_origin_lon:.5f}°")
 
     _mod_utm_zone, _mod_utm_northern = None, None
@@ -1280,7 +1279,7 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
 
     # --- resolve slice positions ---------------------------------------------
     _mod_slices_resolved = fem.resolve_slice_positions(
-        _slices_km_to_m(MOD_SLICES),
+        fem.slices_km_to_m(MOD_SLICES),
         _mod_utm_zone, _mod_utm_northern,
         _mod_utm_origin_e, _mod_utm_origin_n,
         _mod_utm_origin_lat, _mod_utm_origin_lon,
@@ -1352,21 +1351,21 @@ if (PLOT_DATA or PLOT_MODEL or PLOT_SLICES_QC) and (PLOT_MODEL or PLOT_SLICES_QC
             slices          = _mod_slices_resolved,
             cmap            = MOD_CMAP,
             clim            = MOD_CLIM,
-            xlim            = _lim_km_to_m(MOD_XLIM),
-            ylim            = _lim_km_to_m(MOD_YLIM),
-            zlim            = _lim_km_to_m(MOD_ZLIM),
+            xlim            = _lim_km_to_m(MOD_XLIM, "MOD_XLIM"),
+            ylim            = _lim_km_to_m(MOD_YLIM, "MOD_YLIM"),
+            zlim            = _lim_km_to_m(MOD_ZLIM, "MOD_ZLIM"),
             ocean_color     = MOD_OCEAN_COLOR,
             ocean_value     = MOD_OCEAN_RHO,
             air_color       = MOD_AIR_COLOR,
             air_bgcolor     = MOD_AIR_BGCOLOR,
             site_xys        = _mod_site_xys,
             obs_coords_only = _mod_sites_from_obs,
-            projection_dist = _km_to_m(MOD_PROJECTION_DIST),
+            projection_dist = _km_to_m(MOD_PROJECTION_DIST, "MOD_PROJECTION_DIST"),
             sites_in_maps   = MOD_PLOT_SITES_MAPS,
             sites_in_slices = MOD_PLOT_SITES_SLICES,
             site_marker     = MOD_SITE_MARKER,
             site_marker_slices = MOD_SITE_MARKER_SLICES,
-            map_markers     = MOD_MAP_MARKERS,
+            map_markers     = fem.markers_km_to_m(MOD_MAP_MARKERS),
             show_model_centre = MOD_SHOW_MODEL_CENTRE,
             display_coords  = MOD_DISPLAY_COORDS,
             utm_origin_e    = _mod_utm_origin_e,
@@ -1466,7 +1465,7 @@ if PLOT_DATA or PLOT_MODEL:
         # before. A fault from two surface points (kind="profile", dip) or an
         # `overlay` / `panel=False` entry needs resolved positions, so the
         # list is resolved like MOD_SLICES in that case only (2026-11-12).
-        _ens_slices = _slices_km_to_m(ENS_SLICES)
+        _ens_slices = fem.slices_km_to_m(ENS_SLICES)
         if _ens_slices and any(
                 sp.get("kind") == "profile" or sp.get("overlay")
                 or sp.get("panel") is False for sp in _ens_slices):
@@ -1486,9 +1485,9 @@ if PLOT_DATA or PLOT_MODEL:
             stat_rows       = ENS_STAT_ROWS,
             cmap            = ENS_CMAP,
             clim            = ENS_CLIM,
-            xlim            = _lim_km_to_m(ENS_XLIM),
-            ylim            = _lim_km_to_m(ENS_YLIM),
-            zlim            = _lim_km_to_m(ENS_ZLIM),
+            xlim            = _lim_km_to_m(ENS_XLIM, "ENS_XLIM"),
+            ylim            = _lim_km_to_m(ENS_YLIM, "ENS_YLIM"),
+            zlim            = _lim_km_to_m(ENS_ZLIM, "ENS_ZLIM"),
             ocean_color     = ENS_OCEAN_COLOR,
             ocean_value     = 0.25,
             tick_fontsize   = ENS_TICK_FONTSIZE,

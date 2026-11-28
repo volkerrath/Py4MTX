@@ -95,6 +95,15 @@ AI-generated code -- review before production use.
               fem.append_results_contents(), femtic.py of the same date).
               Nothing else changes.
               AI-generated; review before production use.
+
+2026-11-26 (km)  Claude Sonnet 5.5 (Anthropic)
+              User settings are km throughout, UTM coordinates too (before:
+              UTM and some per-entry values in metres). Personal settings in
+              metres must be converted; values that look like metres stop
+              with an error (fem.KmUnitError). Concerns MOD_UTM_ORIGIN_E /
+              _N and (value, 'utm') borehole positions. Needs femtic.py of
+              the same date. Tested on synthetic files only. AI-generated;
+              review before production use.
 """
 
 from __future__ import annotations
@@ -213,8 +222,8 @@ _MOD_PLOT_FORMATS = (
 #: Set to None when MOD_ORIGIN_METHOD will estimate the origin from MOD_SITE_DAT.
 MOD_UTM_ORIGIN_LAT = None  # decimal degrees, positive = North
 MOD_UTM_ORIGIN_LON = None  # decimal degrees, positive = East
-MOD_UTM_ORIGIN_E = None  # UTM easting  [m]
-MOD_UTM_ORIGIN_N = None  # UTM northing [m]
+MOD_UTM_ORIGIN_E = None  # UTM easting  [km]
+MOD_UTM_ORIGIN_N = None  # UTM northing [km]
 MOD_UTM_ZONE_OVERRIDE = None  # override auto-derived zone; None = auto
 
 #: "box"     → midpoint of UTM bounding box of all sites in MOD_SITE_DAT.
@@ -223,8 +232,8 @@ MOD_UTM_ZONE_OVERRIDE = None  # override auto-derived zone; None = auto
 MOD_ORIGIN_METHOD = "box"
 
 # --- Display coordinate system ---------------------------------------------
-#: "model"  — axis ticks in model-local metres (default)
-#: "utm"    — axis ticks in absolute UTM metres
+#: "model"  — axis ticks in model-local coordinates (default)
+#: "utm"    — axis ticks in absolute UTM coordinates
 #: "latlon" — axis ticks in decimal degrees
 MOD_DISPLAY_COORDS = "latlon"
 
@@ -323,7 +332,7 @@ ENS_PERTURBED_SUFFIX = "_perturbed"
 #:
 #:   "name"  : str    -- panel title / key in the .npz file         (required)
 #:   "x","y" : horizontal position. Plain float = model-local km (origin =
-#:             mesh centre); (value, "utm") = UTM metres in the mesh zone;
+#:             mesh centre); (value, "utm") = UTM km in the mesh zone;
 #:             (value, "latlon") = decimal degrees (x = longitude,
 #:             y = latitude). x and y must carry the same tag. (required,
 #:             unless "sites" is given)
@@ -646,6 +655,8 @@ if _swapped:
 stat_map, _value_keys = fem.ensemble_stat_map(res)
 
 # --- (2) UTM origin (needed for positions given in utm / latlon) -------------
+_origin_e, _origin_n = fem.utm_km_to_m(
+    MOD_UTM_ORIGIN_E, MOD_UTM_ORIGIN_N, name="MOD_UTM_ORIGIN_E / _N")
 (
     utm_e,
     utm_n,
@@ -660,8 +671,8 @@ stat_map, _value_keys = fem.ensemble_stat_map(res)
     site_names=None,
     site_number=None,
     observe_file=ENSEMBLE_DIR + "templates/observe.dat",
-    origin_e=MOD_UTM_ORIGIN_E,
-    origin_n=MOD_UTM_ORIGIN_N,
+    origin_e=_origin_e,
+    origin_n=_origin_n,
     origin_lat=MOD_UTM_ORIGIN_LAT,
     origin_lon=MOD_UTM_ORIGIN_LON,
     zone_override=MOD_UTM_ZONE_OVERRIDE,

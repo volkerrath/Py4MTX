@@ -260,6 +260,20 @@ Provenance
                 the util.py of the same date (new out_dir argument).
                 AI-generated; review before production use.
 
+2026-11-26 (km)  Claude Sonnet 5.5 (Anthropic)
+              User settings are km throughout, UTM coordinates too (before:
+              UTM and some per-entry values in metres). Personal settings in
+              metres must be converted; values that look like metres stop
+              with an error (fem.KmUnitError). Concerns MOD_UTM_ORIGIN_E /
+              _N, MOD_SLICES and MOD_MAP_MARKERS. The local slice converter
+              is replaced by fem.slices_km_to_m(), which also converts a
+              plane 'point' and profile entries (before: left in km).
+              Pilot-point box / coordinates, variogram range, plot limits
+              and projection distance were km already and are now checked in
+              the same way. Needs femtic.py of the same date. Tested on
+              synthetic files only. AI-generated; review before production
+              use.
+
 @author: vrath
 """
 
@@ -296,71 +310,55 @@ except ImportError:
     fviz = None
 
 
-def _km_to_m(val):
+def _km_to_m(val, name="length"):
     """Convert a scalar distance in km to metres; None passes through.
 
-    Used to convert MOD_PROJECTION_DIST (and similar scalar spatial
-    config parameters, now specified in km) to the metres expected by
-    femtic_viz.py, which works in model-local/UTM metres throughout
-    (matching mesh.dat).
+    Used for MOD_PROJECTION_DIST (and similar scalar spatial config
+    parameters, given in km): femtic_viz.py works in model-local/UTM metres
+    (matching mesh.dat). A value that looks like metres raises
+    fem.KmUnitError (see fem.km_to_m).
     """
-    return None if val is None else float(val) * 1000.0
+    return fem.km_to_m(val, name=name)
 
 
-def _lim_km_to_m(lim):
-    """Convert a [min, max] km limit pair to metres; None passes through.
+def _lim_km_to_m(lim, name="limit"):
+    """Convert a km limit list to metres; None passes through.
 
-    Used to convert MOD_XLIM/MOD_YLIM/MOD_ZLIM (now specified in km) to
-    the metres expected by femtic_viz.py. Also reused for GST_PP_BBOX /
-    GST_PP_ROI, which are longer [xmin,xmax,ymin,ymax,zmin,zmax] lists
-    in the same model-local km convention.
+    Used for MOD_XLIM / MOD_YLIM / MOD_ZLIM (and ENS_* / pilot-point boxes
+    where present), given in km. Values that look like metres raise
+    fem.KmUnitError (see fem.lim_km_to_m).
     """
-    return None if lim is None else [float(v) * 1000.0 for v in lim]
+    return fem.lim_km_to_m(lim, name=name)
 
 
-def _slices_km_to_m(slices):
-    """Convert model-local km slice coordinates (x0/y0/z0) to metres.
-
-    ``slices`` is the MOD_SLICES list of dicts, e.g.
-    ``dict(kind="map", z0=5.0)`` or ``dict(kind="ns", x0=0.0)``. Plain
-    numeric x0/y0/z0 values (model-local km) are converted to metres;
-    (value, "latlon") tuples are left untouched since those are
-    degrees, resolved separately by fem.resolve_slice_positions().
-    None passes through.
-    """
-    if slices is None:
-        return None
-    out = []
-    for spec in slices:
-        spec = dict(spec)
-        for key in ("x0", "y0", "z0"):
-            if key in spec and isinstance(spec[key], (int, float)):
-                spec[key] = spec[key] * 1000.0
-        out.append(spec)
-    return out
-
-
-def _range_km_to_m(rng):
+def _range_km_to_m(rng, name="variogram range"):
     """Convert a scalar or (horizontal, vertical) km range to metres.
 
-    Used for GST_VARIO_RANGE (variogram correlation length), which may
-    be a single scalar (isotropic) or a 2-tuple (horizontal, vertical).
-    None passes through.
+    Used for the variogram correlation length, which may be a single scalar
+    (isotropic) or a 2-tuple (horizontal, vertical). None passes through.
+    A value that looks like metres raises fem.KmUnitError.
     """
     if rng is None:
         return None
     if isinstance(rng, (int, float)):
-        return float(rng) * 1000.0
-    return tuple(float(v) * 1000.0 for v in rng)
+        return fem.km_to_m(rng, name=name)
+    return tuple(fem.km_to_m(v, name=name) for v in rng)
 
 
-def _coords_km_to_m(coords):
+def _coords_km_to_m(coords, name="pilot-point coordinates"):
     """Convert an (N, 3) array of km pilot-point coordinates to metres.
 
-    Used for GST_PP_COORDS (explicit pilot-point easting/northing/depth,
-    same model-local km convention as GST_PP_BBOX). None passes through.
+    Used for explicit pilot-point easting/northing/depth, model-local km like
+    the pilot-point box. None passes through. Values that look like metres
+    raise fem.KmUnitError.
     """
-    return None if coords is None else np.asarray(coords, dtype=float) * 1000.0
+    if coords is None:
+        return None
+    arr = np.asarray(coords, dtype=float)
+    if arr.size:
+        fem.check_km(np.nanmax(np.abs(arr)), name=name,
+                     limit=fem.KM_LIMIT_RANGE)
+    return arr * 1000.0
 
 
 version, _ = versionstrg()
@@ -559,8 +557,8 @@ MOD_QC_FILE = WORK_DIR + "nss_qc.pdf"
 #: Set to None when MOD_ORIGIN_METHOD will estimate the origin from MOD_SITE_DAT.
 MOD_UTM_ORIGIN_LAT    = None   # decimal degrees, positive = North
 MOD_UTM_ORIGIN_LON    = None   # decimal degrees, positive = East
-MOD_UTM_ORIGIN_E      = None   # UTM easting  [m]
-MOD_UTM_ORIGIN_N      = None   # UTM northing [m]
+MOD_UTM_ORIGIN_E      = None   # UTM easting  [km]
+MOD_UTM_ORIGIN_N      = None   # UTM northing [km]
 MOD_UTM_ZONE_OVERRIDE = None   # override auto-derived zone; None = auto
 
 #: "box"     → midpoint of UTM bounding box of all sites in MOD_SITE_DAT.
@@ -569,8 +567,8 @@ MOD_UTM_ZONE_OVERRIDE = None   # override auto-derived zone; None = auto
 MOD_ORIGIN_METHOD = "box"
 
 # --- Display coordinate system ---------------------------------------------
-#: "model"  — axis ticks in model-local metres (default)
-#: "utm"    — axis ticks in absolute UTM metres
+#: "model"  — axis ticks in model-local coordinates (default)
+#: "utm"    — axis ticks in absolute UTM coordinates
 #: "latlon" — axis ticks in decimal degrees
 MOD_DISPLAY_COORDS = "model"
 
@@ -584,7 +582,7 @@ MOD_SITE_NUMBER = None
 
 MOD_PLOT_SITES_MAPS   = True    # show markers on map panels
 MOD_PLOT_SITES_SLICES = True    # show markers on curtain / plane panels
-#: Max distance [m] from a curtain plane for a site to appear on it.
+#: Max distance [km] from a curtain plane for a site to appear on it.
 MOD_PROJECTION_DIST = 5.0    # km; None = show all sites on every panel
 
 MOD_SITE_MARKER        = dict(marker="v", color="black", ms=8, zorder=10, label=None)
@@ -593,9 +591,10 @@ MOD_SITE_MARKER_SLICES = None
 MOD_MAP_MARKERS = []
 
 # --- Slice specification ----------------------------------------------------
-#: Slice positions accept plain floats (model-local m) or CRS-tagged tuples:
-#:   (value, "utm") | (value, "latlon")
-#: Depth z0 is always model-local metres (no CRS tagging).
+#: All lengths are km (UTM coordinates too). Slice positions x0 / y0
+#: accept plain floats (model-local km) or CRS-tagged tuples:
+#:   (value, "utm") [km] | (value, "latlon") [degrees]
+#: z0 is the depth in km, positive down (no CRS tagging).
 MOD_SLICES = [
     dict(kind="map", z0=5.0),    # km
     dict(kind="map", z0=15.0),   # km
@@ -732,8 +731,8 @@ def _resolve_origin_and_sites():
     femtic_ens_post.py so all scripts behave identically, including the
     observe.dat / MOD_SITE_NUMBER fallback when MOD_SITE_DAT is absent.
     """
-    _e   = MOD_UTM_ORIGIN_E
-    _n   = MOD_UTM_ORIGIN_N
+    _e, _n = fem.utm_km_to_m(                      # metres
+        MOD_UTM_ORIGIN_E, MOD_UTM_ORIGIN_N, name="MOD_UTM_ORIGIN_E / _N")
     _lat = MOD_UTM_ORIGIN_LAT
     _lon = MOD_UTM_ORIGIN_LON
     _zone, _north = None, None
@@ -800,7 +799,7 @@ def _plot_slice(block_file: str, pdf_file: str,
         return
 
     _slices_resolved = fem.resolve_slice_positions(
-        _slices_km_to_m(MOD_SLICES), utm_zone, utm_north,
+        fem.slices_km_to_m(MOD_SLICES), utm_zone, utm_north,
         utm_e, utm_n, utm_lat, utm_lon,
         verbose=OUT,
     )
@@ -810,9 +809,9 @@ def _plot_slice(block_file: str, pdf_file: str,
         slices              = _slices_resolved,
         cmap                = MOD_CMAP,
         clim                = MOD_CLIM,
-        xlim                = _lim_km_to_m(MOD_XLIM),
-        ylim                = _lim_km_to_m(MOD_YLIM),
-        zlim                = _lim_km_to_m(MOD_ZLIM),
+        xlim                = _lim_km_to_m(MOD_XLIM, "MOD_XLIM"),
+        ylim                = _lim_km_to_m(MOD_YLIM, "MOD_YLIM"),
+        zlim                = _lim_km_to_m(MOD_ZLIM, "MOD_ZLIM"),
         ocean_color         = MOD_OCEAN_COLOR,
         ocean_value         = MOD_OCEAN_RHO,
         air_color           = MOD_AIR_COLOR,
@@ -823,8 +822,8 @@ def _plot_slice(block_file: str, pdf_file: str,
         sites_in_slices     = MOD_PLOT_SITES_SLICES,
         site_marker         = MOD_SITE_MARKER,
         site_marker_slices  = MOD_SITE_MARKER_SLICES,
-        map_markers         = MOD_MAP_MARKERS,
-        projection_dist     = _km_to_m(MOD_PROJECTION_DIST),
+        map_markers         = fem.markers_km_to_m(MOD_MAP_MARKERS),
+        projection_dist     = _km_to_m(MOD_PROJECTION_DIST, "MOD_PROJECTION_DIST"),
         display_coords      = MOD_DISPLAY_COORDS,
         utm_origin_e        = utm_e,
         utm_origin_n        = utm_n,
@@ -1238,9 +1237,9 @@ def _make_perturbation_gst(m_ref: np.ndarray, idx: int = 0) -> np.ndarray:
             mesh_file        = GST_MESH,
             pp_mode          = GST_PP_MODE,
             n_pp             = GST_N_PP,
-            pp_bbox          = _lim_km_to_m(GST_PP_BBOX),
-            pp_coords        = _coords_km_to_m(GST_PP_COORDS),
-            pp_roi           = _lim_km_to_m(GST_PP_ROI),
+            pp_bbox          = _lim_km_to_m(GST_PP_BBOX, "GST_PP_BBOX"),
+            pp_coords        = _coords_km_to_m(GST_PP_COORDS, "GST_PP_COORDS"),
+            pp_roi           = _lim_km_to_m(GST_PP_ROI, "GST_PP_ROI"),
             pp_extrema_k     = GST_PP_EXTREMA_K,
             pp_extrema_which = GST_PP_EXTREMA_WHICH,
             pp_regen_every   = _gst_n_reset() if use_reset else None,
@@ -1249,7 +1248,7 @@ def _make_perturbation_gst(m_ref: np.ndarray, idx: int = 0) -> np.ndarray:
             log_rho_min      = GST_LOG_RHO_MIN,
             log_rho_max      = GST_LOG_RHO_MAX,
             vario_model      = GST_VARIO_MODEL,
-            vario_range      = _range_km_to_m(GST_VARIO_RANGE),
+            vario_range      = _range_km_to_m(GST_VARIO_RANGE, "GST_VARIO_RANGE"),
             vario_sill       = GST_VARIO_SILL,
             vario_nugget     = GST_VARIO_NUGGET,
             vario_angles     = GST_VARIO_ANGLES,

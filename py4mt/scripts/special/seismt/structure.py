@@ -157,6 +157,13 @@ Three integration seams, flagged rather than guessed at:
      resolved would be a small follow-up, not attempted here.
 
 Authors: Svetlana Byrdina (SMB), Volker Rath (DIAS)
+
+Changes
+-------
+2026-11-27  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            New settings MAP_FIG_SIZE and SECTION_FIG_SIZE [cm] (before:
+            fixed in the code, in inch; the defaults give the same
+            figures).
 """
 
 from pathlib import Path
@@ -296,6 +303,11 @@ FIG_DPI = 600
 # a list of paths -- call sites use saved.extend(...) accordingly.
 PLOT_FORMATS = ["jpg", "pdf"]
 
+# Figure sizes [cm] (width, height). Sections: the height is used if VE < 1,
+# otherwise it is width / VE.
+MAP_FIG_SIZE = (17.78, 15.24)
+SECTION_FIG_SIZE = (20.32, 10.16)
+
 # Show figures on screen in addition to saving them -- only actually
 # shown if matplotlib.is_interactive() is also True (e.g. Spyder's
 # inline/Qt backends), so this is safe to leave on when running headless
@@ -334,6 +346,11 @@ CBAR_SHRINK = 0.85
 # here from and why; _title_suffix()/_region()-style config closures that
 # don't generalise cleanly across scripts stayed local by design.
 # ===========================================================================
+
+def _figsize(size_cm) -> tuple:
+    """Figure size (width, height) given in cm, in the inches Matplotlib uses."""
+    return tuple(round(float(v) / 2.54, 6) for v in size_cm)
+
 
 def _derive_interp_tag(interp_file):
     return tomomt.derive_interp_tag(interp_file)
@@ -711,7 +728,7 @@ def plot_map(cg, depth_km, group_label, quantity_key):
     norm = (Normalize(vmin=spec["vmin"], vmax=spec["vmax"])
             if (spec["vmin"] is not None or spec["vmax"] is not None) else None)
 
-    fig, ax = plt.subplots(figsize=(7, 6))
+    fig, ax = plt.subplots(figsize=_figsize(MAP_FIG_SIZE))
     im = ax.pcolormesh(
         easting, northing, z2d, cmap=spec["cmap"], norm=norm,
         shading="nearest", zorder=5,
@@ -798,7 +815,9 @@ def plot_section(cg, vslice, group_label, quantity_key):
     norm = (Normalize(vmin=spec["vmin"], vmax=spec["vmax"])
             if (spec["vmin"] is not None or spec["vmax"] is not None) else None)
 
-    fig, ax = plt.subplots(figsize=(8, 8 / max(VE, 1e-6) if VE >= 1 else 4))
+    width, height = _figsize(SECTION_FIG_SIZE)
+    fig, ax = plt.subplots(
+        figsize=(width, width / max(VE, 1e-6) if VE >= 1 else height))
     im = ax.pcolormesh(dist_km, depth_grid, section, cmap=spec["cmap"], norm=norm,
                        shading="nearest", zorder=5)
     ax.invert_yaxis()

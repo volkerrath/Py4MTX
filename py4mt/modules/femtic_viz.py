@@ -924,11 +924,30 @@ Provenance:
                         'phase' panels only. The component markers are not
                         put on the connection lines. AI-generated code --
                         review before production use.
+    2026-11-26  Claude Sonnet 5.5 (Anthropic)
+                        Borehole figures for single models
+                        (femtic_mod_plot_bh.py). BoreholeFigureOptions: new
+                        fields shared (one axes per source), markers
+                        (annotations, new annotate_borehole_markers(), depths
+                        in km), key_labels (legend names of "avg"/"med"/"best"),
+                        ref_follows_color and catalog (every figure also a
+                        page of an open PdfPages). With the defaults the
+                        drawing is as before. plot_borehole_logs() unchanged.
+                        AI-generated code -- review before production use.
+    2026-11-26b Claude Sonnet 5.5 (Anthropic)
+                        Optional single-panel figures (femtic_mod_* scripts).
+                        New single_panel_jobs() (one figure per displayed
+                        slice, overlay lines kept). draw_borehole_figures():
+                        new keyword name_suffix (files "_NN_<name>", common
+                        depth range over all figures);
+                        BoreholeFigureOptions.depth_range. Defaults draw as
+                        before. AI-generated code -- review before production
+                        use.
     """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 import math
 import os
 from pathlib import Path
@@ -9598,7 +9617,10 @@ def borehole_line_style(key, spec, base_style, n_pct_index=None, n_pct=None):
 class BoreholeFigureOptions:
     """Layout and style of the borehole figures (plot_boreholes).
 
-    The fields are the MOD_BH_* / MOD_* settings of femtic_ens_plot_bh.py.
+    The fields are the MOD_BH_* / MOD_* settings of femtic_ens_plot_bh.py and
+    femtic_mod_plot_bh.py (``shared``, ``markers``, ``key_labels``,
+    ``ref_follows_color`` and ``catalog`` are used by the latter; their
+    defaults leave the ensemble figures unchanged).
     """
 
     #: Line / heat-map styles per draw key (MOD_BH_STYLE).
@@ -9654,6 +9676,79 @@ class BoreholeFigureOptions:
         }
     )
     out: bool = True
+    #: True = all boreholes of a figure on one axes (one axes per source),
+    #: told apart by the legend; heat maps are not drawn then.
+    shared: bool = False
+    #: Annotations (MOD_BH_MARKERS): list of dicts, see
+    #: annotate_borehole_markers(); depths in km.
+    markers: Optional[list] = None
+    #: Legend names replacing those of the draw keys "avg", "med", "best",
+    #: e.g. {"best": "model"}.
+    key_labels: dict = field(default_factory=dict)
+    #: True = a reference line without a "color" in its style takes the colour
+    #: of the first other line of the same borehole.
+    ref_follows_color: bool = False
+    #: Open matplotlib PdfPages; every figure is also added to it as a page.
+    catalog: Any = None
+    #: Depth range (min, max) in m used for the panels with a common depth
+    #: axis; None = from the profiles of the figure.
+    depth_range: Optional[Sequence[float]] = None
+
+
+def annotate_borehole_markers(panels, markers, *, depth_km=True):
+    """Arrows and text on the depth panels of the borehole figures.
+
+    Parameters
+    ----------
+    panels : sequence of (axes, borehole name)
+        The panels of one figure; with one shared axes the same axes appears
+        once per borehole.
+    markers : list of dict
+        Keys: ``depth`` (km, z positive down; required: the arrow tip),
+        ``rho`` (Ohm.m, arrow tip; default: left edge of the axis),
+        ``rho_text`` (Ohm.m; default ``rho * 3``), ``depth_text`` (km;
+        default 0.3 km above the tip), ``text``, ``borehole`` (name or list
+        of names; default: every panel), ``arrowprops`` (default thin black
+        arrow). Any other key goes to ``Axes.annotate``.
+    depth_km : bool
+        Unit of the depth axis of the panels (km, else m).
+
+    Call it after the axis limits are set.
+
+    Added 2026-11-26, Claude Sonnet 5.5 (Anthropic); the annotations of
+    plot_borehole_logs() with km depths.
+    """
+    unit = 1.0 if depth_km else 1000.0
+    for entry in markers or []:
+        mk = dict(entry)  # do not change the caller's dict
+        if "depth" not in mk:
+            raise ValueError(f"borehole marker without 'depth': {entry!r}")
+        depth = float(mk.pop("depth"))
+        rho_tip = mk.pop("rho", None)
+        rho_text = mk.pop("rho_text", None)
+        depth_text = mk.pop("depth_text", None)
+        text = mk.pop("text", "")
+        target = mk.pop("borehole", None)
+        if isinstance(target, str):
+            target = [target]
+        arrowprops = mk.pop("arrowprops", None)
+        if arrowprops is None:
+            arrowprops = dict(arrowstyle="->", color="black", lw=0.9)
+        done = []
+        for ax, name in panels:
+            if (target is not None and name not in target) or ax in done:
+                continue
+            done.append(ax)
+            x_tip = float(rho_tip) if rho_tip is not None else ax.get_xlim()[0]
+            x_text = float(rho_text) if rho_text is not None else x_tip * 3.0
+            y_text = float(depth_text) if depth_text is not None else depth - 0.3
+            ax.annotate(
+                text,
+                xy=(x_tip, depth * unit),
+                xytext=(x_text, y_text * unit),
+                arrowprops=dict(arrowprops),
+                **mk,
+            )
 
 
 def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
@@ -9668,6 +9763,7 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
     figure (heat_norm) or None without a heat map; ``opts`` : a
     BoreholeFigureOptions.
     The figure is built once and saved once per ``opts.formats`` entry.
+    With ``opts.shared`` all profiles of a source are drawn on one axes.
     """
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
@@ -9675,8 +9771,13 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
     n_src = len(groups)
     tagged = n_src > 1 or opts.tag_sources
     n = len(groups[0][1])
+    shared = bool(opts.shared)
     ncols_b = min(int(opts.ncols), n) if opts.ncols else min(n, 4)
-    nrows = int(math.ceil(n / ncols_b))
+    if shared:
+        ncols_b = 1
+    nrows = 1 if shared else int(math.ceil(n / ncols_b))
+    key_labels = {"avg": "mean", "med": "median", "best": "best member"}
+    key_labels.update(opts.key_labels or {})
     ncols = ncols_b * n_src
     w, h = opts.panel_size
     fig, axs = plt.subplots(
@@ -9693,15 +9794,22 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
     panels = []  # (axes, profile) of every drawn panel
 
     for gi, (src, profiles) in enumerate(groups):
+        shared_handles, shared_xlims, shared_ref = [], [], None
         for k, pr in enumerate(profiles):
-            ax = axs[k // ncols_b, (k % ncols_b) * n_src + gi]
+            ax = (axs[0, gi] if shared
+                  else axs[k // ncols_b, (k % ncols_b) * n_src + gi])
             panels.append((ax, pr))
             spec, depth = pr["spec"], pr["depth"] / scale
             pct_keys = [q for q in pr["lines"] if q.startswith("p")]
             handles = []
+            first_color = None  # of the first line that is not the reference
+            # shared axes: a line is told apart by the borehole in its label
+            n_own = len([q for q in pr["order"]
+                         if q in pr["lines"] and q != "ref"])
             # heat map first (bottom layer, zorder 0), whatever its place in
             # "what"
-            has_heat = "heatmap" in pr["order"] and pr.get("heat") is not None
+            has_heat = (not shared and "heatmap" in pr["order"]
+                        and pr.get("heat") is not None)
             if has_heat:
                 hcmap, hkw = heat_style(spec, cs, opts.line_style)
                 hkw.setdefault("shading", "flat")
@@ -9737,7 +9845,8 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
                         Line2D(
                             [],
                             [],
-                            label=f"ensemble (n={ens.shape[0]})",
+                            label=(f"{pr['name']}: " if shared else "")
+                            + f"ensemble (n={ens.shape[0]})",
                             **{**proxy, "alpha": max(alpha, 0.6)},
                         )
                     )
@@ -9765,15 +9874,26 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
                     z = 4  # on top of the ensemble statistics
                 else:
                     st = borehole_line_style(key, spec, opts.line_style)
-                    label = {
-                        "avg": "mean",
-                        "med": "median",
-                        "best": "best member",
-                    }[key]
+                    label = key_labels[key]
                     z = 3
+                if (key == "ref" and opts.ref_follows_color
+                        and first_color is not None
+                        and "color" not in st and "c" not in st):
+                    st["color"] = first_color
+                if shared and label != "_nolegend_":
+                    if key == "ref":
+                        # one legend entry for all reference lines (below)
+                        shared_ref = dict(st)
+                        label = "_nolegend_"
+                    elif n_own > 1:
+                        label = f"{pr['name']}: {label}"
+                    else:
+                        label = f"{pr['name']}\n{pr['pos_str']}"
                 (ln,) = ax.plot(
                     pr["lines"][key], depth, label=label, zorder=z, **st
                 )
+                if key != "ref" and first_color is None:
+                    first_color = ln.get_color()
                 if label != "_nolegend_":
                     handles.append(ln)
 
@@ -9781,13 +9901,20 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
             xl = spec.get("xlim", glob_xlim)
             if xl is None and has_heat:  # auto range: the heat map's own range
                 xl = [10.0 ** pr["heat_edges"][0], 10.0 ** pr["heat_edges"][-1]]
-            if xl is not None:
+            if shared:
+                shared_handles += handles
+                shared_xlims.append(xl)
+            elif xl is not None:
                 ax.set_xlim(xl)
             head = (
                 f"{pr['name']} - {opts.source_labels[src]}" if tagged else pr["name"]
             )
+            if shared:
+                head = "Borehole resistivity logs" + (
+                    f" - {opts.source_labels[src]}" if tagged else "")
             if opts.panel_titles:
-                ax.set_title(f"{head}\n{pr['pos_str']}", fontsize=tick_fs - 2)
+                ax.set_title(head if shared else f"{head}\n{pr['pos_str']}",
+                             fontsize=tick_fs - 2)
             ax.set_xlabel("resistivity (Ohm.m)", fontsize=label_fs)
             if k % ncols_b == 0 and gi == 0:
                 ax.set_ylabel(
@@ -9797,18 +9924,38 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
             ax.tick_params(labelsize=tick_fs)
             ax.grid(True, which="both", axis="x", lw=0.3, alpha=0.5)
             ax.grid(True, which="major", axis="y", lw=0.3, alpha=0.5)
-            if handles and opts.legend_loc is not None:
+            if handles and not shared and opts.legend_loc is not None:
                 ax.legend(
                     handles=handles,
                     fontsize=max(tick_fs - 4, 6),
                     loc=opts.legend_loc,
                     framealpha=0.85,
                 )
+        if shared:
+            ax = axs[0, gi]
+            # one range for all traces: the widest of the entries' ranges
+            if shared_xlims and all(x is not None for x in shared_xlims):
+                ax.set_xlim(min(min(x) for x in shared_xlims),
+                            max(max(x) for x in shared_xlims))
+            if shared_ref is not None:
+                st = dict(shared_ref)
+                if opts.ref_follows_color:
+                    st["color"] = "0.25"  # the lines carry the borehole colours
+                shared_handles.append(
+                    Line2D([], [], label=opts.ref_label, **st))
+            if shared_handles and opts.legend_loc is not None:
+                ax.legend(
+                    handles=shared_handles,
+                    fontsize=max(tick_fs - 4, 6),
+                    loc=opts.legend_loc,
+                    framealpha=0.85,
+                )
 
     # unused cells of the last row
-    for k in range(n, nrows * ncols_b):
-        for gi in range(n_src):
-            axs[k // ncols_b, (k % ncols_b) * n_src + gi].set_visible(False)
+    if not shared:
+        for k in range(n, nrows * ncols_b):
+            for gi in range(n_src):
+                axs[k // ncols_b, (k % ncols_b) * n_src + gi].set_visible(False)
 
     # depth range: common (union) or per panel; y axis points down
     ranges = [
@@ -9816,10 +9963,18 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
         for _, pr in panels
     ]
     for (ax, _), (lo, hi) in zip(panels, ranges):
-        if opts.share_depth:
-            lo = min(r[0] for r in ranges)
-            hi = max(r[1] for r in ranges)
+        if opts.share_depth or shared:
+            if opts.depth_range is None:
+                lo = min(r[0] for r in ranges)
+                hi = max(r[1] for r in ranges)
+            else:
+                lo = min(opts.depth_range) / scale
+                hi = max(opts.depth_range) / scale
         ax.set_ylim(hi, lo)
+    if opts.markers:
+        annotate_borehole_markers(
+            [(ax, pr["name"]) for ax, pr in panels], opts.markers,
+            depth_km=opts.depth_km)
 
     if opts.suptitle is not None and opts.suptitle is not False:
         sup = str(opts.suptitle)
@@ -9893,6 +10048,8 @@ def plot_boreholes(groups, plot_base, cs, norm, extend, opts):
         fig.savefig(fname, dpi=opts.dpi, bbox_inches="tight")
         if opts.out:
             print(f"  saved -> {fname}")
+    if opts.catalog is not None:
+        append_catalog_page(opts.catalog, fig, os.path.basename(str(plot_base)))
     if opts.show:
         plt.show()
     plt.close(fig)
@@ -10047,19 +10204,37 @@ def borehole_view(p, src):
     return q
 
 
-def draw_borehole_figures(plan, cs, plot_base, opts, perturbed_suffix="_perturbed"):
+def draw_borehole_figures(plan, cs, plot_base, opts, perturbed_suffix="_perturbed",
+                          *, name_suffix=False):
     """Draw the borehole figures of ``plan`` (plan_borehole_figures).
 
     One figure per chunk; with two sources either converged and perturbed side
     by side in it ("combined") or one figure each ("separate": the perturbed
     one is written to plot_base + ``perturbed_suffix``).  ``opts`` : a
-    BoreholeFigureOptions."""
+    BoreholeFigureOptions.
+
+    ``name_suffix`` : for single-borehole figures (a plan made with
+    ``per_fig=1``): the files are plot_base + "_NN_<borehole name>", and with
+    ``opts.share_depth`` all figures get the depth range of all boreholes
+    (unless ``opts.depth_range`` is set). A chunk with several profiles is
+    named by its first one."""
     sources, chunks = plan["sources"], plan["chunks"]
     multi = len(sources) > 1
+    if name_suffix and opts.share_depth and opts.depth_range is None:
+        depths = [p["depth"] for ch in chunks for p in ch]
+        if depths:
+            opts = replace(opts, depth_range=(
+                float(min(np.nanmin(d) for d in depths)),
+                float(max(np.nanmax(d) for d in depths))))
     for ic, ch in enumerate(chunks):
         norm, ext = plan["norms"][ic]
 
-        def _stem(base, ic=ic):
+        def _stem(base, ic=ic, ch=ch):
+            if name_suffix:
+                name = "".join(
+                    c if (c.isascii() and c.isalnum()) or c in "._-" else "_"
+                    for c in str(ch[0]["name"]))
+                return f"{base}_{ic + 1:02d}_{name}"
             return base if len(chunks) == 1 else f"{base}_{ic + 1:02d}"
 
         if multi and plan["layout"] == "combined":
@@ -10081,7 +10256,8 @@ def draw_borehole_figures(plan, cs, plot_base, opts, perturbed_suffix="_perturbe
 # Batches of single-model figures (femtic_mod_plot_slice.py / _bh.py)
 # =============================================================================
 #
-# The figure functions are plot_model_slices() and plot_borehole_logs(); the
+# The figure functions are plot_model_slices() and, for the boreholes,
+# draw_borehole_figures() (plot_borehole_logs() before 2026-11-26); the
 # models come from femtic.resolve_model_files(). The two helpers below only
 # make a long batch robust: matplotlib's pdf backend can raise an IndexError
 # for an "Indexed" colour space (data-dependent, matplotlib issue #25806), and
@@ -10127,6 +10303,106 @@ def plot_model_slices_robust(plot_file, *, out=True, **kwargs):
     if out:
         print(f"  plot: saved -> {plot_file}")
     return fig
+
+
+def single_panel_jobs(slices, *, polylines=None, nrms_annotation=None):
+    """Split one multi-panel slice figure into one job per displayed slice.
+
+    Each job holds the keywords that replace those of the multi-panel call of
+    plot_model_slices() / plot_model_slices_robust(), so that the loop is::
+
+        for job in single_panel_jobs(kw["slices"],
+                                     polylines=kw.get("polylines"),
+                                     nrms_annotation=kw.get("nrms_annotation")):
+            plot_model_slices_robust(f"{stem}{job['suffix']}.pdf",
+                                     **{**kw, **job["kwargs"]})
+
+    Colour limits stay the same on all figures when the other keywords are
+    unchanged (automatic limits are taken from the whole model).
+
+    Parameters
+    ----------
+    slices
+        Slice specs as for plot_model_slices(). A spec with ``panel=False``
+        gets no figure of its own. Specs with ``overlay`` (e.g. a fault) are
+        carried along as hidden slices, so their lines appear on the other
+        figures as they do in the multi-panel figure.
+    polylines
+        ``polylines`` of the multi-panel call, or None. An entry restricted
+        by ``panels`` (numbers of the displayed panels) is kept only in the
+        figures of those panels.
+    nrms_annotation
+        ``nrms_annotation`` of the multi-panel call, or None. Its ``panel``
+        None annotates every figure; a number annotates only the figure of
+        that panel (clipped to the panels present).
+
+    Returns
+    -------
+    list of dict
+        ``suffix`` (``"_01_map"``, ``"_02_ew"``, ...: panel number from 1 and
+        slice kind), ``label`` (the suffix without the leading underscore)
+        and ``kwargs`` (``slices``, ``polylines``, ``nrms_annotation``,
+        ``nrows``, ``ncols``).
+
+    Raises
+    ------
+    ValueError
+        No slice is displayed (every spec has ``panel=False``).
+
+    Added 2026-11-26, Claude Sonnet 5.5 (Anthropic).
+    """
+    specs = list(slices)
+    shown = [k for k, sp in enumerate(specs) if not _is_hidden_slice(sp)]
+    if not shown:
+        raise ValueError(
+            "single_panel_jobs: every slice has panel=False -- at least one "
+            "slice must be displayed.")
+
+    ann_panel = None
+    if nrms_annotation is not None:
+        ann_panel = nrms_annotation.get("panel")
+        if ann_panel is not None:
+            ann_panel = int(ann_panel)
+            if ann_panel < 0:
+                ann_panel += len(shown)
+            ann_panel = min(max(ann_panel, 0), len(shown) - 1)
+
+    jobs = []
+    for panel, k in enumerate(shown):
+        sub = []
+        for i, sp in enumerate(specs):
+            if i == k:
+                sub.append(sp)
+            elif isinstance(sp, dict) and sp.get("overlay"):
+                sub.append(dict(sp, panel=False))
+
+        lines = polylines
+        if polylines:
+            lines = {}
+            for name, entry in polylines.items():
+                if isinstance(entry, dict) and entry.get("panels") is not None:
+                    pn = entry["panels"]
+                    pn = (pn,) if isinstance(pn, (int, np.integer)) else pn
+                    if panel not in [int(v) for v in pn]:
+                        continue
+                    entry = {key: val for key, val in entry.items()
+                             if key != "panels"}
+                lines[name] = entry
+
+        annotation = None
+        if nrms_annotation is not None and ann_panel in (None, panel):
+            annotation = dict(nrms_annotation, panel=0)
+
+        kind = str(specs[k].get("kind", "map")).lower()
+        kind = {"sn": "ns", "we": "ew"}.get(kind, kind)
+        label = f"{panel + 1:02d}_{kind}"
+        jobs.append(dict(
+            suffix=f"_{label}",
+            label=label,
+            kwargs=dict(slices=sub, polylines=lines,
+                        nrms_annotation=annotation, nrows=None, ncols=None),
+        ))
+    return jobs
 
 
 def append_catalog_page(pdf, fig, name=""):

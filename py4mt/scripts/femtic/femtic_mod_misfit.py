@@ -18,9 +18,9 @@ set of figures and tables per run, for the iteration chosen by ITERATION
   "qq"         normal Q-Q plots of the same residuals in the same bands
   "curves"     optional: observed data with errors against the calculated
                response, per site
-  "outliers"   optional: the sites whose nRMS is outside the limits of the
+  "outliers"   the sites whose nRMS is outside the limits of the
                distribution of the site nRMS values (default: the 2-sigma
-               quantiles, 2.275 / 97.725 %); table, CSV and figure
+               quantiles, 2.275 / 97.725 %); table, CSV and figure, per run
 
 The ensemble counterpart is femtic_ens_misfit.py (also: RMS2 on request, member
 curves, nRMS histogram of all scanned members). Both call femtic_misfit.py (the
@@ -60,6 +60,31 @@ local site.dat, any case, and/or site ids) writes one file per site and format
 
 Changelog
 ---------
+2026-11-27  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            New settings PANEL_MEASURES, PANEL_MEASURES_FONTSIZE,
+            HIST_SCALE_MEASURE, SITE_MEASURES and
+            CURVES_MAP_MEASURE_RANGE choose the measures of data fit that
+            are plotted (default: as before). PANEL_SIZE,
+            HIST_PANEL_SIZE, QQ_PANEL_SIZE and CURVES_PANEL_SIZE are in
+            cm (before: inch; multiply own values by 2.54). Needs
+            femtic_misfit.py of the same date and the new module
+            misfit_measures.py. Tested on synthetic files only.
+2026-11-26c Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            SITE_MERGE_TOL and CURVES_SITE_TOL are km (0.001, 0.015; before:
+            1.0 and 15.0 m). A value of 1 or more is refused. Needs
+            femtic_misfit.py of the same date. Tested on synthetic files only.
+            AI-generated; review before production use.
+2026-11-26b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            optional single-panel figures, new setting SINGLE_PANELS (default
+            False = figures as before): one figure per crossplot panel, per
+            histogram / Q-Q band, per site and quantity of "curves", scatter
+            and histogram of "outliers" separately. The work is done in
+            femtic_misfit.py of the same date, which is needed.
+2026-11-26  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            "outliers" is now in the default METHODS (before: to be added by
+            hand), so every run also gets <prefix>_site_outliers.txt / .csv
+            and the figure. OUTLIER_* settings and the engine
+            (femtic_misfit.py) are unchanged.
 2026-11-22  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             new method "outliers" (add it to METHODS): the sites whose nRMS is
             outside the limits of the distribution of the site nRMS values;
@@ -140,6 +165,12 @@ if PY4MTX_ROOT:
             sys.path.insert(0, _pth)
 
 import femtic_misfit as fm  # noqa: E402
+import util as utl
+from version import versionstrg
+
+version, _ = versionstrg()
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
+print(titstrng + "\n\n")
 
 # ---------------------------------------------------------------------------
 # User configuration
@@ -147,16 +178,21 @@ import femtic_misfit as fm  # noqa: E402
 # --- what to run ---
 # Every entry of RUN_PATHS is a model of its own (a list of singles, NOT an
 # ensemble): one set of figures and tables per entry.
+# run dirs, results files, or globs (overridden by argv)
+
 RUN_PATHS: List[str] = [
-    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/annecy_rnd_2_59/",
-    "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/annecy_rnd_2_60/",
-    ]        # run dirs, results files, or globs (overridden by argv)
+    # "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/annecy_rnd_2_59/",
+    # "/media/vrath/LargeBack/Ensembles/annecy2026/ensemble_gst_2/annecy_rnd_2_60/",
+    r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial_nodist/ini*"]        
+
 
 ITERATION: Union[str, int] = "best"      # "best" | "last" | integer
 ITER_PATTERN: str = "results_iter*.h5"   # searched in each run directory
-METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq", "curves")
-#   "curves" is optional (needs data_viz.py), so is "outliers"; "nrms" is for
-#   ensembles only (femtic_ens_misfit.py)
+METHODS: Tuple[str, ...] = ("crossplot", "histogram", "qq", "curves",
+                            "outliers", "nrms")
+#   remove a name to switch that method off. "curves" needs data_viz.py;
+#   "outliers" = site nRMS outliers (OUTLIER_* below); "nrms" is for
+#   ensembles only (femtic_ens_misfit.py) and is ignored here
 
 # --- sites ---
 SITE_MERGE_BY_POSITION: bool = True   # data types often number the same station
@@ -168,7 +204,7 @@ SITE_MERGE_BY_POSITION: bool = True   # data types often number the same station
                                       # Affects the per-site table and the "curves"
                                       # figures (one figure per position, all data
                                       # types together); not the other methods
-SITE_MERGE_TOL: float = 1.0           # [m] positions closer than this are the same
+SITE_MERGE_TOL: float = 0.001         # [km] positions closer than this are the same
 
 # --- output ---
 OUT_DIR: Optional[str] = None   # None -> into the directory <run dir>/<OUT_PREFIX>/
@@ -204,13 +240,55 @@ SHOW: bool = False
 FIGURE_TITLE: Union[str, bool, None, dict] = "auto"
 PANEL_TITLES: bool = True     # titles of the panels (crossplot, histogram, Q-Q)
 
+# --- which measures of data fit are plotted ---
+# Names: "nrms", "r_mae", "r_med", "q95", "mean" (bias), "std", "skew",
+# "kurt" (excess); for normally distributed residuals with correct errors
+# nrms = r_mae = r_med = 1, q95 = 1.96, mean = skew = kurt = 0, std = 1.
+PANEL_MEASURES: Union[None, bool, str, Sequence[str], dict] = None
+# Text box of every crossplot, histogram and Q-Q panel. Besides the names above:
+# "n" (number of values), "slope" and "icpt" (quartile line of the normal Q-Q
+# plot), "n_out" (histogram, Q-Q: values outside +/- *_LIMIT, only if > 0) and
+# "out_pct" (Q-Q: dots outside the envelope).
+# None  = as before (crossplot n, nrms; histogram n, nrms, n_out; Q-Q n, slope,
+#         icpt)
+# False = no box
+# list  = for all three figures, e.g. ["n", "nrms", "r_med", "q95"]
+# dict  = per figure, e.g. {"crossplot": ["n", "r_med"],
+#                           "histogram": ["n", "nrms", "r_mae", "skew"],
+#                           "qq": ["slope", "icpt", "out_pct"]}
+PANEL_MEASURES_FONTSIZE: float = 8.0   # [pt] of that box (smaller for long lists)
+HIST_SCALE_MEASURE: Optional[str] = "nrms"   # histogram: scale s of the red curve
+# N(0, s^2) and of the blue lines at +/- s: "nrms" (as before), "r_mae",
+# "r_med", "q95" (s = q95 / 1.96); None = not drawn
+SITE_MEASURES: Union[str, Sequence[str]] = "nrms"
+# Per-site value(s), e.g. "r_med" or ["nrms", "r_med"]:
+#   "outliers"  one table, CSV and figure per entry (names of measures other
+#               than nrms get the suffix _<measure>)
+#   "curves"    all entries in the figure title; the FIRST entry colours the
+#               site map and decides CURVES_SITE_ORDER "worst" / "best" and
+#               CURVES_SITES = "outliers"
+#   <prefix>_site_nrms.txt gets a column per further entry
+# "mean", "skew", "kurt" can be negative: worst / best go by the absolute value
+
+# --- single-panel figures ---
+SINGLE_PANELS: bool = False   # False: one figure with a grid of panels
+# True: one figure per panel:
+#   crossplot  <prefix>_crossplot_<datatype>_<panel>      (e.g. MT_Re_Zxy)
+#   histogram  <prefix>_hist_<group>_all, _band01, ...    (qq likewise)
+#   curves     one figure per site and entry of CURVES_WHAT
+#              (..._curves_site<tag>_<what>; pages of the multi-page PDF)
+#   outliers   <prefix>_site_outliers and <prefix>_site_outliers_hist
+# NCOLS, HIST_NCOLS, QQ_NCOLS are then not used; PANEL_SIZE, HIST_PANEL_SIZE,
+# QQ_PANEL_SIZE and CURVES_PANEL_SIZE [cm] set the size of one figure.
+# FIGURE_TITLE also knows {panel} (crossplot) and {band} (histogram, qq).
+
 # --- selection (None = everything) ---
 DATATYPES: Optional[Sequence[str]] = None     # e.g. ["MT", "VTF"]
 COMPONENTS: Optional[Sequence[str]] = None    # e.g. ["Zxy", "Zyx"]
 
 # --- crossplot ---
 NCOLS: int = 4
-PANEL_SIZE: float = 3.3
+PANEL_SIZE: float = 8.382     # [cm] side of one panel
 EQUAL_ASPECT: bool = True
 CMAP: str = "turbo"
 COLOR_RANGE: str = "global"   # "global" | "panel" (range of log10 f)
@@ -224,7 +302,7 @@ CROSSPLOT_CBAR_SHRINK: float = 0.85   # length / side of the panel grid
 
 # --- residual histograms ---
 HIST_BAND_AXIS: str = "frequency"   # "frequency" | "period"
-HIST_BANDS_PER_DECADE: int = 2
+HIST_BANDS_PER_DECADE: int = 1
 HIST_BY_COMPONENT: bool = False     # False: one figure per data type
                                     # (components pooled, as in Baba 2023)
 HIST_LIMIT: float = 10.0            # histogram range +/- (values outside
@@ -232,7 +310,7 @@ HIST_LIMIT: float = 10.0            # histogram range +/- (values outside
 HIST_BIN_WIDTH: float = 0.5
 HIST_MIN_N: int = 5                 # skip bands with fewer values
 HIST_NCOLS: int = 4
-HIST_PANEL_SIZE: float = 3.0
+HIST_PANEL_SIZE: float = 7.62     # [cm] side of one panel
 
 # --- Q-Q plots (same normalized residuals as the histograms) ---
 QQ_BAND_AXIS: str = "frequency"     # "frequency" | "period"
@@ -244,9 +322,9 @@ QQ_EQUAL_AXES: bool = True         # True: same range on both axes, square
 QQ_CONFIDENCE: Optional[float] = 0.95   # pointwise envelope; None = off
 QQ_MIN_N: int = 10                  # skip bands with fewer values
 QQ_NCOLS: int = 4
-QQ_PANEL_SIZE: float = 3.0
+QQ_PANEL_SIZE: float = 7.62       # [cm] side of one panel
 
-# --- site outliers (optional method "outliers"; add it to METHODS) ---
+# --- site outliers (method "outliers" in METHODS) ---
 # The sites whose nRMS (conventional RMS1 normalization, as in
 # <prefix>_site_nrms.txt) is outside the limits of the distribution of the
 # site nRMS values. Site names as for "curves" (CURVES_SITE_DAT,
@@ -300,7 +378,7 @@ CURVES_SITE_MATCH: str = "auto"  # how the site.dat names are assigned to the
 #          the results file has no coordinates
 # "coords" by coordinates only
 # "id"     by sitenum + CURVES_SITE_ID_OFFSET only
-CURVES_SITE_TOL: float = 15.0   # [m] largest distance for a coordinate match
+CURVES_SITE_TOL: float = 0.015  # [km] largest distance for a coordinate match
 CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = None
 # None = all sites; int N = N sites (chosen
 # by CURVES_SITE_ORDER); list = exactly these
@@ -330,7 +408,7 @@ CURVES_INVERT_X: bool = False      # False = period increasing to the right
 CURVES_PERIOD_LIM: Optional[Tuple[float, float]] = None   # (Tmin, Tmax) [s]
 CURVES_YLIM: Dict[str, Optional[Tuple[float, float]]] = {
     "rho": None, "phase": (-180.,+180.,), "tipper": (-0.5,+0.5,), "pt": None}
-CURVES_PANEL_SIZE: Tuple[float, float] = (4.2, 3.4)       # width, height [in]
+CURVES_PANEL_SIZE: Tuple[float, float] = (10.668, 8.636)  # width, height [cm]
 CURVES_LEGEND_LOC: Optional[str] = "below"   # "below" (under each panel), a
                                    # matplotlib loc such as "upper right", or
                                    # None for no legend. Avoid "best" with
@@ -385,6 +463,10 @@ CURVES_MAP_CMAP: Optional[str] = None   # None = single-hue blue ramp, light = l
                                    # nRMS, dark = high; or a Matplotlib colormap
 CURVES_MAP_NRMS_RANGE: Optional[Tuple[float, float]] = None   # (lo, hi) of the colour
                                    # scale; None = smallest / largest nRMS of the sites
+CURVES_MAP_MEASURE_RANGE: Optional[Tuple[float, float]] = None   # the same, used
+                                   # instead if the first entry of SITE_MEASURES is
+                                   # not "nrms"; None = smallest / largest value
+                                   # (signed measures: symmetric about 0)
 CURVES_MAP_MARKER_SIZE: float = 12.0   # [pt^2] of a site (the current one is larger)
 
 # ---------------------------------------------------------------------------

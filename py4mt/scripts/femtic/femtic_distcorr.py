@@ -13,7 +13,7 @@ estimated distortion matrix of that site.
 @author vrath
 @project py4mt
 @created 2026-11-13
-@modified 2026-11-13
+@modified 2026-11-27
 
 AI-GENERATED CODE NOTICE
 ------------------------
@@ -143,6 +143,12 @@ Provenance
                 None = dotted; False = gap only), passed to
                 femtic_viz.plot_data_ensemble. Needs the femtic_viz.py /
                 data_viz.py of the same date. AI-generated; review before use.
+    2026-11-27  Claude Sonnet 5.5 (Anthropic)
+                New setting PLOT_PANEL_SIZE [cm] (width of one panel column,
+                height of the data figures), passed to the new keyword
+                panel_size of plot_orig_vs_corrected (before: 5.0 x 3.8 inch,
+                fixed in the code; the default is the same size).
+                AI-generated; review before use.
 """
 
 from __future__ import annotations
@@ -276,6 +282,9 @@ PLOT_PHASE_WRAP_STYLE = None
 PLOT_FILE = "observe_distcorr_iter{iter}_plot"
 PLOT_FORMATS = ["png"]
 PLOT_DPI = 200
+#: Size in cm: (width of one panel column, i.e. of one entry of PLOT_WHAT,
+#: height of the figure).
+PLOT_PANEL_SIZE = (12.7, 9.652)
 #: Figure title: "auto"; None, False or "" = none; text (placeholders {site},
 #: {id}, {cond}, {iter}, {new}); or a dict {"overview": spec, "site": spec,
 #: "default": spec}.
@@ -742,13 +751,16 @@ def plot_orig_vs_corrected(path_orig: str, path_new: str, rows: List[dict], *,
                            formats: Sequence[str] = ("png",), dpi: int = 200,
                            title="auto", show: bool = False,
                            phase_wrap_mode: str = "direct",
-                           phase_wrap_style=None) -> List[str]:
+                           phase_wrap_style=None,
+                           panel_size: Tuple[float, float] = (12.7, 9.652)) -> List[str]:
     """Plot the original and the new observe file with ``fviz.plot_data_ensemble``.
 
     Original data are drawn solid, the new data dashed. Both files are read
     from disk. One overview figure with all MT sites, and one figure per site
     in ``sites`` (see :func:`select_plot_sites`); a single-site figure is made
     from small temporary single-site files.
+
+    ``panel_size`` is (width of one panel column, figure height) in cm.
 
     Returns the list of saved files.
     """
@@ -779,7 +791,8 @@ def plot_orig_vs_corrected(path_orig: str, path_new: str, rows: List[dict], *,
     common = dict(what=what_l, comps=comps, show_errors=show_errors,
                   perlims=period_limits, out=False,
                   phase_wrap_mode=phase_wrap_mode, phase_wrap_style=phase_wrap_style)
-    figsize = (5.0 * len(what_l), 3.8)
+    width, height = (round(float(v) / 2.54, 6) for v in panel_size)  # cm -> inch
+    figsize = (width * len(what_l), height)
 
     if overview:
         fig, axs = fviz.plot_data_ensemble(
@@ -883,7 +896,8 @@ def main() -> int:
                 period_limits=PLOT_PERIOD_LIMITS, formats=PLOT_FORMATS, dpi=PLOT_DPI,
                 title=PLOT_TITLE, show=SHOW,
                 phase_wrap_mode=PLOT_PHASE_WRAP_MODE,
-                phase_wrap_style=PLOT_PHASE_WRAP_STYLE)
+                phase_wrap_style=PLOT_PHASE_WRAP_STYLE,
+                panel_size=PLOT_PANEL_SIZE)
             print(f"[femtic_distcorr] {len(saved)} figure file(s):")
             for s in saved:
                 print("   " + s)

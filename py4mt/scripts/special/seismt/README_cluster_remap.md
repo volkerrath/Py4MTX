@@ -936,3 +936,10 @@ Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 The logic is `tomomt.resolve_title` (the same as `femtic_viz.resolve_title` and `util.resolve_title`).
 
 The position of the colour bar is the existing `COLORBAR_POSITION` (`"right"`, `"left"`, `"bottom"`, `"top"`); blanks around the value are now ignored (`tomomt.build_panel_figure`, `finish_panel_colorbar`).
+
+## Changes 2026-11-27 (sizes in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.
+
+`cluster_remap.py`: `COLORBAR_PAD` is in **cm** (before: inch); the default `0.254` is the former
+`0.10`. Multiply a personal value by 2.54.

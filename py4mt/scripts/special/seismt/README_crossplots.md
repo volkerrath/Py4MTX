@@ -172,3 +172,11 @@ bottom-left corner after an initial layout check showed it overlapping
 the title in some view angles), forced subsampling with a small
 `MAX_POINTS`, and `DEPTH_RANGE` filtering (confirmed it strictly reduces
 the point count relative to the unfiltered case).
+
+## Changes 2026-11-27 (sizes in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.
+
+New settings `FIG_SIZE = (16.51, 15.24)` (pairs) and `FIG_SIZE_3D = (19.05, 16.51)`
+(triples), width and height in cm. Before, the sizes were fixed in the code in
+inch; the defaults give the same figures.

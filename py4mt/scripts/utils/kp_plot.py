@@ -36,6 +36,9 @@ Examples
     python kp_plot.py --label-fontsize 12 --tick-fontsize 10 \
         --legend-fontsize 7 --daily-linestyle dashdot
 
+    # Figure size in cm (width height)
+    python kp_plot.py --size 25 10 --png kp.png
+
     # Own title ({start} and {end} are the dates), or none
     python kp_plot.py --title "Kp, {start} to {end}"
     python kp_plot.py --title ""
@@ -61,6 +64,10 @@ Changes
             with {start} and {end} replaced by the first and last date of the
             data. Claude Sonnet 5.5 (Anthropic), AI-generated, review before
             use.
+2026-11-27  --size WIDTH HEIGHT / plot_kp(size=...): figure size in cm
+            (default 33.02 x 11.43 = the former 13 x 4.5 inch, fixed in the
+            code). Claude Sonnet 5.5 (Anthropic), AI-generated, review
+            before use.
 """
 
 import argparse
@@ -145,7 +152,8 @@ def kp_title(title, df):
 def plot_kp(df, ax=None, daily_max=True, storm_level=5.0,
             label_fontsize=11, tick_fontsize=10, title_fontsize=12,
             legend_fontsize=8, daily_linestyle="-",
-            threshold_linestyle="--", grid_linestyle=":", title="auto"):
+            threshold_linestyle="--", grid_linestyle=":", title="auto",
+            size=(33.02, 11.43)):
     """
     Plot three-hourly Kp indices and optionally daily maxima.
 
@@ -168,6 +176,8 @@ def plot_kp(df, ax=None, daily_max=True, storm_level=5.0,
         "auto" = "Planetary geomagnetic Kp index (GFZ)" (as before); None,
         False or "" = no title; any other text is used as given, with {start}
         and {end} replaced by the first and last date of ``df``.
+    size : tuple of float
+        Figure (width, height) in cm; used only if ``ax`` is None.
 
     Returns
     -------
@@ -175,7 +185,8 @@ def plot_kp(df, ax=None, daily_max=True, storm_level=5.0,
         Plot axes.
     """
     if ax is None:
-        _, ax = plt.subplots(figsize=(13, 4.5))
+        width, height = (round(float(v) / 2.54, 6) for v in size)  # cm -> inch
+        _, ax = plt.subplots(figsize=(width, height))
 
     kp = df["Kp"]
     storm = kp >= storm_level
@@ -255,6 +266,9 @@ def main():
         "--title", default="auto",
         help='figure title: "auto" (default), "" for none, or text with '
              '{start} and {end}')
+    parser.add_argument(
+        "--size", type=float, nargs=2, default=(33.02, 11.43),
+        metavar=("WIDTH", "HEIGHT"), help="figure size in cm")
     args = parser.parse_args()
 
     df = get_kp(
@@ -277,6 +291,7 @@ def main():
         threshold_linestyle=args.threshold_linestyle,
         grid_linestyle=args.grid_linestyle,
         title=args.title,
+        size=tuple(args.size),
     )
     ax.figure.tight_layout()
 

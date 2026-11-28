@@ -131,7 +131,7 @@ fpn.plot_nrms_glyphs(
 | Parameter | Meaning |
 |---|---|
 | `DISPLAY_COORDS` | `"model"` (model-local km), `"utm"` (absolute UTM km), or `"latlon"` (decimal degrees). |
-| `UTM_ZONE`, `UTM_NORTHERN`, `UTM_ORIGIN_E/N` | Same role as in `femtic_plot_distort.py`. |
+| `UTM_ZONE`, `UTM_NORTHERN`, `UTM_ORIGIN_E/N` | Same role as in `femtic_plot_distort.py` (origin in UTM **km**). |
 | `ERR_MIN` | `(obs, cal, err)` triples with `err <= ERR_MIN` are excluded from the misfit sum. |
 | `GLYPH_SIZE_MODE` | `"fixed"` or `"scaled"` (size grows with `nRMS`, between `GLYPH_SIZE_MIN`/`MAX`). |
 | `CMAP_NRMS`, `NRMS_REFERENCE` | Diverging colormap and its centre value (default `1.0`). `NRMS_VMIN`/`NRMS_VMAX` override the auto symmetric range. |
@@ -202,5 +202,7 @@ were re-tested, on synthetic rows; see the accuracy note.)*
 | 2026-09-13 | Claude Sonnet 5 (Anthropic) | Rewritten (v2): best iteration now selected from `femtic.cnv` via `fem.get_nrms`; per-site residuals read from that iteration's `data_iter<N>.h5` via `femtic_hdf5_readers.read_data_hdf5`. Added `_resolve_station_ids` (station_id/sitenum matching with a 0-based/1-based fallback, full-containment check only) and `TITLE_SHOW_ITERATION`. Verified against a hand-written `femtic_hdf5_readers` stub (see "Verification performed"); found and fixed a partial-overlap matching bug during that testing. AI-generated; the real `femtic_hdf5_readers.py` HDF5 schema itself remains unverified against a live file (inherited from that module's own readme). |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | Title and colour bar in the form of all plot scripts: `TITLE` (`"auto"`, none, text with `{iter}` / `{nrms}`, dict), new `CBAR_LOCATION` / `CBAR_SHRINK` / `CBAR_THICKNESS`; the colour bar is drawn by `fviz.add_colorbar`. Default figure unchanged. `TITLE = ""` now means no title. Needs the `femtic_viz.py` of the same date. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `CNV_FILE` (one name or a list of candidate names; default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`), passed to `fem.get_nrms()`. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
+| 2026-11-26 | Claude Sonnet 5.5 (Anthropic) | `UTM_ORIGIN_E` / `UTM_ORIGIN_N` are UTM **km** (before: m); a personal setting in metres must be converted. A value that looks like metres stops with an error (`fem.KmUnitError`). Needs `femtic.py` of the same date. Tested on synthetic data only: same model coordinates as before for the same origin. AI-generated; review before production use. |
+| 2026-11-27 | Claude Sonnet 5.5 (Anthropic) | `FIGSIZE` is in cm (before: inch); the default `(20.32, 17.78)` is the former `(8, 7)`. Multiply personal values by 2.54. AI-generated; review before use. |
 
 Author: Volker Rath (DIAS)

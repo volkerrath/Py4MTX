@@ -21,6 +21,9 @@ Panel contents depend on the parameterisation used by the sampler:
 @project:   py4mt — Python for Magnetotellurics
 @created:   2026-02-13 with the help of ChatGPT (GPT-5 Thinking)
 @modified:  2026-11-11 -- FIGURE_TITLE: title of the figures ("auto" = station | domain:set as before; None / "" = none; text with {station}, {domain}, {param_set}, {key}); PANEL_TITLES is not needed (the panels of mv.plot_paramset_threepanel are labelled by their axes); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+@modified:  2026-11-27 -- new setting FIG_SIZE [cm] (before: 8 x 8 inch, fixed in the code; the
+            default gives the same figures);
+            Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 from __future__ import annotations
@@ -56,6 +59,8 @@ from version import versionstrg
 # Use "auto" to pick up the parametrisation actually used by the sampler.
 PARAM_DOMAIN = "auto"  # "auto", "rho" or "sigma"
 PARAM_SET = "auto"     # "auto", "minmax" or "max_anifac"
+
+FIG_SIZE = (20.32, 20.32)  # [cm] width, height of the station figures
 
 # Figure title: "auto" = "<station> | <domain>:<set>" (as before); None, False
 # or "" = no title; a string with the placeholders {station}, {domain},
@@ -100,6 +105,11 @@ def _bands_to_qpairs(bands):
             hi /= 100.0
         qpairs.append((lo, hi))
     return tuple(qpairs)
+
+
+def _figsize(size_cm) -> tuple:
+    """Figure size (width, height) given in cm, in the inches Matplotlib uses."""
+    return tuple(round(float(v) / 2.54, 6) for v in size_cm)
 
 
 def _infer_param_domain(summary, idata):
@@ -186,7 +196,7 @@ def main() -> int:
             except Exception as e:
                 print(f"  Could not open idata: {nc_path} ({e}). Using summary only.")
 
-        fig, axs = plt.subplots(3, 1, figsize=(8, 8), sharey=True)
+        fig, axs = plt.subplots(3, 1, figsize=_figsize(FIG_SIZE), sharey=True)
 
         param_domain = (
             _infer_param_domain(summary, idata)

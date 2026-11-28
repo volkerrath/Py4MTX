@@ -52,6 +52,37 @@ Notice      : This code is AI-generated. Review and test it before any
 
 Changelog
 ---------
+2026-11-27  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            (1) The plotted measures of data fit can be chosen: new
+            settings PANEL_MEASURES, PANEL_MEASURES_FONTSIZE,
+            HIST_SCALE_MEASURE, SITE_MEASURES, CURVES_MAP_MEASURE_RANGE;
+            new keywords measures / box_fontsize of the plot functions
+            (histograms also scale_measure); "curves" titles also know
+            {fit} and one field per measure; <prefix>_site_nrms.txt gets
+            a column per further site measure. sample_moments(),
+            fit_measures() and qq_quartile_line() moved to the new module
+            misfit_measures.py (still importable from here). (2) The
+            settings PANEL_SIZE, HIST_PANEL_SIZE, QQ_PANEL_SIZE and
+            CURVES_PANEL_SIZE are in cm (before: inch; defaults
+            converted); the panel_size arguments of the plot functions are
+            still inches. With the default settings the output is
+            unchanged. Tested on synthetic files only.
+2026-11-26b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            The settings SITE_MERGE_TOL (0.001) and CURVES_SITE_TOL (0.015)
+            are km (before: 1.0 and 15.0 m); run_models() / run_ensemble()
+            return 1 for a value of 1 or more. build_dataset() and the
+            matching functions still take metres. Tested on synthetic files
+            only. AI-generated; review before production use.
+2026-11-26  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            optional single-panel figures, new setting SINGLE_PANELS (default
+            False = figures as before). True: one figure per crossplot panel,
+            per histogram / Q-Q band, per site and quantity of "curves", and
+            scatter and histogram of "outliers" separately; shorter two-line
+            titles, new title placeholders {panel} and {band}; with
+            PANEL_TITLES = False the panel label is a title line of its own.
+            The saved page of a single figure is fitted to the drawing.
+            plot_residual_histograms and plot_qq_bands: new keyword bands;
+            plot_site_outliers: new keyword parts. Tables are unchanged.
 2026-11-22  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             new method "outliers": the sites whose nRMS (conventional RMS1
             normalization, the value of <prefix>_site_nrms.txt) is outside the
@@ -191,7 +222,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# py4mt environment: make the modules importable (femtic.py, inverse.py, ...)
+# py4mt environment: make the modules importable (femtic.py,
+# misfit_measures.py, ...)
 # ---------------------------------------------------------------------------
 PY4MTX_ROOT = os.environ.get("PY4MTX_ROOT", "")
 if PY4MTX_ROOT:
@@ -201,7 +233,11 @@ if PY4MTX_ROOT:
             sys.path.insert(0, _pth)
 
 import femtic as fem  # noqa: E402
-import inverse as inv  # noqa: E402  (nrms, r_mae, r_med, q95)
+from misfit_measures import (  # noqa: F401  (also part of this module's API)
+    BOX_DEFAULT, BOX_ITEMS, BOX_KINDS, FIT_MEASURE_NAMES, HIST_SCALES,
+    MEASURE_ALIASES, MEASURE_LABELS, SIGNED_MEASURES, box_items, box_text,
+    fit_measures, hist_scale, qq_quartile_line, sample_moments, site_measures,
+    site_value)
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +281,7 @@ class Settings:
                                           # Affects the per-site table and the "curves"
                                           # figures (one figure per position, all data
                                           # types together); not the other methods
-    SITE_MERGE_TOL: float = 1.0           # [m] positions closer than this are the same
+    SITE_MERGE_TOL: float = 0.001         # [km] positions closer than this are the same
 
     # --- output ---
     OUT_DIR: Optional[str] = None   # None -> the directory <base>/<OUT_PREFIX>/, <base> =
@@ -284,13 +320,50 @@ class Settings:
     PANEL_TITLES: bool = True     # titles of the panels of the crossplot,
     # histogram and Q-Q figures (False = none)
 
+    # --- which measures of data fit are plotted ---
+    # Names: "nrms", "r_mae", "r_med", "q95", "mean" (bias), "std", "skew",
+    # "kurt" (excess); definitions: fit_measures(). Also accepted: "rms",
+    # "rmae", "rmed", "bias".
+    PANEL_MEASURES: Union[None, bool, str, Sequence[str], dict] = None
+    # text box of every crossplot, histogram and Q-Q panel. Besides the names
+    # above: "n" (number of values), "slope" and "icpt" (quartile line of the
+    # normal Q-Q plot), "n_out" (histogram, Q-Q: values outside +/- *_LIMIT,
+    # written only if > 0) and "out_pct" (Q-Q: dots outside the envelope).
+    # None = as before (crossplot n, nrms; histogram n, nrms, n_out; Q-Q n,
+    # slope, icpt); a list (names that do not apply to a kind of figure are
+    # left out there); a dict {"crossplot": list, "histogram": list,
+    # "qq": list, "default": list}; False or () = no box
+    PANEL_MEASURES_FONTSIZE: float = 8.0   # [pt] of that box
+    HIST_SCALE_MEASURE: Optional[str] = "nrms"   # histogram: scale s of the red
+    # curve N(0, s^2) and of the blue dashed lines at +/- s: "nrms" (as
+    # before), "r_mae", "r_med", "q95" (s = q95 / 1.96); None = not drawn
+    SITE_MEASURES: Union[str, Sequence[str]] = "nrms"
+    # per-site value(s) used by "outliers" (one table, CSV and figure per
+    # entry; file names other than nrms get the suffix _<measure>), by the
+    # titles of "curves" (all entries) and by the FIRST entry for the site map
+    # colour, CURVES_SITE_ORDER "worst" / "best" and CURVES_SITES =
+    # "outliers"; further columns of <prefix>_site_nrms.txt. For the signed
+    # measures "mean", "skew", "kurt" worst / best go by the absolute value
+
+    # --- single-panel figures ---
+    SINGLE_PANELS: bool = False   # False: one figure with a grid of panels (as
+    # before). True: one figure per panel:
+    #   crossplot  <prefix>_crossplot_<datatype>_<panel>   (e.g. MT_Re_Zxy)
+    #   histogram  <prefix>_hist_<group>_all, _band01, ... (qq likewise)
+    #   curves     one figure per site AND entry of CURVES_WHAT
+    #              (..._curves_site<tag>_<what>; pages of the multi-page PDF)
+    #   outliers   <prefix>_site_outliers and <prefix>_site_outliers_hist
+    # NCOLS, HIST_NCOLS and QQ_NCOLS are then not used; the *_PANEL_SIZE
+    # settings are the size of one figure. FIGURE_TITLE also knows {panel}
+    # (crossplot) and {band} (histogram, qq).
+
     # --- selection (None = everything) ---
     DATATYPES: Optional[Sequence[str]] = None     # e.g. ["MT", "VTF"]
     COMPONENTS: Optional[Sequence[str]] = None    # e.g. ["Zxy", "Zyx"]
 
     # --- crossplot ---
     NCOLS: int = 4
-    PANEL_SIZE: float = 3.3
+    PANEL_SIZE: float = 8.382     # [cm] side of one panel
     EQUAL_ASPECT: bool = True
     CMAP: str = "turbo"
     COLOR_RANGE: str = "global"   # "global" | "panel" (range of log10 f)
@@ -312,7 +385,7 @@ class Settings:
     HIST_BIN_WIDTH: float = 0.5
     HIST_MIN_N: int = 5                 # skip bands with fewer values
     HIST_NCOLS: int = 4
-    HIST_PANEL_SIZE: float = 3.0
+    HIST_PANEL_SIZE: float = 7.62     # [cm] side of one panel
 
     # --- Q-Q plots (same normalized residuals as the histograms) ---
     QQ_BAND_AXIS: str = "frequency"     # "frequency" | "period"
@@ -324,7 +397,7 @@ class Settings:
     QQ_CONFIDENCE: Optional[float] = 0.95   # pointwise envelope; None = off
     QQ_MIN_N: int = 10                  # skip bands with fewer values
     QQ_NCOLS: int = 4
-    QQ_PANEL_SIZE: float = 3.0
+    QQ_PANEL_SIZE: float = 7.62       # [cm] side of one panel
 
     # --- ensemble nRMS histogram (method "nrms") ---
     # Needs only the results of femtic_ens_post.py; no results_iterN.h5, and
@@ -404,7 +477,7 @@ class Settings:
     #          the results file has no coordinates
     # "coords" by coordinates only
     # "id"     by sitenum + CURVES_SITE_ID_OFFSET only
-    CURVES_SITE_TOL: float = 15.0   # [m] largest distance for a coordinate match
+    CURVES_SITE_TOL: float = 0.015  # [km] largest distance for a coordinate match
     CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = None
     # None = all sites; int N = N sites (chosen
     # by CURVES_SITE_ORDER); list = exactly these
@@ -447,7 +520,7 @@ class Settings:
     CURVES_PERIOD_LIM: Optional[Tuple[float, float]] = None   # (Tmin, Tmax) [s]
     CURVES_YLIM: Dict[str, Optional[Tuple[float, float]]] = {
         "rho": None, "phase": (-180.,+180.,), "tipper": (-0.5,+0.5,), "pt": None}
-    CURVES_PANEL_SIZE: Tuple[float, float] = (4.2, 3.4)       # width, height [in]
+    CURVES_PANEL_SIZE: Tuple[float, float] = (10.668, 8.636)  # width, height [cm]
     CURVES_LEGEND_LOC: Optional[str] = "below"   # "below" (under each panel), a
                                        # matplotlib loc such as "upper right", or
                                        # None for no legend. Avoid "best" with
@@ -502,6 +575,10 @@ class Settings:
                                        # nRMS, dark = high; or a Matplotlib colormap
     CURVES_MAP_NRMS_RANGE: Optional[Tuple[float, float]] = None   # (lo, hi) of the colour
                                        # scale; None = smallest / largest nRMS of the sites
+    CURVES_MAP_MEASURE_RANGE: Optional[Tuple[float, float]] = None   # the same, used
+                                       # instead if the first entry of SITE_MEASURES is
+                                       # not "nrms"; None = smallest / largest value
+                                       # (signed measures: symmetric about 0)
     CURVES_MAP_MARKER_SIZE: float = 12.0   # [pt^2] of a site (the current one is larger)
 
 
@@ -644,6 +721,46 @@ def align_members(datas: Sequence[dict]) -> List[np.ndarray]:
 
 
 _NO_STATION_POSITION = ("HTF", "NMT")   # x / y is not the position of one station
+
+
+def _tol_m(value: float, name: str) -> float:
+    """
+    A site tolerance setting (km) in metres. 1 km or more is refused
+    (fem.KmUnitError, a ValueError): it is a value given in metres.
+    """
+    v = float(value)
+    if v >= 1.0:
+        raise fem.KmUnitError(
+            f"{name} = {value!r}: the tolerance is given in km (0.015 = 15 m); "
+            "this looks like metres.")
+    return v * 1000.0
+
+
+def _measures_ok(opts) -> bool:
+    """False (with a message) if a setting that selects measures is invalid."""
+    try:
+        for kind in BOX_KINDS:
+            box_items(opts.PANEL_MEASURES, kind)
+        hist_scale(opts.HIST_SCALE_MEASURE)
+        site_measures(opts.SITE_MEASURES)
+        size = opts.PANEL_MEASURES_FONTSIZE
+        if isinstance(size, (bool, str)) or not float(size) > 0.0:
+            raise ValueError(f"PANEL_MEASURES_FONTSIZE must be a number > 0, got {size!r}.")
+    except (TypeError, ValueError) as exc:
+        print(f"femtic_misfit: {exc}")
+        return False
+    return True
+
+
+def _units_ok(opts) -> bool:
+    """False (with a message) if a tolerance setting looks like metres."""
+    try:
+        _tol_m(opts.SITE_MERGE_TOL, "SITE_MERGE_TOL")
+        _tol_m(opts.CURVES_SITE_TOL, "CURVES_SITE_TOL")
+    except fem.KmUnitError as exc:
+        print(f"femtic_misfit: {exc}")
+        return False
+    return True
 
 
 def merge_sites_by_position(ds: dict, tol: float) -> dict:
@@ -898,61 +1015,6 @@ def build_panels(ds: dict, *, datatypes: Optional[Sequence[str]] = None,
     return panels
 
 
-def sample_moments(r: np.ndarray) -> dict:
-    """
-    Central moments of a sample (non-finite values ignored): std, skew, kurt.
-
-    std   sqrt(m2), m_k = mean((r - mean(r))**k)         (spread about the mean)
-    skew  m3 / m2**1.5                                   (Fisher-Pearson g1)
-    kurt  m4 / m2**2 - 3                                 (EXCESS kurtosis g2)
-
-    These are the plain (biased, 1/n) moment estimators, the defaults of
-    scipy.stats.skew / scipy.stats.kurtosis, centred on the sample mean, so a
-    bias does not enter. Expected for N(0, s^2) samples: skew = kurt = 0; the
-    standard errors are about sqrt(6/n) and sqrt(24/n) for independent values.
-    Positive kurt = heavy tails (outliers), negative = light tails; skew > 0
-    = long tail towards positive residuals (observed > calculated). NaN where
-    undefined: skew needs n >= 3, kurt n >= 4, and a non-constant sample.
-    """
-    nan = float("nan")
-    r = np.asarray(r, dtype=float).ravel()
-    r = r[np.isfinite(r)]
-    n = r.size
-    out = dict(std=nan, skew=nan, kurt=nan)
-    if n == 0:
-        return out
-    d = r - r.mean()
-    m2 = float(np.mean(d ** 2))
-    out["std"] = math.sqrt(m2)
-    if n < 3 or out["std"] <= 1.0e-12 * float(np.max(np.abs(r))):
-        return out                                # constant (or all-zero) sample
-    out["skew"] = float(np.mean(d ** 3)) / m2 ** 1.5
-    if n >= 4:
-        out["kurt"] = float(np.mean(d ** 4)) / m2 ** 2 - 3.0
-    return out
-
-
-def fit_measures(r: np.ndarray) -> dict:
-    """
-    Fit measures of error-normalized residuals (non-finite values ignored):
-    n, nrms, r_mae, r_med, q95 (all from inverse.py), the mean (bias) and the
-    higher moments std, skew, kurt (excess) of sample_moments().
-    Expected for N(0,1) residuals: nrms = r_mae = r_med = 1, q95 = 1.96,
-    mean = skew = kurt = 0, std = 1.
-    """
-    r = np.asarray(r, dtype=float).ravel()
-    r = r[np.isfinite(r)]
-    return dict(
-        n=int(r.size),
-        nrms=float(inv.nrms(r)),
-        r_mae=float(inv.r_mae(r)),
-        r_med=float(inv.r_med(r)),
-        q95=float(inv.q95(r)),
-        mean=float(np.mean(r)) if r.size else float("nan"),
-        **sample_moments(r),
-    )
-
-
 def panel_stats(p: dict) -> dict:
     """
     n, plain rms, and the fit measures of the panel's normalized residuals:
@@ -1014,12 +1076,16 @@ def plot_crossplot_datatype(
     alpha: float, log_rho: bool, show_errorbars: bool, equal_aspect: bool,
     figure_title: Optional[str] = None, panel_titles: bool = True,
     cbar_location: Optional[str] = None, cbar_shrink: float = 0.85,
-    ensemble_mean: Optional[bool] = None,
+    ensemble_mean: Optional[bool] = None, measures=None,
+    box_fontsize: float = 8.0,
 ):
     """One figure with all crossplot panels of a data type.
 
     has_syn: show nRMS1 and nRMS2 (else nRMS = nRMS1 only). ensemble_mean:
     the calculated values are the ensemble mean (y label); None = as has_syn.
+
+    measures: entries of the panel text box, as the setting PANEL_MEASURES
+    (None = n and nRMS); box_fontsize: its font size [pt].
 
     figure_title: None = the automatic title, "" = none, else the text.
     panel_titles: False = no panel titles. cbar_location: None = at the right
@@ -1029,6 +1095,7 @@ def plot_crossplot_datatype(
     from matplotlib import cm
     from matplotlib.colors import Normalize
 
+    items = box_items(measures, "crossplot")
     n = len(panels)
     nc = max(1, min(ncols, n))
     nr = int(math.ceil(n / nc))
@@ -1071,11 +1138,12 @@ def plot_crossplot_datatype(
         ax.plot([lo, hi], [lo, hi], color="k", lw=0.8, zorder=3)
         if equal_aspect:
             ax.set_aspect("equal", adjustable="box")
-        st = panel_stats(p)
-        txt = (f"n={st['n']}\nnRMS1={st['nrms1']:.2f}\nnRMS2={st['nrms2']:.2f}"
-               if has_syn else f"n={st['n']}\nnRMS={st['nrms1']:.2f}")
-        ax.text(0.04, 0.96, txt, transform=ax.transAxes, ha="left", va="top",
-                fontsize=8, bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
+        _, r1, r2 = normalized_residuals(p)
+        txt = box_text(items, "crossplot", n=x.size, r1=r1, r2=r2, has_syn=has_syn)
+        if txt:
+            ax.text(0.04, 0.96, txt, transform=ax.transAxes, ha="left", va="top",
+                    fontsize=box_fontsize,
+                    bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
         if panel_titles:
             ax.set_title(p["label"], fontsize=10)
         ax.set_xlabel("observed", fontsize=9)
@@ -1135,8 +1203,17 @@ def select_bands(freq: np.ndarray, *, per_decade: int, axis: str,
     return sel
 
 
-def _rms(a: np.ndarray) -> float:
-    return float(inv.nrms(a))
+def _band_jobs(freq: np.ndarray, single: bool, *, per_decade: int, axis: str,
+               min_n: int) -> List[Tuple[str, Optional[List[int]], str]]:
+    """Figures of the histogram / Q-Q methods: (file suffix, bands, label).
+
+    single False: one figure with every band. True: one per band, suffix
+    "_all" (the pooled panel), "_band01", "_band02", ..."""
+    if not single:
+        return [("", None, "")]
+    sel = select_bands(freq, per_decade=per_decade, axis=axis, min_n=min_n)
+    return [("_all" if i == 0 else f"_band{i:02d}", [i], label)
+            for i, (label, _) in enumerate(sel)]
 
 
 def plot_residual_histograms(
@@ -1144,13 +1221,21 @@ def plot_residual_histograms(
     has_syn: bool, per_decade: int, axis: str, ncols: int, panel_size: float,
     limit: float, bin_width: float, min_n: int, run_label: str = "",
     figure_title: Optional[str] = None, panel_titles: bool = True,
+    bands: Optional[Sequence[int]] = None, measures=None,
+    scale_measure: Optional[str] = "nrms", box_fontsize: float = 8.0,
 ):
     """
     Histograms of normalized residuals: first panel pools all bands, then
-    one panel per frequency (period) band. Bars: residuals normalized by
+    one panel per frequency (period) band. `bands`: indices into
+    select_bands() of the panels to draw (0 = all bands); None = all. Bars: residuals normalized by
     sqrt(err^2 + eps_syn^2) (RMS2) if `has_syn`, else by err (RMS1). With
     `has_syn` the RMS1 histogram is added as a step outline. Red: N(0, RMS^2)
     of the bars; blue dashed: +/- RMS of the bars (Baba 2023, Fig. 10a).
+
+    measures: entries of the panel text box, as the setting PANEL_MEASURES
+    (None = n, RMS, n_out); box_fontsize: its font size [pt]. scale_measure:
+    the scale used instead of the RMS for the red curve and the blue lines,
+    as the setting HIST_SCALE_MEASURE (None = neither is drawn).
 
     Returns (figure, stats) where stats is a list of dicts with keys
     band, n, m1, m2 (fit_measures of the RMS1- / RMS2-normalized residuals),
@@ -1158,7 +1243,11 @@ def plot_residual_histograms(
     """
     import matplotlib.pyplot as plt
 
+    items = box_items(measures, "histogram")
+    scale = hist_scale(scale_measure)
     sel = select_bands(freq, per_decade=per_decade, axis=axis, min_n=min_n)
+    if bands is not None:
+        sel = [sel[i] for i in bands]
 
     n = len(sel)
     nc = max(1, min(ncols, n))
@@ -1178,8 +1267,6 @@ def plot_residual_histograms(
         a1, a2 = r1[m], r2[m]
         main = a2 if has_syn else a1
         nn = main.size
-        rms1, rms2 = _rms(a1), _rms(a2)
-        rms_main = rms2 if has_syn else rms1
         n_out = int(np.count_nonzero(np.abs(main) > limit))
 
         counts, _ = np.histogram(main, bins=edges)
@@ -1190,19 +1277,22 @@ def plot_residual_histograms(
             c1, _ = np.histogram(a1, bins=edges)
             ax.step(centres, 100.0 * c1 / nn, where="mid", color="tab:orange",
                     linewidth=1.0, label="RMS1-normalized")
-        if np.isfinite(rms_main) and rms_main > 0.0:
-            g = 100.0 * bin_width * np.exp(-xs**2 / (2.0 * rms_main**2)) \
-                / (rms_main * math.sqrt(2.0 * math.pi))
-            ax.plot(xs, g, color="red", linewidth=1.0, label="N(0, RMS^2)")
-            for s in (-rms_main, rms_main):
-                ax.axvline(s, color="tab:blue", linestyle="--", linewidth=0.8)
+        if scale is not None:
+            divisor, curve_label = HIST_SCALES[scale]
+            sig = fit_measures(main)[scale] / divisor
+            if np.isfinite(sig) and sig > 0.0:
+                g = 100.0 * bin_width * np.exp(-xs**2 / (2.0 * sig**2)) \
+                    / (sig * math.sqrt(2.0 * math.pi))
+                ax.plot(xs, g, color="red", linewidth=1.0, label=curve_label)
+                for s in (-sig, sig):
+                    ax.axvline(s, color="tab:blue", linestyle="--", linewidth=0.8)
         ax.set_xlim(-limit, limit)
-        txt = (f"n={nn}\nRMS1={rms1:.2f}\nRMS2={rms2:.2f}" if has_syn
-               else f"n={nn}\nRMS={rms1:.2f}")
-        if n_out:
-            txt += f"\nout: {n_out}"
-        ax.text(0.03, 0.97, txt, transform=ax.transAxes, ha="left", va="top",
-                fontsize=8, bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
+        txt = box_text(items, "histogram", n=nn, r1=a1, r2=a2, has_syn=has_syn,
+                       limit=limit)
+        if txt:
+            ax.text(0.03, 0.97, txt, transform=ax.transAxes, ha="left", va="top",
+                    fontsize=box_fontsize,
+                    bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
         if panel_titles:
             ax.set_title(label, fontsize=10)
         ax.set_xlabel("normalized residual", fontsize=9)
@@ -1233,22 +1323,14 @@ def qq_points(a: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return norm.ppf(p), a
 
 
-def qq_quartile_line(sample_sorted: np.ndarray) -> Tuple[float, float]:
-    """(slope, intercept) of the line through the sample's and the standard
-    normal's first and third quartiles (robust scale and location)."""
-    from scipy.stats import norm
-    q1, q3 = np.quantile(sample_sorted, [0.25, 0.75])
-    z1, z3 = norm.ppf([0.25, 0.75])
-    slope = float((q3 - q1) / (z3 - z1))
-    return slope, float(q1 - slope * z1)
-
-
 def plot_qq_bands(
     title: str, freq: np.ndarray, r1: np.ndarray, r2: np.ndarray, *,
     has_syn: bool, per_decade: int, axis: str, ncols: int, panel_size: float,
     limit: float, confidence: Optional[float], min_n: int,
     equal_axes: bool = False, run_label: str = "",
     figure_title: Optional[str] = None, panel_titles: bool = True,
+    bands: Optional[Sequence[int]] = None, measures=None,
+    box_fontsize: float = 8.0,
 ):
     """
     Normal Q-Q plots of the normalized residuals: first panel pools all
@@ -1262,7 +1344,11 @@ def plot_qq_bands(
     quartile line, from the asymptotic standard error of order statistics,
     se_i = sqrt(p_i (1 - p_i) / n) / phi(z_i), so it judges the Gaussian
     shape irrespective of scale and bias. With `equal_axes` both axes get
-    the same range (at most +/- `limit`) and the panels are square.
+    the same range (at most +/- `limit`) and the panels are square. `bands`:
+    indices into select_bands() of the panels to draw (0 = all bands); None =
+    all. The axis ranges are those of all residuals either way.
+    measures: entries of the panel text box, as the setting PANEL_MEASURES
+    (None = n, slope, icpt); box_fontsize: its font size [pt].
 
     Returns (figure, stats); stats rows have keys band, n, slope1, slope2,
     icpt, out_pct (percentage of the dots outside the envelope), and skew,
@@ -1272,7 +1358,10 @@ def plot_qq_bands(
     import matplotlib.pyplot as plt
     from scipy.stats import norm
 
+    items = box_items(measures, "qq")
     sel = select_bands(freq, per_decade=per_decade, axis=axis, min_n=min_n)
+    if bands is not None:
+        sel = [sel[i] for i in bands]
     n = len(sel)
     nc = max(1, min(ncols, n))
     nr = int(math.ceil(n / nc))
@@ -1313,11 +1402,12 @@ def plot_qq_bands(
             lo, hi = fit - zc * slope2 * se, fit + zc * slope2 * se
             ax.fill_between(z, lo, hi, color="0.5", alpha=0.25, linewidth=0, zorder=1)
             out_pct = 100.0 * float(np.count_nonzero((q < lo) | (q > hi))) / nn
-        txt = (f"n={nn}\nslope1={slope1:.2f}\nslope2={slope2:.2f}" if has_syn
-               else f"n={nn}\nslope={slope2:.2f}")
-        txt += f"\nicpt={icpt:.2f}"
-        ax.text(0.03, 0.97, txt, transform=ax.transAxes, ha="left", va="top",
-                fontsize=8, bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
+        txt = box_text(items, "qq", n=nn, r1=a1, r2=a2, has_syn=has_syn,
+                       limit=limit, out_pct=out_pct)
+        if txt:
+            ax.text(0.03, 0.97, txt, transform=ax.transAxes, ha="left", va="top",
+                    fontsize=box_fontsize,
+                    bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
         if panel_titles:
             ax.set_title(label, fontsize=10)
         ax.set_xlabel("theoretical N(0,1) quantile", fontsize=9)
@@ -1339,6 +1429,10 @@ def plot_qq_bands(
             ax.set_aspect("equal", adjustable="box")
     else:
         axf[0].set_ylim(-ymax, ymax)
+        if bands is not None and main_all.size:
+            # the range of the pooled panel, so that single figures compare
+            xmax = 1.05 * float(np.max(np.abs(qq_points(main_all)[0])))
+            axf[0].set_xlim(-xmax, xmax)
     for ax in axf[n:]:
         ax.set_visible(False)
     env = f", {100 * confidence:.0f}% envelope" if confidence else ""
@@ -1384,6 +1478,7 @@ def _curves_cfg(opts) -> dict:
     """Snapshot of the CURVES_* settings of `opts` (read when the method is run)."""
     return dict(
         what=tuple(opts.CURVES_WHAT), comps=opts.CURVES_COMPS, sites=opts.CURVES_SITES,
+        measures=site_measures(opts.SITE_MEASURES),
         site_order=opts.CURVES_SITE_ORDER, max_sites=opts.CURVES_MAX_SITES,
         ens_mode=opts.CURVES_ENS_MODE, max_curves=opts.CURVES_MAX_CURVES,
         subsample=opts.CURVES_SUBSAMPLE, member_alpha=opts.CURVES_MEMBER_ALPHA,
@@ -1394,17 +1489,21 @@ def _curves_cfg(opts) -> dict:
         obs_errors=opts.CURVES_OBS_ERRORS, obs_ms=opts.CURVES_OBS_MARKERSIZE,
         lw=opts.CURVES_LINEWIDTH, invert_x=opts.CURVES_INVERT_X,
         period_lim=opts.CURVES_PERIOD_LIM, ylim=dict(opts.CURVES_YLIM),
-        panel_size=tuple(opts.CURVES_PANEL_SIZE), multipage=opts.CURVES_MULTIPAGE,
+        panel_size=tuple(_inch(v) for v in opts.CURVES_PANEL_SIZE), multipage=opts.CURVES_MULTIPAGE,
         appres_deg=opts.CURVES_APPRES_PHASE_DEG, legend_loc=opts.CURVES_LEGEND_LOC,
         wrap_mode=opts.CURVES_PHASE_WRAP_MODE, wrap_style=opts.CURVES_PHASE_WRAP_STYLE,
         wrap_range=tuple(opts.CURVES_PHASE_WRAP_RANGE),
         name_case=opts.CURVES_NAME_CASE, title=opts.FIGURE_TITLE,
         site_dat=opts.CURVES_SITE_DAT, id_offset=opts.CURVES_SITE_ID_OFFSET,
-        site_match=opts.CURVES_SITE_MATCH, site_tol=float(opts.CURVES_SITE_TOL),
+        site_match=opts.CURVES_SITE_MATCH,
+        site_tol=_tol_m(opts.CURVES_SITE_TOL, "CURVES_SITE_TOL"),
         map=bool(opts.CURVES_MAP), map_placement=opts.CURVES_MAP_PLACEMENT,
         map_size=opts.CURVES_MAP_SIZE, map_ticks=bool(opts.CURVES_MAP_TICKS),
         map_axes=opts.CURVES_MAP_AXES, map_cmap=opts.CURVES_MAP_CMAP,
-        map_range=opts.CURVES_MAP_NRMS_RANGE, map_ms=opts.CURVES_MAP_MARKER_SIZE,
+        map_range=(opts.CURVES_MAP_NRMS_RANGE
+                   if site_measures(opts.SITE_MEASURES)[0] == "nrms"
+                   else opts.CURVES_MAP_MEASURE_RANGE),
+        map_ms=opts.CURVES_MAP_MARKER_SIZE,
     )
 
 
@@ -1585,9 +1684,10 @@ def _curve_modules():
 
 def site_nrms(ds: dict) -> Dict[int, dict]:
     """
-    Per site: number of residual values n, conventional nRMS (RMS1 reference,
-    real and imaginary parts, as in the other methods) and the site x, y as
-    stored in the results file. Keys are the integer site ids.
+    Per site: number of residual values n, the fit measures of
+    FIT_MEASURE_NAMES (nrms, r_mae, r_med, q95, mean, std, skew, kurt; RMS1
+    reference, real and imaginary parts, as in the other methods) and the
+    site x, y as stored in the results file. Keys are the integer site ids.
     """
     n = ds["freq"].size
     cpx = ~np.isin(ds["datatype_name"], REAL_ONLY_TYPES)
@@ -1607,15 +1707,17 @@ def site_nrms(ds: dict) -> Dict[int, dict]:
         r = np.concatenate([p[m] for p in parts])
         r = r[np.isfinite(r)]
         i0 = int(np.flatnonzero(m)[0])
+        meas = (fit_measures(r) if r.size
+                else {k: float("nan") for k in FIT_MEASURE_NAMES})
         out[int(s)] = dict(
-            n=int(r.size),
-            nrms=float(inv.nrms(r)) if r.size else float("nan"),
+            n=int(r.size), **{k: meas[k] for k in FIT_MEASURE_NAMES},
             x=float(ds["site_x"][i0]), y=float(ds["site_y"][i0]),
             also=list(ds.get("site_alias", {}).get(int(s), [])))
     return out
 
 
-def select_sites(info: Dict[int, dict], spec, order: str, max_sites: int) -> List[int]:
+def select_sites(info: Dict[int, dict], spec, order: str, max_sites: int, *,
+                 measure: str = "nrms") -> List[int]:
     """
     Choose the sites to plot from the per-site table `info` (see site_nrms).
 
@@ -1629,6 +1731,8 @@ def select_sites(info: Dict[int, dict], spec, order: str, max_sites: int) -> Lis
     order for an int spec: "even" (evenly spread over the sorted site ids),
           "id" (first N), "worst" / "best" (largest / smallest nRMS first).
           Without an int spec "worst"/"best" still order the whole list.
+    measure: the per-site value that "worst" / "best" go by (one of
+          FIT_MEASURE_NAMES; for SIGNED_MEASURES its absolute value).
     """
     ids = sorted(info)
     if isinstance(spec, str):
@@ -1685,13 +1789,16 @@ def select_sites(info: Dict[int, dict], spec, order: str, max_sites: int) -> Lis
             raise ValueError(f"CURVES_SITE_ORDER {order!r} not in even/id/worst/best.")
 
         def key(s: int) -> float:
-            v = info[s]["nrms"]
+            v = site_value(info[s], measure)
+            if measure in SIGNED_MEASURES:
+                v = abs(v)
             return v if np.isfinite(v) else float("-inf")
 
         if order == "worst":
             ids = sorted(ids, key=lambda s: -key(s))
         elif order == "best":
-            ids = sorted(ids, key=lambda s: (not np.isfinite(info[s]["nrms"]), key(s)))
+            ids = sorted(ids, key=lambda s: (
+                not np.isfinite(site_value(info[s], measure)), key(s)))
         if spec is None:
             sel = ids
         else:
@@ -1969,6 +2076,11 @@ MAP_PLACEMENT_ALIASES = {"above": "top", "below": "bottom"}      # as in CURVES_
 _CM_PER_INCH = 2.54
 
 
+def _inch(cm: float) -> float:
+    """A length in cm (user settings) in the inches Matplotlib uses."""
+    return round(float(cm) / _CM_PER_INCH, 6)
+
+
 def map_size_in(cfg: dict) -> float:
     """CURVES_MAP_SIZE (cm) in inches, the unit of figure sizes."""
     return float(cfg["map_size"]) / _CM_PER_INCH
@@ -1981,11 +2093,13 @@ _MAP_INK = "#1a1a1a"       # ring of the current site
 _MAP_NEUTRAL = "0.62"      # sites without a colour code (observed only)
 
 
-def site_map_data(info: Dict[int, dict], *, axes: str = "ne") -> Optional[dict]:
+def site_map_data(info: Dict[int, dict], *, axes: str = "ne",
+                  measure: str = "nrms") -> Optional[dict]:
     """
     Positions for the site map from the per-site table (see site_nrms): dict
     with ids, h (horizontal) and v (vertical) in km (model coordinates as
-    stored in the results file) and nrms. axes "ne": site_y = east is
+    stored in the results file), nrms, measure and value (the per-site values
+    of `measure`, which colour the map). axes "ne": site_y = east is
     horizontal, site_x = north vertical; "en": site_x horizontal, site_y
     vertical. Sites without a finite position are left out; None if none is
     left.
@@ -1994,29 +2108,41 @@ def site_map_data(info: Dict[int, dict], *, axes: str = "ne") -> Optional[dict]:
     x = np.array([info[s].get("x", np.nan) for s in ids], dtype=float)
     y = np.array([info[s].get("y", np.nan) for s in ids], dtype=float)
     nr = np.array([info[s].get("nrms", np.nan) for s in ids], dtype=float)
+    val = np.array([site_value(info[s], measure) for s in ids], dtype=float)
     ok = np.isfinite(x) & np.isfinite(y)
     if not ok.any():
         return None
     h, v = (y, x) if axes == "ne" else (x, y)
     return dict(ids=np.asarray(ids)[ok], h=h[ok] / 1.0e3, v=v[ok] / 1.0e3, nrms=nr[ok],
-                axes=axes)
+                axes=axes, measure=measure, value=val[ok])
 
 
 def site_map_style(smap: dict, cfg: dict):
     """
     (cmap, norm) of the site map: the ramp of CURVES_MAP_CMAP (None = the blue
-    ramp), the scale of CURVES_MAP_NRMS_RANGE (None = smallest / largest site
-    nRMS). One scale for all figures, so the pages can be compared.
+    ramp; "coolwarm" for a signed measure), the scale of cfg["map_range"] (the
+    setting CURVES_MAP_NRMS_RANGE, or CURVES_MAP_MEASURE_RANGE for another
+    measure; None = smallest / largest site value, symmetric about 0 for a
+    signed measure). One scale for all figures, so the pages can be compared.
     """
     import matplotlib.pyplot as plt
     from matplotlib.colors import LinearSegmentedColormap, Normalize
-    if cfg["map_cmap"] is None:
-        cmap = LinearSegmentedColormap.from_list("nrms_blue", list(_MAP_RAMP))
-    else:
+    signed = smap.get("measure", "nrms") in SIGNED_MEASURES
+    if cfg["map_cmap"] is not None:
         cmap = plt.get_cmap(cfg["map_cmap"])
+    elif signed:
+        cmap = plt.get_cmap("coolwarm")      # grey (not white) at 0
+    else:
+        cmap = LinearSegmentedColormap.from_list("nrms_blue", list(_MAP_RAMP))
     if cfg["map_range"] is None:
-        fin = smap["nrms"][np.isfinite(smap["nrms"])]
-        lo, hi = (float(fin.min()), float(fin.max())) if fin.size else (0.0, 1.0)
+        val = smap.get("value", smap["nrms"])
+        fin = val[np.isfinite(val)]
+        if signed:
+            top = float(np.max(np.abs(fin))) if fin.size else 0.0
+            top = top if top > 0.0 else 1.0
+            lo, hi = -top, top
+        else:
+            lo, hi = (float(fin.min()), float(fin.max())) if fin.size else (0.0, 1.0)
     else:
         lo, hi = (float(v) for v in cfg["map_range"])
     if not hi > lo:                         # one site, or all with the same nRMS
@@ -2028,8 +2154,9 @@ def _add_site_map(fig, panel_axes, slot, sid: int, site_map: dict, cfg: dict,
                   obs_only: bool) -> None:
     """
     Draw the site map of one figure. All sites are points coloured by their
-    nRMS (grey, no colour bar, when only the observed data are drawn; hollow
-    where a site has no nRMS); the current site `sid` carries a larger marker
+    nRMS, or by site_map["data"]["measure"] (grey, no colour bar, when only the
+    observed data are drawn; hollow
+    where a site has no value); the current site `sid` carries a larger marker
     with a dark ring. Axes in km (model coordinates) if CURVES_MAP_TICKS, else
     none. The block (map + colour bar) is the axes `slot` (placement "right" /
     "left": own column of the figure; "top" / "bottom": own row, across all
@@ -2045,7 +2172,7 @@ def _add_site_map(fig, panel_axes, slot, sid: int, site_map: dict, cfg: dict,
     place = cfg["map_placement"]
     colour = not obs_only
     ticks = bool(cfg["map_ticks"])
-    h, v, nr = d["h"], d["v"], d["nrms"]
+    h, v, nr = d["h"], d["v"], d.get("value", d["nrms"])   # nr: the coloured values
 
     # window of the map [km]: the extent of the sites plus a margin
     span = max(float(h.max() - h.min()), float(v.max() - v.min()))
@@ -2182,7 +2309,7 @@ def _add_site_map(fig, panel_axes, slot, sid: int, site_map: dict, cfg: dict,
         cb.update_ticks()
         cb.outline.set_linewidth(0.4)
         cax.tick_params(labelsize=5, length=2, width=0.5, pad=1.5)
-        cax.set_title("nRMS", fontsize=5.5, pad=2)
+        cax.set_title(MEASURE_LABELS[d.get("measure", "nrms")], fontsize=5.5, pad=2)
 
 
 def _fit_map_row(fig, gs, slot, top: bool, size_in: float, panel_h: float) -> None:
@@ -2380,12 +2507,25 @@ def plot_site_curves(sid: int, series: Dict[str, dict], info: dict, *, M: int,
         if cfg["invert_x"] != ax.xaxis_inverted():
             ax.invert_xaxis()
     who = site_title(sid, info, cfg["name_case"])
-    fit = "" if obs_only else f"nRMS = {info['nrms']:.2f}, "
-    _auto = (f"{who}, x={info['x']:g}, y={info['y']:g}, {fit}"
-             f"n = {info['n']}{' (observed only)' if obs_only else ''}\n{title_extra}")
+    measures = tuple(cfg.get("measures") or ("nrms",))
+    values = {m: ("n/a" if obs_only else f"{site_value(info, m):.2f}")
+              for m in FIT_MEASURE_NAMES}
+    fit_list = ", ".join(f"{MEASURE_LABELS[m]} = {values[m]}" for m in measures)
+    fit = "" if obs_only else f"{fit_list}, "
+    tail = f"n = {info['n']}{' (observed only)' if obs_only else ''}"
+    # many measures: on a line of their own, so that the title stays narrow
+    own_line = (not obs_only
+                and len(measures) > (1 if cfg.get("compact_title") else 2))
+    if cfg.get("compact_title"):           # narrow single-panel figure
+        head = f"{who}, {tail}\n{fit_list}" if own_line else f"{who}, {fit}{tail}"
+        _auto = f"{head}\nx={info['x']:g}, y={info['y']:g}\n{title_extra}"
+    else:
+        head = f"{who}, x={info['x']:g}, y={info['y']:g}"
+        head += f", {tail}\n{fit_list}" if own_line else f", {fit}{tail}"
+        _auto = f"{head}\n{title_extra}"
     _sup = _resolve_title(
         cfg.get("title", "auto"), "curves", _auto, title=title_extra,
-        site=who, sid=sid, nrms=("n/a" if obs_only else f"{info['nrms']:.2f}"))
+        site=who, sid=sid, fit=("n/a" if obs_only else fit_list), **values)
     if _sup:
         fig.suptitle(_sup, fontsize=10)
     if site_map is not None:
@@ -2395,21 +2535,27 @@ def plot_site_curves(sid: int, series: Dict[str, dict], info: dict, *, M: int,
     return fig
 
 
-def format_site_nrms(info: Dict[int, dict]) -> str:
+def format_site_nrms(info: Dict[int, dict],
+                     measures: Sequence[str] = ("nrms",)) -> str:
+    """Table of every site: n, nRMS, a column for every further entry of
+    `measures` (names of FIT_MEASURE_NAMES) and the merged ids (ASCII)."""
+    more = [m for m in measures if m != "nrms"]
     hdr = (f"{'site_id':>8} {'name':<16} {'site_x':>14} {'site_y':>14} {'n':>7} "
-           f"{'nrms':>8}  also_ids")
+           f"{'nrms':>8}" + "".join(f" {m:>8}" for m in more) + "  also_ids")
     lines = ["=" * len(hdr), hdr, "-" * len(hdr)]
     for s in sorted(info):
         d = info[s]
         lines.append(f"{s:>8d} {d.get('name', ''):<16} {d['x']:>14.6g} {d['y']:>14.6g} "
-                     f"{d['n']:>7d} {d['nrms']:>8.3f}  "
+                     f"{d['n']:>7d} {d['nrms']:>8.3f}"
+                     + "".join(f" {site_value(d, m):>8.3f}" for m in more) + "  "
                      + ",".join(str(i) for i in d.get("also", [])))
     lines.append("=" * len(hdr))
     return "\n".join(lines)
 
 
 # ---------------------------------------------------------------------------
-# Site names, and the sites whose nRMS is an outlier (method "outliers")
+# Site names, and the sites whose nRMS (or another measure, SITE_MEASURES) is
+# an outlier (method "outliers")
 # ---------------------------------------------------------------------------
 def _site_search_dirs(runs: Sequence[dict]) -> List[str]:
     """Where to look for site.dat: the results directories and up to two
@@ -2515,26 +2661,33 @@ def outlier_limits(values, *, method: str = "quantile", sigma: float = 2.0,
 
 def find_site_outliers(info: Dict[int, dict], *, method: str = "quantile",
                        sigma: float = 2.0, side: str = "both",
-                       log10: bool = False, min_n: int = 1) -> dict:
+                       log10: bool = False, min_n: int = 1,
+                       measure: str = "nrms") -> dict:
     """
-    The sites of the per-site table `info` (see site_nrms) whose nRMS is
-    outside the limits of outlier_limits(): above hi ("high": poorly fitted)
+    The sites of the per-site table `info` (see site_nrms) whose nRMS, or
+    other per-site value `measure` (one of FIT_MEASURE_NAMES), is outside the
+    limits of outlier_limits(): above hi ("high"; for nRMS: poorly fitted)
     and / or below lo ("low"), as `side` says ("both" | "high" | "low").
-    Sites without a finite nRMS, or with fewer than `min_n` residual values,
-    are not used.
+    Sites without a finite value, or with fewer than `min_n` residual values,
+    are not used. log10 is ignored for SIGNED_MEASURES.
 
-    Returns dict(method, sigma, side, log10, lo, hi, center, spread, level_lo,
-    level_hi, n_used, n_total, used = [ids], flag = {id: "" | "high" | "low"},
-    outliers = [ids, largest nRMS first]). Raises ValueError for an unknown
-    method / side, sigma <= 0.
+    Returns dict(measure, method, sigma, side, log10, log10_ignored, lo, hi,
+    center, spread, level_lo, level_hi, n_used, n_total, used = [ids],
+    flag = {id: "" | "high" | "low"}, outliers = [ids, largest value first]).
+    Raises ValueError for an unknown measure / method / side, sigma <= 0.
     """
     if side not in OUTLIER_SIDES:
         raise ValueError(f"OUTLIER_SIDE {side!r} not in {OUTLIER_SIDES}.")
+    if measure not in FIT_MEASURE_NAMES:
+        raise ValueError(f"find_site_outliers: measure {measure!r} not in "
+                         f"{FIT_MEASURE_NAMES}.")
     log10 = bool(log10) and method != "quantile"      # no effect on the quantiles
+    log10_ignored = log10 and measure in SIGNED_MEASURES
+    log10 = log10 and not log10_ignored
     used = sorted(s for s, d in info.items()
-                  if np.isfinite(d["nrms"]) and d["n"] >= int(min_n)
-                  and (not log10 or d["nrms"] > 0.0))
-    vals = np.array([info[s]["nrms"] for s in used], float)
+                  if np.isfinite(site_value(d, measure)) and d["n"] >= int(min_n)
+                  and (not log10 or site_value(d, measure) > 0.0))
+    vals = np.array([info[s][measure] for s in used], float)
     lim = outlier_limits(vals, method=method, sigma=sigma, log10=log10)
     flag = {s: "" for s in info}
     for s, v in zip(used, vals):
@@ -2542,8 +2695,9 @@ def find_site_outliers(info: Dict[int, dict], *, method: str = "quantile",
             flag[s] = "high"
         elif side in ("both", "low") and v < lim["lo"]:
             flag[s] = "low"
-    outliers = sorted((s for s in used if flag[s]), key=lambda s: -info[s]["nrms"])
-    return dict(method=method, sigma=float(sigma), side=side, log10=bool(log10),
+    outliers = sorted((s for s in used if flag[s]), key=lambda s: -info[s][measure])
+    return dict(measure=measure, log10_ignored=log10_ignored,
+                method=method, sigma=float(sigma), side=side, log10=bool(log10),
                 n_used=len(used), n_total=len(info), used=used, flag=flag,
                 outliers=outliers, **{k: lim[k] for k in
                                       ("lo", "hi", "center", "spread", "level_lo", "level_hi")})
@@ -2569,27 +2723,36 @@ def _outlier_cfg(opts) -> dict:
     return cfg
 
 
+def _a_value(measure: str) -> str:
+    """"an nRMS", or "a value of <label>" (for the messages)."""
+    return "an nRMS" if measure == "nrms" else f"a value of {MEASURE_LABELS[measure]}"
+
+
 def outlier_summary(res: dict) -> List[str]:
     """The lines that say how the outliers were found (for the console and the table)."""
+    label = MEASURE_LABELS[res.get("measure", "nrms")]
     if res["method"] == "quantile":
         how = (f"quantile: limits at the {res['level_lo']:.3f} and {res['level_hi']:.3f} % "
-               f"quantiles of the site nRMS (the normal-distribution tail levels of "
+               f"quantiles of the site {label} (the normal-distribution tail levels of "
                f"+-{res['sigma']:g} sigma)") if np.isfinite(res["level_lo"]) else "quantile"
     elif res["method"] == "sigma":
-        how = f"sigma: mean +- {res['sigma']:g} std" + (" of log10(nRMS)" if res["log10"] else "")
+        how = f"sigma: mean +- {res['sigma']:g} std" + (f" of log10({label})" if res["log10"] else "")
     else:
         how = (f"mad: median +- {res['sigma']:g} * 1.4826 * MAD"
-               + (" of log10(nRMS)" if res["log10"] else ""))
+               + (f" of log10({label})" if res["log10"] else ""))
     out = [f"method   {how}; side: {res['side']}",
            f"sites    {res['n_used']} used of {res['n_total']}"
-           + (" (the others have no nRMS or too few values)"
+           + (f" (the others have no {label} or too few values)"
               if res["n_used"] < res["n_total"] else "")]
+    if res.get("log10_ignored"):
+        out.append(f"note     OUTLIER_LOG10 is ignored: {label} can be negative")
     if not np.isfinite(res["lo"]):
-        out.append("limits   not defined (fewer than 3 sites with an nRMS)")
+        out.append("limits   not defined (fewer than 3 sites with "
+                   f"{_a_value(res.get('measure', 'nrms'))})")
         return out
     lo = "-" if res["side"] == "high" else f"{res['lo']:.3f}"
     hi = "-" if res["side"] == "low" else f"{res['hi']:.3f}"
-    out.append(f"limits   nRMS < {lo} or nRMS > {hi}   (centre {res['center']:.3f})")
+    out.append(f"limits   {label} < {lo} or {label} > {hi}   (centre {res['center']:.3f})")
     n_hi = sum(1 for s in res["outliers"] if res["flag"][s] == "high")
     n_lo = len(res["outliers"]) - n_hi
     out.append(f"outside  {len(res['outliers'])} of {res['n_used']} sites "
@@ -2602,21 +2765,23 @@ def outlier_summary(res: dict) -> List[str]:
 
 
 def format_site_outliers(info: Dict[int, dict], res: dict) -> str:
-    """Table of the outlier sites, largest nRMS first (ASCII). `rank` is the
-    rank among all used sites (1 = largest nRMS); z = (nRMS - centre) / spread
-    (log10 units with OUTLIER_LOG10)."""
+    """Table of the outlier sites, largest value first (ASCII); the value is
+    res["measure"] (nRMS unless chosen otherwise). `rank` is the rank among all
+    used sites (1 = largest value); z = (value - centre) / spread (log10 units
+    with OUTLIER_LOG10)."""
+    key = res.get("measure", "nrms")
     hdr = (f"{'rank':>5} {'site_id':>8} {'name':<16} {'site_x':>14} {'site_y':>14} "
-           f"{'n':>7} {'nrms':>8} {'z':>7}  side")
+           f"{'n':>7} {key:>8} {'z':>7}  side")
     lines = ["=" * len(hdr), hdr, "-" * len(hdr)]
-    order = sorted(res["used"], key=lambda s: -info[s]["nrms"])
+    order = sorted(res["used"], key=lambda s: -info[s][key])
     rank = {s: k + 1 for k, s in enumerate(order)}
     for s in res["outliers"]:
         d = info[s]
-        v = math.log10(d["nrms"]) if res["log10"] else d["nrms"]
+        v = math.log10(d[key]) if res["log10"] else d[key]
         c = math.log10(res["center"]) if res["log10"] else res["center"]
         z = (v - c) / res["spread"] if res["spread"] and np.isfinite(res["spread"]) else float("nan")
         lines.append(f"{rank[s]:>5d} {s:>8d} {_ascii(d.get('name', '')):<16} {d['x']:>14.6g} "
-                     f"{d['y']:>14.6g} {d['n']:>7d} {d['nrms']:>8.3f} {z:>7.2f}  "
+                     f"{d['y']:>14.6g} {d['n']:>7d} {d[key]:>8.3f} {z:>7.2f}  "
                      f"{res['flag'][s]}")
     if not res["outliers"]:
         lines.append("(no site outside the limits)")
@@ -2625,44 +2790,63 @@ def format_site_outliers(info: Dict[int, dict], res: dict) -> str:
 
 
 def format_site_csv(info: Dict[int, dict], res: dict) -> str:
-    """Every site with its nRMS and flag ("high" | "low" | empty; "unused" for
-    a site that was not used) as CSV text, sorted by site id."""
+    """Every site with its value of res["measure"] (nRMS unless chosen
+    otherwise) and flag ("high" | "low" | empty; "unused" for a site that was
+    not used) as CSV text, sorted by site id."""
     import csv
     import io
 
     buf = io.StringIO()
     w = csv.writer(buf, lineterminator="\n")
-    w.writerow(["site_id", "name", "site_x", "site_y", "n", "nrms", "flag"])
+    key = res.get("measure", "nrms")
+    w.writerow(["site_id", "name", "site_x", "site_y", "n", key, "flag"])
     used = set(res["used"])
     for s in sorted(info):
         d = info[s]
         w.writerow([s, _ascii(d.get("name", "")), f"{d['x']:.6g}", f"{d['y']:.6g}", d["n"],
-                    f"{d['nrms']:.4f}" if np.isfinite(d["nrms"]) else "nan",
+                    f"{d[key]:.4f}" if np.isfinite(site_value(d, key)) else "nan",
                     res["flag"][s] if s in used else "unused"])
     return buf.getvalue().rstrip("\n")
 
 
 def plot_site_outliers(info: Dict[int, dict], res: dict, *, title: str = "",
                        name_case: Optional[str] = None,
-                       max_labels: int = OUTLIER_MAX_LABELS):
+                       max_labels: int = OUTLIER_MAX_LABELS,
+                       parts: str = "both"):
     """
-    Figure: the nRMS of every used site (in the order of the site ids; the
-    outliers marked and named, the worst `max_labels` of them), the limits as
-    dashed lines, and the histogram of the nRMS values at the right. Above the
-    upper limit: triangles up; below the lower limit: triangles down.
+    Figure: the value of res["measure"] (nRMS unless chosen otherwise) of
+    every used site (in the order of the site ids; the outliers marked and
+    named, the largest `max_labels` of them), the limits as dashed lines, and
+    the histogram of the values at the right. Above the upper limit: triangles
+    up; below the lower limit: triangles down.
+
+    parts: "both" (the two panels in one figure), "sites" (the site panel
+    only) or "hist" (the histogram only, the values on the horizontal axis).
     """
     import matplotlib.pyplot as plt
     from matplotlib.lines import Line2D
 
+    if parts not in ("both", "sites", "hist"):
+        raise ValueError(f"plot_site_outliers: parts {parts!r} not in "
+                         "('both', 'sites', 'hist').")
+    if parts == "hist":
+        return _plot_outlier_hist(info, res, title=title)
     used = res["used"]
-    v = np.array([info[s]["nrms"] for s in used], float)
+    key = res.get("measure", "nrms")
+    v = np.array([info[s][key] for s in used], float)
     k = np.arange(v.size)
     flag = np.array([res["flag"][s] for s in used])
     col = OUTLIER_COLORS
-    fig, (ax, axh) = plt.subplots(1, 2, sharey=True, figsize=(9.0, 4.2),
-                                  gridspec_kw=dict(width_ratios=[4, 1], wspace=0.05,
-                                                   left=0.10, right=0.98, bottom=0.17,
-                                                   top=0.90 if title else 0.96))
+    if parts == "both":
+        fig, (ax, axh) = plt.subplots(
+            1, 2, sharey=True, figsize=(9.0, 4.2),
+            gridspec_kw=dict(width_ratios=[4, 1], wspace=0.05, left=0.10,
+                             right=0.98, bottom=0.17,
+                             top=0.90 if title else 0.96))
+        both = (ax, axh)
+    else:
+        fig, ax = plt.subplots(figsize=(7.5, 4.2), constrained_layout=True)
+        axh, both = None, (ax,)
     inside = flag == ""
     ax.plot(k[inside], v[inside], "o", ms=4, color=col["inside"], mec="none")
     handles = [Line2D([], [], marker="o", ls="", ms=4, color=col["inside"],
@@ -2681,9 +2865,9 @@ def plot_site_outliers(info: Dict[int, dict], res: dict, *, title: str = "",
         if res["side"] != "low":
             lines.append(res["hi"])
         for y in lines:
-            for a in (ax, axh):
+            for a in both:
                 a.axhline(y, color="0.25", lw=1.0, ls="--")
-        for a in (ax, axh):
+        for a in both:
             a.axhline(res["center"], color="0.25", lw=0.8, ls=":")
         handles.append(Line2D([], [], color="0.25", lw=1.0, ls="--", label="limits"))
         handles.append(Line2D([], [], color="0.25", lw=0.8, ls=":", label="centre"))
@@ -2691,7 +2875,7 @@ def plot_site_outliers(info: Dict[int, dict], res: dict, *, title: str = "",
         j = used.index(s)
         nm = display_name(info[s].get("name"), name_case) or str(s)
         hi = res["flag"][s] == "high"
-        ax.annotate(_ascii(nm), (j, info[s]["nrms"]), xytext=(0, 6 if hi else -6),
+        ax.annotate(_ascii(nm), (j, info[s][key]), xytext=(0, 6 if hi else -6),
                     textcoords="offset points", rotation=90, fontsize=7,
                     ha="center", va="bottom" if hi else "top")
     if len(res["outliers"]) > max_labels:
@@ -2703,19 +2887,69 @@ def plot_site_outliers(info: Dict[int, dict], res: dict, *, title: str = "",
             ax.set_yscale("log")
         else:
             edges = np.histogram_bin_edges(v, bins="auto")
-        axh.hist(v, bins=edges, orientation="horizontal", color=col["inside"],
-                 edgecolor="white", lw=0.5)
+        if axh is not None:
+            axh.hist(v, bins=edges, orientation="horizontal", color=col["inside"],
+                     edgecolor="white", lw=0.5)
     ax.margins(y=0.15)
     ax.set_xlabel("site (in the order of the site ids)")
-    ax.set_ylabel("site nRMS")
-    axh.set_xlabel("sites")
-    axh.tick_params(labelleft=False)
-    for a in (ax, axh):
+    ax.set_ylabel(f"site {MEASURE_LABELS[key]}")
+    if axh is not None:
+        axh.set_xlabel("sites")
+        axh.tick_params(labelleft=False)
+    for a in both:
         a.grid(True, axis="y", color="0.9", lw=0.6)
         a.set_axisbelow(True)
         for side_ in ("top", "right"):
             a.spines[side_].set_visible(False)
     ax.legend(handles=handles, loc="best", fontsize=8, frameon=False)
+    if title:
+        fig.suptitle(title, fontsize=10)
+    return fig
+
+
+def _plot_outlier_hist(info: Dict[int, dict], res: dict, *, title: str = ""):
+    """Histogram of the per-site values (res["measure"]) with the limits and
+    the centre as vertical lines (``plot_site_outliers(parts="hist")``)."""
+    import matplotlib.pyplot as plt
+
+    key = res.get("measure", "nrms")
+    v = np.array([info[s][key] for s in res["used"]], float)
+    flag = np.array([res["flag"][s] for s in res["used"]])
+    col = OUTLIER_COLORS
+    fig, ax = plt.subplots(figsize=(6.0, 4.2), constrained_layout=True)
+    if v.size:
+        if res["log10"] and np.all(v > 0):
+            edges = 10.0 ** np.histogram_bin_edges(np.log10(v), bins="auto")
+            ax.set_xscale("log")
+        else:
+            edges = np.histogram_bin_edges(v, bins="auto")
+        # stacked: sites within the limits, above and below them
+        kinds = [("", "inside", "within limits"),
+                 ("high", "high", "above the upper limit"),
+                 ("low", "low", "below the lower limit")]
+        kinds = [k for k in kinds if np.any(flag == k[0])]
+        ax.hist([v[flag == k[0]] for k in kinds], bins=edges, stacked=True,
+                color=[col[k[1]] for k in kinds], edgecolor="white", lw=0.5,
+                label=[f"{k[2]} ({int(np.sum(flag == k[0]))})" for k in kinds])
+    if np.isfinite(res["lo"]):
+        lines = []
+        if res["side"] != "high":
+            lines.append(res["lo"])
+        if res["side"] != "low":
+            lines.append(res["hi"])
+        for k, x in enumerate(lines):
+            ax.axvline(x, color="0.25", lw=1.0, ls="--",
+                       label="limits" if k == 0 else None)
+        ax.axvline(res["center"], color="0.25", lw=0.8, ls=":", label="centre")
+    ax.margins(y=0.15)
+    ax.set_xlabel(f"site {MEASURE_LABELS[key]}")
+    ax.set_ylabel("sites")
+    ax.grid(True, axis="y", color="0.9", lw=0.6)
+    ax.set_axisbelow(True)
+    for side_ in ("top", "right"):
+        ax.spines[side_].set_visible(False)
+    if v.size:
+        ax.legend(loc="best", fontsize=8, frameon=False)
     if title:
         fig.suptitle(title, fontsize=10)
     return fig
@@ -2727,12 +2961,15 @@ def run_outliers(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
     """
     Method "outliers": find the sites whose nRMS is outside the limits (see the
     OUTLIER_* settings), print and write the table / CSV, draw the figure.
+    With SITE_MEASURES this is done for every measure listed there (files of
+    measures other than nrms: <prefix>_site_outliers_<measure>...).
     Returns 0 on success, 1 if a setting is invalid.
     """
     import matplotlib.pyplot as plt
 
     try:
         cfg = _outlier_cfg(opts)
+        measures = site_measures(opts.SITE_MEASURES)
     except ValueError as exc:
         print(f"femtic_misfit: outliers: {exc}")
         return 1
@@ -2741,35 +2978,47 @@ def run_outliers(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
         return 1
     info = named_site_info(ds, site_dat=opts.CURVES_SITE_DAT, search_dirs=search_dirs,
                            id_offset=opts.CURVES_SITE_ID_OFFSET,
-                           match=opts.CURVES_SITE_MATCH, tol=float(opts.CURVES_SITE_TOL))
-    res = find_site_outliers(info, **cfg)
-    notes = outlier_summary(res)
-    table = format_site_outliers(info, res)
-    print("femtic_misfit: site outliers")
-    for ln in notes:
-        print("  " + ln)
-    print(table)
-    if opts.WRITE_STATS:
-        _write(os.path.join(out_dir, f"{prefix}_site_outliers.txt"),
-               f"# {title_extra}; sites whose nRMS (conventional RMS1 normalization) is "
-               "outside the limits\n# of the site-nRMS distribution; rank 1 = largest nRMS; "
-               "z = (nRMS - centre) / spread\n"
-               + "\n".join("# " + ln for ln in notes), table)
-        _write(os.path.join(out_dir, f"{prefix}_site_outliers.csv"),
-               "# every site; flag: high / low = outside the limits, empty = inside, "
-               "unused = no nRMS or too few values", format_site_csv(info, res))
-    if opts.OUTLIER_PLOT:
+                           match=opts.CURVES_SITE_MATCH,
+                           tol=_tol_m(opts.CURVES_SITE_TOL, "CURVES_SITE_TOL"))
+    for key in measures:
+        label = MEASURE_LABELS[key]
+        tag = "" if key == "nrms" else f"_{key}"           # nrms: names as before
+        res = find_site_outliers(info, measure=key, **cfg)
+        notes = outlier_summary(res)
+        table = format_site_outliers(info, res)
+        print("femtic_misfit: site outliers" + (f" ({label})" if tag else ""))
+        for ln in notes:
+            print("  " + ln)
+        print(table)
+        if opts.WRITE_STATS:
+            _write(os.path.join(out_dir, f"{prefix}_site_outliers{tag}.txt"),
+                   f"# {title_extra}; sites whose {label} (conventional RMS1 normalization) "
+                   f"is outside the limits\n# of the site-{label} distribution; rank 1 = "
+                   f"largest {label}; z = ({label} - centre) / spread\n"
+                   + "\n".join("# " + ln for ln in notes), table)
+            _write(os.path.join(out_dir, f"{prefix}_site_outliers{tag}.csv"),
+                   "# every site; flag: high / low = outside the limits, empty = inside, "
+                   f"unused = no {label} or too few values", format_site_csv(info, res))
+        if not opts.OUTLIER_PLOT:
+            continue
         if not res["n_used"]:
-            print("femtic_misfit: outliers: no site with an nRMS, no figure.")
+            print(f"femtic_misfit: outliers: no site with {_a_value(key)}, no figure.")
+            continue
+        fig_dir = plot_dir or out_dir
+        os.makedirs(fig_dir, exist_ok=True)
+        # (parts, file suffix, automatic title)
+        if opts.SINGLE_PANELS:
+            jobs = [("sites", "", f"site {label} outliers\n{title_extra}"),
+                    ("hist", "_hist", f"site {label} histogram\n{title_extra}")]
         else:
+            jobs = [("both", "", f"site {label} outliers, {title_extra}")]
+        for parts, suffix, auto in jobs:
             fig = plot_site_outliers(
-                info, res, name_case=opts.CURVES_NAME_CASE,
-                title=_resolve_title(opts.FIGURE_TITLE, "outliers",
-                                     f"site nRMS outliers, {title_extra}", title=title_extra))
-            fig_dir = plot_dir or out_dir
-            os.makedirs(fig_dir, exist_ok=True)
-            _save(fig, os.path.join(fig_dir, f"{prefix}_site_outliers"),
-                  opts.PLOT_FORMATS, opts.PLOT_DPI)
+                info, res, name_case=opts.CURVES_NAME_CASE, parts=parts,
+                title=_resolve_title(opts.FIGURE_TITLE, "outliers", auto,
+                                     title=title_extra, measure=label))
+            _save(fig, os.path.join(fig_dir, f"{prefix}_site_outliers{tag}{suffix}"),
+                  opts.PLOT_FORMATS, opts.PLOT_DPI, tight=bool(opts.SINGLE_PANELS))
             if opts.SHOW:
                 plt.show()
             plt.close(fig)
@@ -2790,7 +3039,11 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
     except ImportError as exc:
         print(f"femtic_misfit: curves: needs data_viz.py on the path ({exc}).")
         return 1
-    cfg = _curves_cfg(opts)
+    try:
+        cfg = _curves_cfg(opts)
+    except ValueError as exc:
+        print(f"femtic_misfit: curves: {exc}")
+        return 1
     bad = [w for w in cfg["what"] if w not in CURVE_PANELS]
     if bad or not cfg["what"]:
         print(f"femtic_misfit: curves: CURVES_WHAT entries must be from "
@@ -2838,8 +3091,10 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
                 if not _mhi > _mlo:
                     raise ValueError
         except (TypeError, ValueError):
+            range_name = ("CURVES_MAP_NRMS_RANGE" if cfg["measures"][0] == "nrms"
+                          else "CURVES_MAP_MEASURE_RANGE")
             print("femtic_misfit: curves: CURVES_MAP_SIZE [cm] and CURVES_MAP_MARKER_SIZE must "
-                  "be > 0, CURVES_MAP_NRMS_RANGE None or (lo, hi) with hi > lo.")
+                  f"be > 0, {range_name} None or (lo, hi) with hi > lo.")
             return 1
     M = ds["M"]
     try:
@@ -2856,23 +3111,28 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
                            tol=cfg["site_tol"])
     if opts.WRITE_STATS:
         _write(os.path.join(out_dir, f"{prefix}_site_nrms.txt"),
-               f"# {title_extra}; per-site nRMS, conventional normalization (RMS1)\n"
+               f"# {title_extra}; per-site nRMS"
+               + (" and further measures" if cfg["measures"] != ("nrms",) else "")
+               + ", conventional normalization (RMS1)\n"
                "# site_x / site_y as stored in the results file; name from site.dat;\n"
                "# also_ids: other site ids (e.g. VTF) at the same position, merged into site_id",
-               format_site_nrms(info))
+               format_site_nrms(info, cfg["measures"]))
+    key = cfg["measures"][0]                      # ordering, outliers, map colour
+    label = MEASURE_LABELS[key]
     spec = cfg["sites"]
     if isinstance(spec, str) and spec.strip().lower() == "outliers":
         try:
-            res = find_site_outliers(info, **_outlier_cfg(opts))
+            res = find_site_outliers(info, measure=key, **_outlier_cfg(opts))
         except ValueError as exc:
             print(f"femtic_misfit: curves: {exc}")
             return 1
         spec = list(res["outliers"])
         print(f"femtic_misfit: curves: CURVES_SITES = \"outliers\": {len(spec)} of "
-              f"{res['n_used']} sites outside the limits ({res['method']}, "
+              f"{res['n_used']} sites outside the limits of the site {label} ({res['method']}, "
               f"+-{res['sigma']:g} sigma, side {res['side']}).")
     try:
-        sids = select_sites(info, spec, cfg["site_order"], cfg["max_sites"])
+        sids = select_sites(info, spec, cfg["site_order"], cfg["max_sites"],
+                            measure=key)
     except ValueError as exc:
         print(f"femtic_misfit: curves: {exc}")
         return 1
@@ -2886,7 +3146,7 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
 
     site_map = None                               # optional map of the sites
     if cfg["map"]:
-        smap = site_map_data(info, axes=cfg["map_axes"])
+        smap = site_map_data(info, axes=cfg["map_axes"], measure=key)
         if smap is None:
             print("femtic_misfit: curves: the results file has no site positions; "
                   "no map (CURVES_MAP).")
@@ -2903,7 +3163,7 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
                   f"with a position, placement {cfg['map_placement']!r}, horizontal = {hz}, "
                   f"vertical = {vt}, model coordinates [km]"
                   + ("; observed only: no colour code." if cfg["obs_only"] else
-                     f"; colour = site nRMS, {norm.vmin:.2f} ... {norm.vmax:.2f}."))
+                     f"; colour = site {label}, {norm.vmin:.2f} ... {norm.vmax:.2f}."))
 
     exts = ["." + str(e).lstrip(".") for e in
             ((opts.PLOT_FORMATS,) if isinstance(opts.PLOT_FORMATS, str) else opts.PLOT_FORMATS)]
@@ -2920,33 +3180,48 @@ def run_curves(ds: dict, opts, *, out_dir: str, prefix: str, title_extra: str,
     sub_dir = os.path.join(pdf_dir, f"{prefix}_curves")
     if other:
         os.makedirs(sub_dir, exist_ok=True)
-        print(f"femtic_misfit: curves: one file per site ({', '.join(other)}) in {sub_dir}"
+        per = "site and quantity" if opts.SINGLE_PANELS else "site"
+        print(f"femtic_misfit: curves: one file per {per} ({', '.join(other)}) in {sub_dir}"
               + (f"; plus one multi-page {os.path.basename(pdf_path)}" if multipage else ""))
 
     rng = np.random.default_rng(cfg["seed"])
+    single = bool(opts.SINGLE_PANELS)
+    # one figure per site, or per site and quantity: (file suffix, cfg)
+    jobs = ([(f"_{w}", dict(cfg, what=(w,), compact_title=True)) for w in cfg["what"]]
+            if single else [("", cfg)])
     n_done = 0
     try:
         for sid in sids:
             series = site_series(ds, sid, appres_deg=cfg["appres_deg"])
-            fig = plot_site_curves(sid, series, info[sid], M=M, layers=layers, cfg=cfg,
-                                   title_extra=title_extra, dv=dv, markers=markers,
-                                   comp_class=comp_class, rng=rng, site_map=site_map)
-            if fig is None:
+            state = rng.bit_generator.state
+            drawn = False
+            for suffix, job_cfg in jobs:
+                # every quantity of a site shows the same ensemble members
+                rng.bit_generator.state = state
+                fig = plot_site_curves(sid, series, info[sid], M=M, layers=layers,
+                                       cfg=job_cfg, title_extra=title_extra, dv=dv,
+                                       markers=markers, comp_class=comp_class,
+                                       rng=rng, site_map=site_map)
+                if fig is None:
+                    continue
+                drawn = True
+                if multipage:
+                    if pdf is None:
+                        from matplotlib.backends.backend_pdf import PdfPages
+                        pdf = PdfPages(pdf_path)
+                    pdf.savefig(fig, dpi=opts.PLOT_DPI,
+                                **({"bbox_inches": "tight"} if single else {}))
+                if other:
+                    nm = display_name(info[sid].get("name"), cfg["name_case"])
+                    tag = f"{sid}_{_safe_name(nm)}" if nm else f"{sid}"
+                    _save(fig, os.path.join(sub_dir, f"{prefix}_curves_site{tag}{suffix}"),
+                          other, opts.PLOT_DPI, tight=single)
+                if opts.SHOW:
+                    plt.show()
+                plt.close(fig)
+                n_done += 1
+            if not drawn:
                 print(f"femtic_misfit: curves: site {sid}: nothing to draw, skipped.")
-                continue
-            if multipage:
-                if pdf is None:
-                    from matplotlib.backends.backend_pdf import PdfPages
-                    pdf = PdfPages(pdf_path)
-                pdf.savefig(fig, dpi=opts.PLOT_DPI)
-            if other:
-                nm = display_name(info[sid].get("name"), cfg["name_case"])
-                tag = f"{sid}_{_safe_name(nm)}" if nm else f"{sid}"
-                _save(fig, os.path.join(sub_dir, f"{prefix}_curves_site{tag}"), other, opts.PLOT_DPI)
-            if opts.SHOW:
-                plt.show()
-            plt.close(fig)
-            n_done += 1
     finally:
         if pdf is not None:
             pdf.close()
@@ -3094,19 +3369,23 @@ def resolve_plot_dir(out_dir: str, plot_dir: Optional[str] = None) -> str:
     return d
 
 
-def _save(fig, stem: str, formats: Union[str, Sequence[str]], dpi: int) -> None:
+def _save(fig, stem: str, formats: Union[str, Sequence[str]], dpi: int, *,
+          tight: bool = False) -> None:
     """
     Save `fig` as stem + ext for every extension in `formats`. A plain string
     (e.g. ".pdf") counts as one format; extensions may be given with or
     without the leading dot; the file format is passed explicitly, so an
     unsupported extension raises instead of silently producing a PNG.
+    `tight` fits the saved page to the drawing (single-panel figures: a title
+    wider than the narrow figure is not cut off).
     """
     if isinstance(formats, str):
         formats = (formats,)
+    extra = {"bbox_inches": "tight"} if tight else {}
     for ext in formats:
         ext = "." + str(ext).lstrip(".")
         out = stem + ext
-        fig.savefig(out, dpi=dpi, format=ext[1:])
+        fig.savefig(out, dpi=dpi, format=ext[1:], **extra)
         print(f"femtic_misfit: wrote {out}")
 
 
@@ -3250,7 +3529,8 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
 
     ds = build_dataset([r["data"] for r in runs], obs_mode=opts.ENSEMBLE_OBS,
                        ref_member=opts.REF_MEMBER,
-                       site_merge_tol=opts.SITE_MERGE_TOL if opts.SITE_MERGE_BY_POSITION else None)
+                       site_merge_tol=_tol_m(opts.SITE_MERGE_TOL, "SITE_MERGE_TOL")
+                       if opts.SITE_MERGE_BY_POSITION else None)
     M = ds["M"]
     ensemble = M > 1
     has_syn = ensemble and bool(opts.SHOW_RMS2)     # RMS2 only on request
@@ -3294,26 +3574,39 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
             _write(os.path.join(out_dir, f"{prefix}_fit_measures.txt"),
                    f"# {title_extra}\n{fit_measure_note(has_syn)}", table)
 
+    single = bool(opts.SINGLE_PANELS)
     if "crossplot" in opts.METHODS:
         crange = global_logf_range(panels) if opts.COLOR_RANGE == "global" else None
         for dname, lst in panels.items():
-            fig = plot_crossplot_datatype(
-                dname, lst, title_extra=title_extra, has_syn=has_syn,
-                ensemble_mean=ensemble, ncols=opts.NCOLS,
-                panel_size=opts.PANEL_SIZE, cmap=opts.CMAP, color_range=crange,
-                marker_size=opts.MARKER_SIZE, alpha=opts.ALPHA, log_rho=opts.LOG_RHO,
-                show_errorbars=opts.SHOW_ERRORBARS, equal_aspect=opts.EQUAL_ASPECT,
-                figure_title=_resolve_title(
-                    opts.FIGURE_TITLE, "crossplot", None, title=title_extra,
-                    datatype=dname),
-                panel_titles=bool(opts.PANEL_TITLES),
-                cbar_location=opts.CROSSPLOT_CBAR_LOCATION,
-                cbar_shrink=opts.CROSSPLOT_CBAR_SHRINK)
-            _save(fig, os.path.join(fig_dir, f"{prefix}_crossplot_{_safe_name(dname)}"),
-                  opts.PLOT_FORMATS, opts.PLOT_DPI)
-            if opts.SHOW:
-                plt.show()
-            plt.close(fig)
+            # (file suffix, panels, panel label)
+            jobs = ([(f"_{_safe_name(p['label'])}", [p], p["label"]) for p in lst]
+                    if single else [("", lst, "")])
+            for suffix, sub, label in jobs:
+                auto = None                      # the function's own title
+                if single:
+                    extra = "" if opts.PANEL_TITLES else f"{label}\n"
+                    auto = f"{dname}: observed vs. calculated\n{extra}{title_extra}"
+                fig = plot_crossplot_datatype(
+                    dname, sub, title_extra=title_extra, has_syn=has_syn,
+                    ensemble_mean=ensemble, ncols=opts.NCOLS,
+                    panel_size=_inch(opts.PANEL_SIZE), cmap=opts.CMAP, color_range=crange,
+                    marker_size=opts.MARKER_SIZE, alpha=opts.ALPHA,
+                    log_rho=opts.LOG_RHO, show_errorbars=opts.SHOW_ERRORBARS,
+                    equal_aspect=opts.EQUAL_ASPECT,
+                    figure_title=_resolve_title(
+                        opts.FIGURE_TITLE, "crossplot", auto, title=title_extra,
+                        datatype=dname, panel=label),
+                    panel_titles=bool(opts.PANEL_TITLES),
+                    cbar_location=opts.CROSSPLOT_CBAR_LOCATION,
+                    cbar_shrink=opts.CROSSPLOT_CBAR_SHRINK,
+                    measures=opts.PANEL_MEASURES,
+                    box_fontsize=opts.PANEL_MEASURES_FONTSIZE)
+                _save(fig, os.path.join(
+                    fig_dir, f"{prefix}_crossplot_{_safe_name(dname)}{suffix}"),
+                      opts.PLOT_FORMATS, opts.PLOT_DPI, tight=single)
+                if opts.SHOW:
+                    plt.show()
+                plt.close(fig)
         table = format_crossplot_stats(panels, has_syn=has_syn)
         print(table)
         if opts.WRITE_STATS:
@@ -3335,23 +3628,35 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
             if r1.size == 0:
                 print(f"femtic_misfit: {gname}: no rows with positive error, skipped.")
                 continue
-            fig, stats = plot_residual_histograms(
-                gname, freq, r1, r2, has_syn=has_syn,
-                per_decade=opts.HIST_BANDS_PER_DECADE, axis=opts.HIST_BAND_AXIS,
-                ncols=opts.HIST_NCOLS, panel_size=opts.HIST_PANEL_SIZE, limit=opts.HIST_LIMIT,
-                bin_width=opts.HIST_BIN_WIDTH, min_n=opts.HIST_MIN_N,
-                run_label=title_extra,
-                figure_title=_resolve_title(
-                    opts.FIGURE_TITLE, "histogram", None, title=title_extra,
-                    group=gname, axis=opts.HIST_BAND_AXIS,
-                    per_decade=opts.HIST_BANDS_PER_DECADE),
-                panel_titles=bool(opts.PANEL_TITLES))
-            all_stats[gname] = stats
-            _save(fig, os.path.join(fig_dir, f"{prefix}_hist_{_safe_name(gname)}"),
-                  opts.PLOT_FORMATS, opts.PLOT_DPI)
-            if opts.SHOW:
-                plt.show()
-            plt.close(fig)
+            all_stats[gname] = []
+            for suffix, bands, label in _band_jobs(
+                    freq, single, per_decade=opts.HIST_BANDS_PER_DECADE,
+                    axis=opts.HIST_BAND_AXIS, min_n=opts.HIST_MIN_N):
+                auto = None                      # the function's own title
+                if single:
+                    extra = "" if opts.PANEL_TITLES else f"{label}\n"
+                    auto = f"{gname}: normalized residuals\n{extra}{title_extra}"
+                fig, stats = plot_residual_histograms(
+                    gname, freq, r1, r2, has_syn=has_syn,
+                    per_decade=opts.HIST_BANDS_PER_DECADE, axis=opts.HIST_BAND_AXIS,
+                    ncols=opts.HIST_NCOLS, panel_size=_inch(opts.HIST_PANEL_SIZE),
+                    limit=opts.HIST_LIMIT, bin_width=opts.HIST_BIN_WIDTH,
+                    min_n=opts.HIST_MIN_N, run_label=title_extra,
+                    figure_title=_resolve_title(
+                        opts.FIGURE_TITLE, "histogram", auto, title=title_extra,
+                        group=gname, axis=opts.HIST_BAND_AXIS,
+                        per_decade=opts.HIST_BANDS_PER_DECADE, band=label),
+                    panel_titles=bool(opts.PANEL_TITLES), bands=bands,
+                    measures=opts.PANEL_MEASURES,
+                    scale_measure=opts.HIST_SCALE_MEASURE,
+                    box_fontsize=opts.PANEL_MEASURES_FONTSIZE)
+                all_stats[gname] += stats
+                _save(fig, os.path.join(
+                    fig_dir, f"{prefix}_hist_{_safe_name(gname)}{suffix}"),
+                      opts.PLOT_FORMATS, opts.PLOT_DPI, tight=single)
+                if opts.SHOW:
+                    plt.show()
+                plt.close(fig)
         table = format_hist_stats(all_stats, has_syn=has_syn)
         print(table)
         if opts.WRITE_STATS:
@@ -3370,23 +3675,37 @@ def process_runs(runs: Sequence[dict], opts, *, mode: str, out_dir: str, prefix:
             if r1.size < 4:
                 print(f"femtic_misfit: {gname}: too few rows for Q-Q plots, skipped.")
                 continue
-            fig, stats = plot_qq_bands(
-                gname, freq, r1, r2, has_syn=has_syn,
-                per_decade=opts.QQ_BANDS_PER_DECADE, axis=opts.QQ_BAND_AXIS,
-                ncols=opts.QQ_NCOLS, panel_size=opts.QQ_PANEL_SIZE, limit=opts.QQ_LIMIT,
-                confidence=opts.QQ_CONFIDENCE, min_n=opts.QQ_MIN_N,
-                equal_axes=opts.QQ_EQUAL_AXES, run_label=title_extra,
-                figure_title=_resolve_title(
-                    opts.FIGURE_TITLE, "qq", None, title=title_extra,
-                    group=gname, axis=opts.QQ_BAND_AXIS,
-                    per_decade=opts.QQ_BANDS_PER_DECADE),
-                panel_titles=bool(opts.PANEL_TITLES))
-            qq_stats[gname] = stats
-            _save(fig, os.path.join(fig_dir, f"{prefix}_qq_{_safe_name(gname)}"),
-                  opts.PLOT_FORMATS, opts.PLOT_DPI)
-            if opts.SHOW:
-                plt.show()
-            plt.close(fig)
+            qq_stats[gname] = []
+            for suffix, bands, label in _band_jobs(
+                    freq, single, per_decade=opts.QQ_BANDS_PER_DECADE,
+                    axis=opts.QQ_BAND_AXIS, min_n=opts.QQ_MIN_N):
+                auto = None                      # the function's own title
+                if single:
+                    extra = "" if opts.PANEL_TITLES else f"{label}\n"
+                    env = (f", {100 * opts.QQ_CONFIDENCE:.0f}% envelope"
+                           if opts.QQ_CONFIDENCE else "")
+                    auto = f"{gname}: normal Q-Q{env}\n{extra}{title_extra}"
+                fig, stats = plot_qq_bands(
+                    gname, freq, r1, r2, has_syn=has_syn,
+                    per_decade=opts.QQ_BANDS_PER_DECADE, axis=opts.QQ_BAND_AXIS,
+                    ncols=opts.QQ_NCOLS, panel_size=_inch(opts.QQ_PANEL_SIZE),
+                    limit=opts.QQ_LIMIT, confidence=opts.QQ_CONFIDENCE,
+                    min_n=opts.QQ_MIN_N, equal_axes=opts.QQ_EQUAL_AXES,
+                    run_label=title_extra,
+                    figure_title=_resolve_title(
+                        opts.FIGURE_TITLE, "qq", auto, title=title_extra,
+                        group=gname, axis=opts.QQ_BAND_AXIS,
+                        per_decade=opts.QQ_BANDS_PER_DECADE, band=label),
+                    panel_titles=bool(opts.PANEL_TITLES), bands=bands,
+                    measures=opts.PANEL_MEASURES,
+                    box_fontsize=opts.PANEL_MEASURES_FONTSIZE)
+                qq_stats[gname] += stats
+                _save(fig, os.path.join(
+                    fig_dir, f"{prefix}_qq_{_safe_name(gname)}{suffix}"),
+                      opts.PLOT_FORMATS, opts.PLOT_DPI, tight=single)
+                if opts.SHOW:
+                    plt.show()
+                plt.close(fig)
         table = format_qq_stats(qq_stats, has_syn=has_syn)
         print(table)
         if opts.WRITE_STATS:
@@ -3445,6 +3764,8 @@ def run_models(opts, argv: Sequence[str] = ()) -> int:
     "nrms" needs an ensemble and is ignored. Returns 0 if every run worked.
     """
     _backend(opts)
+    if not (_units_ok(opts) and _measures_ok(opts)):
+        return 1
     methods = tuple(opts.METHODS)
     if "nrms" in methods:
         print("femtic_misfit: method 'nrms' needs an ensemble (femtic_ens_misfit.py); "
@@ -3488,6 +3809,8 @@ def run_ensemble(opts, argv: Sequence[str] = ()) -> int:
     once, independent of the run paths. Returns 0 on success.
     """
     _backend(opts)
+    if not (_units_ok(opts) and _measures_ok(opts)):
+        return 1
     methods = tuple(opts.METHODS)
     rc_nrms = run_nrms_histogram(opts) if "nrms" in methods else 0
     if not any(m in methods for m in ("crossplot", "histogram", "qq", "curves", "outliers")):

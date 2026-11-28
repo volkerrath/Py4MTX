@@ -1,52 +1,70 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-femtic_mod_plot_bh.py — 1-D ρ(z) borehole resistivity logs for a FEMTIC model.
+femtic_mod_plot_bh.py -- 1-D resistivity-depth logs along boreholes for single
+FEMTIC resistivity models (mod family).
 
-Samples resistivity along one or more vertical boreholes and produces a ρ(z)
-figure with a logarithmic x-axis (Ohm·m), using
-``fviz.plot_borehole_logs``.
+The settings are those of femtic_ens_plot_bh.py (same MOD_* / MOD_BH_* names,
+same MOD_BH entries, lengths in km) without everything that belongs to ensemble
+statistics. Several runs can be given, as in femtic_mod_misfit.py: every entry
+of RUN_PATHS is a model of its own (no ensemble) and gets its own figure(s)
+and profile file. The profiles are sampled by fem.sample_model_boreholes() and
+drawn by fviz.draw_borehole_figures(), the routine of the ensemble script. For
+the ensemble view of the same boreholes use femtic_ens_plot_bh.py.
 
-Sister scripts:
-  ``femtic_mod_plot_slice.py`` — 2-D map / curtain / plane slice panels.
-  ``femtic_mod_plot_3d.py``   — PyVista 3-D rendering and VTK/VTU export.
+Usage
+-----
+    python femtic_mod_plot_bh.py                          # RUN_PATHS
+    python femtic_mod_plot_bh.py kra_rto_0 kra_rto_1      # two run directories
+    python femtic_mod_plot_bh.py "kra*/"                  # quote globs
+    python femtic_mod_plot_bh.py -w /data/ann ann_rto_orig-err_0/resistivity_block_iter10.dat
 
-Family: the "mod" scripts draw SINGLE models; the "ens" scripts
-(femtic_ens_post, femtic_ens_plot_slices, femtic_ens_plot_bh and the quality-
-control script femtic_data_misfit) work on the ensemble. For the ensemble
-view of the same boreholes (heat map, percentiles, all members) use
-femtic_ens_plot_bh.py.
+Runs
+----
+An entry of RUN_PATHS (or of the command line, which replaces it) is a run
+directory (the model of ITERATION), a block file, a results_iterN.h5 file
+(= the block file of that iteration; the HDF5 file is not read) or a glob of
+these. Relative entries start at WORK_DIR (-w / --work-dir replaces it; None
+or "" = current directory).
 
-One model or several (batch)
-----------------------------
-MODEL_FILE is, as before, ONE resistivity block file; BOREHOLE_FILE is its
-figure. It can also be a list of block files, a glob pattern, or run
-directories (a directory, a list, or a glob such as "ens/ens_*"); for run
-directories MODEL_ITER chooses the block file ("last" = iteration of the last
-row of femtic.cnv, "best" = lowest nRMS in femtic.cnv, N =
-resistivity_block_iterN.dat, 0 = starting model / perturbed prior, or a list
-such as [0, "last"]). With more than one model there is one figure (and one
-NPZ) per model, named <label>_<tag>_boreholes.<ext> in BATCH_OUT_DIR (None =
-the model's own directory), plus an optional multi-page PDF (BATCH_CATALOG).
-BOREHOLE_FILE is not used then.
+MOD_MESH, MOD_SITE_DAT and MOD_REF_FILE are looked up per run: a relative name
+in the run directory first, then in WORK_DIR; an absolute path is used for
+every run. The mesh centre is therefore determined run by run.
 
-Borehole position coordinate systems
---------------------------------------
-Each spec dict ``"x"`` / ``"y"`` field accepts:
+An entry without a model is reported and skipped. A model that fails is
+reported and skipped too; the others are still plotted. Return code: 0 = all
+models found were plotted, 1 = one failed or none found, 2 = WORK_DIR missing.
 
-    plain float          model-local metres (origin at mesh centre)
-    (value, "utm")       UTM metres in the mesh UTM zone
-    (value, "latlon")    decimal degrees (longitude for x, latitude for y)
+Output
+------
+Per model:
 
-``"z_top"`` may be the float depth [m, z-down] or the string ``"surface"``
-to auto-detect the mesh surface elevation at the borehole location (requires
-scipy).
+    <dir>/[<OUT_PREFIX>_]<label>_<tag>_boreholes.<fmt>   (and .npz)
 
-Execution steps
----------------
-(1) Optionally estimate UTM mesh-origin from ``SITE_DAT`` bounding-box / mean
-(2) Derive UTM zone from finalised ``UTM_ORIGIN_LAT`` / ``UTM_ORIGIN_LON``
-(3) Plot borehole logs via ``fviz.plot_borehole_logs``
+label = run directory name, tag = "iterN"; <dir> = OUT_DIR, else
+<run dir>/<OUT_PREFIX> (if OUT_PREFIX is set and OUT_PREFIX_DIR), else the run
+directory. More than MOD_BH_PER_FIG boreholes give figures _01, _02, ...
+With MOD_SINGLE_PANELS = True every borehole becomes a figure of its own
+(..._boreholes_01_<name>.<fmt>, ...).
+MOD_BH_FILE names the files of a single model explicitly; MOD_CATALOG collects
+all figures in one multi-page PDF. The parameter summary
+femtic_mod_plot_bh_summary.md goes to WORK_DIR.
+
+NPZ: depth_<name> [m, positive down], model_<name> and ref_<name> [Ohm.m, NaN
+= air / outside the mesh], "header" (JSON). Blanks in <name> become "_".
+
+Needs femtic.py, femtic_viz.py and util.py (PY4MTX_ROOT, PY4MTX_DATA).
+
+Sister scripts: femtic_mod_plot_slice.py, femtic_mod_plot_3d.py,
+femtic_mod_misfit.py.
+
+AI-generated code (Claude Sonnet 5.5, Anthropic, 2026-11-26) -- review before
+production use.
+
+@author vrath
+@project py4mt
+@created 2026-06-04 (Claude Sonnet 4.6, Anthropic)
+@modified 2026-11-26 (Claude Sonnet 5.5, Anthropic)
 
 Provenance
 ----------
@@ -60,9 +78,6 @@ Provenance
                 title font size.  Both forwarded to
                 ``fviz.plot_borehole_logs``.
 
-@author: vrath
-@project: Py4MTX
-@created: 2026-06-04
 @modified: 2026-06-04  vrath / Claude Sonnet 4.6 (Anthropic)
 @modified: 2026-08-13  Claude Sonnet 5 (Anthropic) -- Added
     femtic_mod_plot_bh_summary.md output at end of run: writes user-set
@@ -103,18 +118,55 @@ Provenance
     passed to fem.resolve_model_files() as cnv_name; it matters for
     MODEL_ITER = "last" / "best" with run directories. Needs the femtic.py of
     the same date. AI-generated; review before production use.
+
+@modified: 2026-11-26  Claude Sonnet 5.5 (Anthropic) -- Rewritten with the
+    settings of femtic_ens_plot_bh.py (without the ensemble statistics) and
+    several runs as in femtic_mod_misfit.py. CHANGED: MODEL_FILE /
+    BOREHOLE_FILE / MODEL_ITER / BATCH_* -> RUN_PATHS, ITERATION (default
+    "best"), command line and -w / --work-dir; OUT_DIR, OUT_PREFIX,
+    OUT_PREFIX_DIR, MOD_BH_FILE, MOD_CATALOG, MOD_PLOT_FORMAT. BOREHOLE_SITES
+    -> MOD_BH (depths and dz now km, line styles in "style"), BOREHOLE_STYLE ->
+    MOD_BH_STYLE, BOREHOLE_XLIM / _SHARED / _MARKERS / _NPZ -> MOD_BH_*
+    (marker depths km), other settings MOD_*. New: "sites" templates,
+    MOD_REF_*, MOD_DISPLAY_COORDS, main(). Profiles by
+    fem.sample_model_boreholes(), figures by fviz.draw_borehole_figures()
+    (instead of fviz.plot_borehole_logs()); NPZ arrays are now depth_<name>,
+    model_<name>, ref_<name> plus a JSON header. Mesh, site list and reference
+    are per run. Needs femtic.py and femtic_viz.py of the same date. Tested on
+    synthetic files only. AI-generated; review before production use.
+@modified: 2026-11-26b  Claude Sonnet 5.5 (Anthropic) -- Optional
+    single-panel output: new MOD_SINGLE_PANELS (default False) draws one
+    figure per borehole. Needs femtic_viz.py of the same date. Tested on
+    synthetic files only. AI-generated; review before production use.
+@modified: 2026-11-26c  Claude Sonnet 5.5 (Anthropic) -- Default settings
+    replaced by those of femtic_ens_plot_bh.py: WORK_DIR (Annecy ensemble),
+    RUN_PATHS ["ann*/"], mesh, site list and reference file in templates/,
+    MOD_BH one panel per site (surface to 4 km), black dashed reference line,
+    MOD_CLIM [0, 4], MOD_BH_XLIM None, panel size, font sizes, MOD_DPI 400,
+    no annotations. No change of the code. Tested on synthetic files only.
+    AI-generated; review before production use.
+
+2026-11-26 (km)  Claude Sonnet 5.5 (Anthropic)
+              User settings are km throughout, UTM coordinates too (before:
+              UTM and some per-entry values in metres). Personal settings in
+              metres must be converted; values that look like metres stop
+              with an error (fem.KmUnitError). Concerns MOD_UTM_ORIGIN_E /
+              _N and (value, 'utm') borehole positions. Needs femtic.py of
+              the same date. Tested on synthetic files only. AI-generated;
+              review before production use.
 """
 
+from __future__ import annotations
+
+import argparse
+import gc
+import json
 import os
 import sys
 from pathlib import Path
-import gc
-import inspect
+
 import numpy as np
 
-# ---------------------------------------------------------------------------
-# Py4MTX-specific settings and imports
-# ---------------------------------------------------------------------------
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
@@ -123,427 +175,508 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
         if _p.is_dir() and str(_p) not in sys.path:
             sys.path.insert(0, str(_p))
 
-from version import versionstrg
-import util as utl
 import femtic as fem
-
-try:
-    import femtic_viz as fviz
-except ImportError:
-    fviz = None
+import femtic_viz as fviz
+import util as utl
+from version import versionstrg
 
 version, _ = versionstrg()
-fname = inspect.getfile(inspect.currentframe())
-titstrng = utl.print_title(version=version, fname=fname, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng + "\n\n")
 
 # ===========================================================================
-# Configuration
+# USER SECTION -- all user-set parameters below are UPPERCASE
 # ===========================================================================
-
 # ---------------------------------------------------------------------------
-# Paths
+# Runs to plot (as in femtic_mod_misfit.py / femtic_ens_misfit.py)
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/home/vrath/Py4MTX/work/rto/ubinas_data/"
+#: Base directory: relative entries of RUN_PATHS and of the command line, and
+#: relative OUT_DIR, MOD_CATALOG and MOD_BH_FILE start here; it is also the
+#: second place where the per-run files (mesh, site list, ...) are looked for.
+#: None or "" = current directory. Command line: -w / --work-dir.
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
 
-#: Resistivity block to sample (any iteration).  Also a list of block files,
-#: a glob pattern, or run directories for a batch (see MODEL_ITER below).
-MODEL_FILE = WORK_DIR + "resistivity_block_iter17.dat"
+#: Runs to plot (every entry is a model of its own):
+#:   a run directory, a block file, a results_iterN.h5 file, or a glob of these.
+#: Command-line arguments replace this list.
+RUN_PATHS = [
+    "ann*/",                                 # every member run in WORK_DIR
+    # single runs / block files instead:
+    # "ann_rto_orig-err_0/",
+]
 
-#: For run directories in MODEL_FILE: which block file of each run.
-#:   "last" - iteration of the last row of femtic.cnv (best-fit model of a
-#:            converged run)
-#:   "best" - iteration with the lowest nRMS in femtic.cnv
-#:   N      - resistivity_block_iterN.dat (0 = starting model / perturbed prior)
-#:   a list - e.g. [0, "last"]: one figure per entry and run
-#: Does not apply to block files given as files.
-MODEL_ITER = "last"
+#: Iteration taken from a run directory (not used for files): "best" (lowest
+#: nRMS in the convergence file), "last" (its last row), N
+#: (resistivity_block_iterN.dat, 0 = starting model), or a list [0, "best"].
+ITERATION = "best"
 
-#: Name of the FEMTIC convergence file inside each run directory (used for
-#: MODEL_ITER = "last" / "best"): one name or a list of candidate names (the
-#: first one that exists is used; names are also matched ignoring upper /
-#: lower case). Same setting as in all femtic_* scripts.
+#: Convergence file of a run: one name or candidates (first that exists).
 CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
 
-#: With more than one model: one figure and NPZ per model, named
-#: <label>_<tag>_boreholes.<ext> (label = run directory, tag = "iterN").
-#: Directory for them; None = the model's own directory.
-BATCH_OUT_DIR = None
-#: Figure formats (without dot), e.g. ("pdf", "png"); None = the extension of
-#: BOREHOLE_FILE ("pdf" if that is None).
-BATCH_FORMATS = None
-#: Multi-page PDF with one page per model: None = none; "auto" =
-#: <BATCH_OUT_DIR or the common parent directory>/catalog_boreholes.pdf; or a
-#: path. Needs "pdf" among the formats.
-BATCH_CATALOG = None
-#: Figure title template; {label}, {iter}, {tag}, {nrms} are filled in.
-#: Same forms as FIGURE_TITLE below ("auto", False, a dict ...); None or ""
-#: = use FIGURE_TITLE instead.
-BATCH_TITLE = "{label} - iteration {iter}"
+# ---------------------------------------------------------------------------
+# Mesh (required)
+# ---------------------------------------------------------------------------
+#: Relative names: looked for in each run directory, then in WORK_DIR.
+MOD_MESH = "templates/mesh.dat"
 
-#: Mesh file — always required.
-MESH_FILE = WORK_DIR + "mesh.dat"
+#: Swap of the first two node-coordinate columns when reading MOD_MESH
+#: (mesh.dat holds x = northing, y = easting; borehole positions are in a
+#: geographic frame x = easting, y = northing). True (default) swaps; False
+#: only for meshes already written as x = easting; None = femtic's default.
+MOD_MESH_SWAP_XY = True
 
+# --- Ocean / air handling (must match the inversion setup) ----------------
+MOD_OCEAN = None        # None = infer from the block file; True / False
+MOD_AIR_RHO = 1.0e9     # Ohm.m (region 0); information only
+MOD_OCEAN_RHO = 0.25    # Ohm.m (region 1 when treated as ocean)
 
-#: x/y column swap applied when the mesh is read (femtic.read_femtic_mesh).
-#: FEMTIC stores mesh.dat nodes as x = northing, y = easting, z down; the
-#: plotting code (femtic_viz, sites from site.dat, slice positions) works in
-#: a geographic frame (x = easting, y = northing). True (default) swaps the
-#: two columns on read, which gives that frame: maps, curtains and sites then
-#: line up, and strikes come out with the right bearing. False draws the
-#: model transposed (a N30E structure appears as N60E, x/y exchanged); it is
-#: only for meshes that were already written as x = easting, y = northing.
-#: None = leave femtic's module default (False) untouched.
-MESH_SWAP_XY = True
-if MESH_SWAP_XY is not None:
-    fem.MESH_SWAP_XY = bool(MESH_SWAP_XY)
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+#: One or more file extensions; a bare string works too.
+MOD_PLOT_FORMAT = ["pdf"]
+#: One directory for the files of all runs (relative: to WORK_DIR), used as
+#: given. None = per run, see OUT_PREFIX.
+OUT_DIR = None
+#: Put in front of every file name; with OUT_DIR None it also names a
+#: sub-directory of each run directory (OUT_PREFIX_DIR). None = neither.
+OUT_PREFIX = None
+OUT_PREFIX_DIR = True   # False: with OUT_DIR None write into the run directory
+#: Explicit output path WITHOUT extension (relative: to WORK_DIR), used only
+#: when exactly one model is plotted. None = the naming scheme.
+MOD_BH_FILE = None
+#: Export the sampled profiles to <figure name>.npz. False = skip.
+MOD_BH_NPZ = True
+#: Multi-page PDF with all figures: None = none; "auto" =
+#: <OUT_DIR or the common parent of the run directories>/catalog_boreholes.pdf;
+#: or a path.
+MOD_CATALOG = None
 
-#: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic_site").
-#: Format (comma-separated, no header):
-#:   name, lat, lon, elev, sitenum, easting, northing
-#: Used for origin estimation only (no site overlay in borehole figures).
-#: Set to None to disable.
-SITE_DAT = WORK_DIR + "site.dat"
+# ---------------------------------------------------------------------------
+# Geographic / UTM origin of the mesh centre
+# ---------------------------------------------------------------------------
+#: None when MOD_ORIGIN_METHOD estimates the origin from MOD_SITE_DAT.
+MOD_UTM_ORIGIN_LAT = None   # decimal degrees, positive = North
+MOD_UTM_ORIGIN_LON = None   # decimal degrees, positive = East
+MOD_UTM_ORIGIN_E = None     # UTM easting  [km]
+MOD_UTM_ORIGIN_N = None     # UTM northing [km]
+MOD_UTM_ZONE_OVERRIDE = None  # override the auto-derived zone; None = auto
+#: "box" | "average" (of the sites in MOD_SITE_DAT) | None (literals above)
+MOD_ORIGIN_METHOD = "box"
+#: Position text of the panel titles / legend: "model" | "utm" | "latlon"
+MOD_DISPLAY_COORDS = "latlon"
+#: Site list (name,lat,lon,elev,sitenum,E,N): mesh centre and "sites" entries
+#: of MOD_BH. None = off.
+MOD_SITE_DAT = "templates/site.dat"
+
+# ---------------------------------------------------------------------------
+# Reference model (optional)
+# ---------------------------------------------------------------------------
+#: Resistivity block file on the SAME mesh, added as a dashed profile.
+MOD_REF_FILE = "templates/referencemodel.dat"     # e.g. "referencemodel.dat"
+#: Add it to every borehole (an entry can say ref=False, or list "ref" in its
+#: "what" to force it on).
+MOD_REF_BH = True
+MOD_REF_LABEL = "reference model"   # legend entry; None = none
+
+# ---------------------------------------------------------------------------
+# Figure parameters
+# ---------------------------------------------------------------------------
+#: Default bottom of a profile ("z_bot"), [zmin, zmax] km, only zmax is used.
+#: None = 20 km.
+MOD_ZLIM = None
+#: [log10_min, log10_max] Ohm.m: resistivity range if MOD_BH_XLIM is None.
+MOD_CLIM = [0.0, 4.0]
+MOD_DPI = 400
+MOD_DEPTH_KM = True        # depth axis in km (False: m)
+#: Points. Panel titles use MOD_TICK_FONTSIZE - 2, the legend - 4.
+MOD_TICK_FONTSIZE = 16
+MOD_LABEL_FONTSIZE = 16
+MOD_TITLE_FONTSIZE = MOD_LABEL_FONTSIZE + 10
+#: Figure title:
+#:   "auto"            block-file name; run, iteration and nRMS
+#:   None, False or "" no title
+#:   a string          used as given; placeholders {label} (= {run} = {key} =
+#:                     {best}: run directory name), {tag}, {iter}, {nrms}
+#:                     ({nrms:.2f} works), {alpha}, {file}, {prefix}
+#:                     (OUT_PREFIX); "?" / "n/a" if unknown
+#:   a dict            one entry per run label, plus "default"
+MOD_TITLE = "auto"
+#: Panel titles (borehole name and position): True / False.
+MOD_PANEL_TITLES = True
+
+# ---------------------------------------------------------------------------
+# Boreholes
+# ---------------------------------------------------------------------------
+#: One dict per borehole:
+#:   "name"        label (panel title / legend; names the NPZ arrays)
+#:   "x", "y"      model-local km, or (value, "utm") [km] /
+#:                 (value, "latlon") [deg; x = longitude, y = latitude]
+#:   "z_top"       km (positive down) or "surface" (default)
+#:   "z_bot"       km (default MOD_ZLIM[1], else 20)
+#:   "dz"          km (default 0.05)
+#:   "xlim"        [rho_min, rho_max] Ohm.m of this panel
+#:   "what"        ["model"] (default), ["model", "ref"]; ensemble items of a
+#:                 femtic_ens_plot_bh.py entry are ignored
+#:   "ref"         False = no reference line in this panel
+#:   "style"       overrides of MOD_BH_STYLE for this borehole
+#: or a template  dict(sites="all" | [names], n_random=None, seed=None, ...):
+#: one borehole per site of MOD_SITE_DAT.
+MOD_BH = [
+    dict(sites="all", z_top="surface", z_bot=4.0, dz=0.05,   # one panel per site
+         xlim=[1., 10000.]),
+    # dict(sites=["SITE01", "SITE07"], z_bot=5.0),
+    # dict(name="SV-108",
+    #      x=(6.053423, "latlon"), y=(45.92574, "latlon"),
+    #      z_top="surface", z_bot=2., dz=0.05, xlim=[1., 10000.]),
+    # dict(name="SV-109",
+    #      x=(6.05340119, "latlon"), y=(45.940467, "latlon"),
+    #      z_top="surface", z_bot=2., dz=0.05, xlim=[1., 10000.]),
+    # dict(name="model centre", x=0.0, y=0.0,   # km, model-local
+    #      z_top="surface", z_bot=4.0, dz=0.05),
+    # dict(sites="all", n_random=6, seed=1, z_bot=5.0),   # 6 random sites
+]
+#: Line styles ("model", "ref"), any Matplotlib Line2D keyword. A "ref" style
+#: without "color" takes the colour of its model line.
+MOD_BH_STYLE = {
+    "model": dict(lw=2.0, ls="-"),
+    "ref": dict(color="black", lw=2.2, ls="--"),
+}
+#: True = all boreholes of a figure on one axes; False = one panel each.
+MOD_BH_SHARED = False
+#: False = panels in a grid (MOD_BH_NCOLS, MOD_BH_PER_FIG);
+#: True  = one figure per borehole (..._boreholes_01_<name>.<fmt>);
+#: MOD_BH_NCOLS / MOD_BH_PER_FIG are then not used. MOD_BH_SHARE_DEPTH = True
+#: gives all these figures the same depth range. No effect with MOD_BH_SHARED.
+MOD_SINGLE_PANELS = False
+#: x-axis (resistivity) range in Ohm.m, log scale. None = 10**MOD_CLIM, else
+#: auto.
+MOD_BH_XLIM = None
+#: Panel size [width, height] in cm, panel columns (None = up to 4), maximum
+#: panels (boreholes) per figure (None = all in one).
+MOD_BH_PANEL_SIZE = [16.0, 20.0]
+MOD_BH_NCOLS = 2
+MOD_BH_PER_FIG = 10
+#: True = one common depth range for all panels of a figure.
+MOD_BH_SHARE_DEPTH = True
+MOD_BH_LEGEND_LOC = "best"      # None = no legend
+
+#: Annotations (arrows + text) on the depth panels; [] or None = none.
+#:   "depth"       arrow tip, km positive down (required)
+#:   "rho"         arrow tip [Ohm.m]; default: left edge of the axis
+#:   "rho_text"    text position [Ohm.m]; default 3 * rho
+#:   "depth_text"  text position [km]; default depth - 0.3
+#:   "text"        label
+#:   "borehole"    name or list of names; default: every panel
+#:   "arrowprops"  passed to Axes.annotate; other keys too (color, fontsize..)
+MOD_BH_MARKERS = [
+    # dict(depth=1.5, rho=40.0, text="conductor"),
+]
+
+#: Show the figures inline when running under Spyder (files are saved anyway).
+MOD_SHOW_IN_SPYDER = True
 
 # ---------------------------------------------------------------------------
 # Verbose output
 # ---------------------------------------------------------------------------
 OUT = True
 
-# ---------------------------------------------------------------------------
-# Ocean / air handling (must match the inversion setup)
-# ---------------------------------------------------------------------------
-AIR_RHO   = 1.0e9   # Ω·m  (region 0)
-OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
 
-# ---------------------------------------------------------------------------
-# Geographic / UTM origin of the mesh centre
-# ---------------------------------------------------------------------------
-UTM_ORIGIN_LAT = None   # decimal degrees, positive = North
-UTM_ORIGIN_LON = None   # decimal degrees, positive = East
+# ===========================================================================
+# Helpers
+# ===========================================================================
 
-UTM_ORIGIN_E = None   # easting  [m]
-UTM_ORIGIN_N = None   # northing [m]
+class _Number(float):
+    """float whose "{}" shows 3 decimals; "{nrms:.2f}" still works."""
 
-#: Override the auto-derived UTM zone number.  None = auto from origin lat/lon.
-UTM_ZONE_OVERRIDE = None
-
-# ---------------------------------------------------------------------------
-# Mesh-centre estimation from site.dat UTM coordinates  (optional)
-# ---------------------------------------------------------------------------
-#: Method used to estimate UTM_ORIGIN_E / UTM_ORIGIN_N from SITE_DAT:
-#:   None      — use the hard-coded values above
-#:   "box"     — midpoint of the UTM bounding box of all sites in SITE_DAT
-#:   "average" — arithmetic mean of all site UTM coordinates in SITE_DAT
-ORIGIN_METHOD = "box"   # None | "box" | "average"
-
-# ---------------------------------------------------------------------------
-# Borehole resistivity logs
-# ---------------------------------------------------------------------------
-#: Output file for the borehole figure.  None → interactive show().
-BOREHOLE_FILE = WORK_DIR + "resistivity_block_iter17_boreholes.pdf"
-
-#: List of borehole specifications.  Each entry is a dict with:
-#:   "name"   : str   — label shown in the legend / panel title
-#:   "x"      : float — model-local easting  [m]  (or CRS-tagged tuple)
-#:   "y"      : float — model-local northing [m]  (or CRS-tagged tuple)
-#:   "z_top"  : float | "surface"
-#:              float — start depth [m, z-down]; 0 = datum surface
-#:              "surface" — auto-detect from mesh nodes via KD-tree (scipy req.)
-#:   "z_bot"  : float — end depth [m, z-down], e.g. 20000.0 for 20 km
-#:   "dz"     : float — sampling interval [m], e.g. 100.0
-#:
-#:   Optional keys:
-#:   "lat"    : float — geographic latitude  [°]  shown in legend instead of y_m
-#:   "lon"    : float — geographic longitude [°]  shown in legend instead of x_m
-#:              Both must be provided together.
-#:   Any Matplotlib Line2D kwarg ("color", "ls", "lw", "marker", "alpha", …)
-#:   placed in the spec dict overrides BOREHOLE_STYLE for that trace only.
-BOREHOLE_SITES = [
-    dict(name="borehole1",
-         x=(-70.868025, "latlon"), y=(-16.363436, "latlon"),
-         z_top="surface", z_bot=5000., dz=50.,
-         color="steelblue", ls="-", lw=3.2),
-    dict(name="borehole crater",
-         x=(-70.8972, "latlon"), y=(-16.3450, "latlon"),
-         z_top="surface", z_bot=4000., dz=50.,
-         color="red", ls=":", lw=3.2),
-    # dict(name="BH-01",
-    #      x=(-70.90, "latlon"), y=(-16.40, "latlon"),
-    #      z_top="surface", z_bot=20000., dz=200.,
-    #      color="firebrick", ls="--"),
-    # dict(name="BH-02",
-    #      x=(229100., "utm"), y=(8184000., "utm"),
-    #      z_top="surface", z_bot=15000., dz=100.,
-    #      color="seagreen", ls="-.", lw=1.5),
-]
-
-#: Baseline Matplotlib line / marker style for all borehole traces.
-#: Per-spec keys in BOREHOLE_SITES override these for individual traces.
-BOREHOLE_STYLE = dict(lw=1.2, marker="none")
-
-#: x-axis limits in Ohm*m (log scale).  None → auto.
-BOREHOLE_XLIM = [1.0, 1e4]   # Ohm*m
-
-#: True = all boreholes on one shared axes; False = one panel per borehole.
-BOREHOLE_SHARED = False
+    def __format__(self, spec):
+        return float.__format__(self, spec or ".3f")
 
 
-#: Free annotations (arrows + text) added to the borehole depth panels.
-#: Each entry is a dict with:
-#:   "depth"      : float — arrow tip depth [m, z-down]; REQUIRED.
-#:   "rho"        : float — arrow tip x-position [Ohm·m]; optional,
-#:                          defaults to left x-axis edge.
-#:   "rho_text"   : float — text x-position [Ohm·m]; optional,
-#:                          defaults to rho * 3 (≈ half a decade right).
-#:   "depth_text" : float — text y-position [m, z-down]; optional,
-#:                          defaults to depth - 300 m (slightly above tip).
-#:   Both text positions are in natural axis display units (Ohm·m / metres)
-#:   so you can read the values directly off the plot axes when choosing them.
-#:   "text"       : str   — annotation label (optional; default "").
-#:   "borehole"   : str or list of str — borehole name(s) to annotate
-#:                  (optional; None = all panels).
-#:   "arrowprops" : dict  — forwarded to ax.annotate (optional; default
-#:                          thin black -> arrow).
-#:   Any additional keys forwarded verbatim to ax.annotate
-#:   (e.g. "color", "fontsize", "fontweight", "ha", "va", "zorder").
-#:
-#: Set to [] or None to place no markers.
-BOREHOLE_MARKERS = [
-    dict(depth=-4000., rho=40., text="conductor",
-         rho_text=100., depth_text=-4300.,
-         borehole="borehole crater",
-         color="red", fontsize=12, fontweight="bold",
-         arrowprops=dict(arrowstyle="->", color="red", lw=2)),
-    # dict(depth=3200., rho_text=500., depth_text=2900.,
-    #      text="resistive basement", color="navy", fontsize=8),
-]
-
-#: Figure title (above all panels), one model (several: see BATCH_TITLE).
-#:   "auto" or True     the block-file name (as before);
-#:   None, False or ""  no title;
-#:   a string           used as given. Placeholders: {label} run directory name,
-#:                      {tag} "iterN", {iter} the iteration ("?" if unknown),
-#:                      {nrms} nRMS (3 decimals; "n/a" if unknown), {file} the
-#:                      block-file name, {key} = {label}. Text with other
-#:                      braces is used as it stands;
-#:   a dict             one entry per model, keyed by its label, e.g.
-#:                        {"run1": "Reference", "default": "auto"}
-#:                      values as above; "default" (else "auto") covers the rest.
-FIGURE_TITLE = "auto"
-#: Font size of the figure title; None = LEGEND_FONTSIZE + 1.
-FIGURE_TITLE_FONTSIZE = None
-#: Panel titles ("Borehole resistivity logs" in the shared panel, borehole name
-#: and position above every panel otherwise): True = as before, False = none.
-PANEL_TITLES = True
-
-#: Font size for the borehole legend (shared mode) and panel titles
-#: (per-panel mode).  Tick labels are set to legend_fontsize - 2.
-LEGEND_FONTSIZE = 12
-#: Font size for axis tick labels.  None → LEGEND_FONTSIZE - 2 (≥ 6).
-TICK_FONTSIZE = None
-#: Font size for axis labels (xlabel / ylabel).  None → LEGEND_FONTSIZE.
-LABEL_FONTSIZE = None
+def _formats():
+    """MOD_PLOT_FORMAT as a list of extensions without dot."""
+    raw = ([MOD_PLOT_FORMAT] if isinstance(MOD_PLOT_FORMAT, str)
+           else list(MOD_PLOT_FORMAT))
+    fmts = [str(f).lstrip(".").lower() for f in raw]
+    if not fmts:
+        raise ValueError("MOD_PLOT_FORMAT is empty.")
+    return fmts
 
 
-#: Export sampled depth / rho arrays to an NPZ file.
-#:   True  — save; path is derived from BOREHOLE_FILE (same stem, .npz extension)
-#:            or "borehole_logs.npz" when BOREHOLE_FILE is None.
-#:   False — skip NPZ export.
-#:   str / Path — explicit output path (overrides auto-derive).
-BOREHOLE_NPZ = True
+def _figure_title(model):
+    """Figure title of one model, see MOD_TITLE (None = no title)."""
+    nrms, alpha, it = model.get("nrms"), model.get("alpha"), model.get("iter")
+    block = os.path.basename(model["file"])
+    info = [model["label"]]
+    if it is not None:
+        info.append(f"iter {it}")
+    if nrms is not None:
+        info.append(f"nRMS {nrms:.4f}")
+    label = model["label"]
+    title = fviz.resolve_title(
+        MOD_TITLE, label, f"{block}\n{'  '.join(info)}", name="MOD_TITLE",
+        label=label, run=label, best=label, tag=model["tag"],
+        iter="?" if it is None else it,
+        nrms="n/a" if nrms is None else _Number(nrms),
+        alpha="n/a" if alpha is None else alpha,
+        file=block, prefix=OUT_PREFIX or "",
+    )
+    return title if title != "" else None
 
-#: Figure DPI for saved file.
-PLOT_DPI = 600
+
+def _latlon_used(specs):
+    """True if a borehole position is given in geographic coordinates."""
+    return any(
+        isinstance(v, (list, tuple)) and len(v) == 2
+        and str(v[1]).lower() == "latlon"
+        for sp in specs for v in (sp.get("x"), sp.get("y"))
+    )
+
+
+def _plot_model(model, work_dir, *, meshes, stem=None, catalog=None,
+                show=False):
+    """Profiles, NPZ and figure(s) of one model.
+
+    model : entry of fem.resolve_model_files(); meshes : cache {path:
+    fem.BoreholeMesh}, filled here; stem : output path without extension
+    (None = the naming scheme); catalog : open PdfPages or None.
+    """
+    run_dir = model["dir"]
+
+    # --- per-run files -----------------------------------------------------
+    mesh_file = fem.find_run_file(MOD_MESH, run_dir, work_dir)
+    if mesh_file is None:
+        raise FileNotFoundError(
+            f"mesh MOD_MESH = {MOD_MESH!r} not found in {run_dir} or "
+            f"{work_dir}.")
+    site_dat = fem.find_run_file(MOD_SITE_DAT, run_dir, work_dir)
+    if MOD_SITE_DAT and site_dat is None:
+        print(f"  MOD_SITE_DAT = {MOD_SITE_DAT!r} not found in {run_dir} or "
+              f"{work_dir}.")
+    struct = fem._read_resistivity_block_struct(
+        model["file"], ocean=MOD_OCEAN, out=False)
+    key = os.path.realpath(mesh_file)
+    if key not in meshes:
+        meshes[key] = fem.BoreholeMesh(mesh_file)
+    mesh = meshes[key]
+
+    # --- mesh-centre origin --------------------------------------------------
+    origin_e, origin_n = fem.utm_km_to_m(
+        MOD_UTM_ORIGIN_E, MOD_UTM_ORIGIN_N, name="MOD_UTM_ORIGIN_E / _N")
+    (utm_e, utm_n, _lat, _lon, utm_zone, utm_north, _sites,
+     _obs) = fem.resolve_origin_and_sites(
+        site_dat=site_dat,
+        origin_e=origin_e,
+        origin_n=origin_n,
+        origin_lat=MOD_UTM_ORIGIN_LAT,
+        origin_lon=MOD_UTM_ORIGIN_LON,
+        zone_override=MOD_UTM_ZONE_OVERRIDE,
+        origin_method=MOD_ORIGIN_METHOD,
+        plot_sites=False,
+    )
+
+    # --- reference model, borehole list ----------------------------------------
+    ref_el, ref_path = None, None
+    wanted = MOD_REF_BH or any("ref" in (t.get("what") or ()) for t in MOD_BH)
+    if MOD_REF_FILE and wanted:
+        ref_path = (fem.find_run_file(MOD_REF_FILE, run_dir, work_dir)
+                    or fem.anchor_path(MOD_REF_FILE, run_dir))
+        ref_el = fem.ReferenceModel(
+            ref_path, ocean=MOD_OCEAN, ocean_rho=MOD_OCEAN_RHO
+        ).element_log10(mesh.n_elem)
+
+    specs = fem.expand_site_templates(MOD_BH, site_dat, utm_e, out=OUT)
+    if _latlon_used(specs) and (utm_e is None or utm_zone is None):
+        raise ValueError(
+            "lat/lon borehole positions need the mesh-centre origin: give "
+            "MOD_SITE_DAT (with MOD_ORIGIN_METHOD) or MOD_UTM_ORIGIN_E / _N / "
+            "_LAT / _LON.")
+
+    # --- profiles --------------------------------------------------------------
+    smp = fem.sample_model_boreholes(
+        specs,
+        mesh=mesh,
+        struct=struct,
+        utm=(utm_e, utm_n, utm_zone, utm_north),
+        ref_el=ref_el,
+        ref_default=MOD_REF_BH,
+        ocean_rho=MOD_OCEAN_RHO,
+        zlim_km=MOD_ZLIM,
+        display_coords=MOD_DISPLAY_COORDS,
+        out=OUT,
+    )
+    if not smp["profiles"]:
+        raise ValueError("MOD_BH: no usable borehole - nothing plotted.")
+
+    if stem is None:
+        stem = fem.model_output_stem(
+            model, "boreholes", out_dir=OUT_DIR, prefix=OUT_PREFIX,
+            prefix_dir=OUT_PREFIX_DIR, base_dir=work_dir)
+    os.makedirs(os.path.dirname(os.path.abspath(stem)), exist_ok=True)
+
+    if MOD_BH_NPZ:
+        header = dict(
+            model_file=model["file"],
+            iteration=model["iter"],
+            nrms=model["nrms"],
+            alpha=model["alpha"],
+            mesh_file=mesh_file,
+            reference_file=ref_path if ref_el is not None else None,
+            depth_unit="m, z positive-down, model datum",
+            rho_unit="Ohm.m (NaN = air / outside mesh)",
+            boreholes=smp["hdr"],
+        )
+        arrays = dict(smp["npz"])
+        arrays["header"] = np.array(json.dumps(header, indent=2))
+        np.savez_compressed(stem + ".npz", **arrays)
+        if OUT:
+            print(f"  profiles saved -> {stem}.npz")
+
+    # --- figures ---------------------------------------------------------------
+    single = bool(MOD_SINGLE_PANELS) and not MOD_BH_SHARED
+    if MOD_SINGLE_PANELS and MOD_BH_SHARED:
+        print("  MOD_BH_SHARED: all boreholes on one axes - "
+              "MOD_SINGLE_PANELS not used.")
+    plan = fviz.plan_borehole_figures(
+        smp["profiles"], None, None,
+        per_fig=1 if single else MOD_BH_PER_FIG)
+    opts = fviz.BoreholeFigureOptions(
+        line_style=fem.model_style_keys(MOD_BH_STYLE),
+        xlim=fem.borehole_global_xlim(MOD_BH_XLIM, MOD_CLIM),
+        ncols=MOD_BH_NCOLS,
+        panel_size=MOD_BH_PANEL_SIZE,
+        share_depth=MOD_BH_SHARE_DEPTH,
+        legend_loc=MOD_BH_LEGEND_LOC,
+        panel_titles=bool(MOD_PANEL_TITLES),
+        depth_km=MOD_DEPTH_KM,
+        tick_fontsize=MOD_TICK_FONTSIZE,
+        label_fontsize=MOD_LABEL_FONTSIZE,
+        title_fontsize=MOD_TITLE_FONTSIZE,
+        dpi=MOD_DPI,
+        formats=_formats(),
+        show=show,
+        ref_label=MOD_REF_LABEL if ref_el is not None else None,
+        suptitle=_figure_title(model),
+        shared=MOD_BH_SHARED,
+        markers=MOD_BH_MARKERS,
+        key_labels={"best": "model"},
+        ref_follows_color=True,
+        catalog=catalog,
+        out=OUT,
+    )
+    fviz.draw_borehole_figures(plan, None, stem, opts, name_suffix=single)
+
+
+def _catalog_path(models, work_dir):
+    """File of the multi-page PDF (MOD_CATALOG), None = no catalog."""
+    if not MOD_CATALOG:
+        return None
+    if str(MOD_CATALOG).strip().lower() != "auto":
+        return fem.anchor_path(MOD_CATALOG, work_dir)
+    directory = (fem.anchor_path(OUT_DIR, work_dir)
+                 or os.path.commonpath(
+                     [os.path.abspath(m["dir"]) for m in models]))
+    name = "catalog_boreholes.pdf"
+    if OUT_PREFIX:
+        name = f"{OUT_PREFIX}_{name}"
+    return os.path.join(directory, name)
 
 
 # ===========================================================================
 # Main
 # ===========================================================================
 
-# --- (0) Resolve the model(s) to plot --------------------------------------
-MODELS = fem.resolve_model_files(MODEL_FILE, MODEL_ITER,
-                                 cnv_name=CNV_FILE, out=OUT)
-if not MODELS:
-    sys.exit(f"No model found for MODEL_FILE = {MODEL_FILE!r} "
-             f"(MODEL_ITER = {MODEL_ITER!r}).")
-BATCH = len(MODELS) > 1
-print(f"{len(MODELS)} model(s) to plot"
-      + (": one figure per model (batch)" if BATCH else ""))
-print()
+def main(argv=None) -> int:
+    """Plot all runs; 0 = done, 1 = something failed, 2 = bad WORK_DIR."""
+    parser = argparse.ArgumentParser(
+        description="Borehole resistivity logs of single FEMTIC models.")
+    parser.add_argument(
+        "runs", nargs="*",
+        help="run directories, block files, results files or globs "
+             "(default: RUN_PATHS)")
+    parser.add_argument(
+        "-w", "--work-dir", default=None,
+        help="base directory of relative paths (default: WORK_DIR)")
+    args = parser.parse_args(sys.argv[1:] if argv is None else list(argv))
 
-# --- (1) Optionally estimate UTM origin from site.dat ----------------------
-if ORIGIN_METHOD is not None:
-    if SITE_DAT is None or not os.path.isfile(SITE_DAT):
-        print(f"  WARNING: ORIGIN_METHOD={ORIGIN_METHOD!r} requested but "
-              f"SITE_DAT is not available — using hard-coded origin.")
-    else:
-        _sdat = fem.read_site_dat(SITE_DAT)
-        if not _sdat:
-            print(f"  WARNING: SITE_DAT is empty — using hard-coded origin.")
+    wd_set = args.work_dir if args.work_dir is not None else WORK_DIR
+    work_dir = os.path.abspath(os.path.expanduser(str(wd_set or ".")))
+    if not os.path.isdir(work_dir):
+        print(f"WORK_DIR does not exist: {work_dir} (set WORK_DIR or use -w)")
+        return 2
+    run_paths = list(args.runs) or RUN_PATHS
+    if not MOD_BH:
+        print("MOD_BH is empty - nothing to plot.")
+        return 1
+
+    if MOD_MESH_SWAP_XY is not None:
+        fem.MESH_SWAP_XY = bool(MOD_MESH_SWAP_XY)
+
+    models = fem.resolve_model_files(
+        run_paths, ITERATION, cnv_name=CNV_FILE or None, base_dir=work_dir,
+        out=True)  # skipped entries are always reported
+    if not models:
+        print(f"No model found for {run_paths!r} (ITERATION = {ITERATION!r}, "
+              f"WORK_DIR = {work_dir}).")
+        return 1
+    print(f"\n{len(models)} model(s) to plot\n")
+
+    stem = None
+    if MOD_BH_FILE:
+        if len(models) == 1:
+            stem = fem.anchor_path(MOD_BH_FILE, work_dir)
+            base, ext = os.path.splitext(stem)
+            if ext.lstrip(".").lower() in _formats() + ["npz"]:
+                stem = base
         else:
-            _Es = np.array([d["easting"]  for d in _sdat])
-            _Ns = np.array([d["northing"] for d in _sdat])
-            if ORIGIN_METHOD == "box":
-                UTM_ORIGIN_E = 0.5 * (_Es.min() + _Es.max())
-                UTM_ORIGIN_N = 0.5 * (_Ns.min() + _Ns.max())
-            elif ORIGIN_METHOD == "average":
-                UTM_ORIGIN_E = float(_Es.mean())
-                UTM_ORIGIN_N = float(_Ns.mean())
-            else:
-                sys.exit(f"Unknown ORIGIN_METHOD {ORIGIN_METHOD!r}; "
-                         f"use None, 'box', or 'average'.")
-            _lats = np.array([d["lat"] for d in _sdat])
-            _lons = np.array([d["lon"] for d in _sdat])
-            UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
-                float(_lats.mean()), float(_lons.mean()),
-                override=UTM_ZONE_OVERRIDE)
-            UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
-                UTM_ORIGIN_E, UTM_ORIGIN_N, UTM_ZONE, UTM_NORTHERN)
-            if OUT:
-                print(f"Origin estimated ({ORIGIN_METHOD}, {len(_sdat)} sites):")
-                print(f"  UTM_ORIGIN_E   = {UTM_ORIGIN_E:.1f} m")
-                print(f"  UTM_ORIGIN_N   = {UTM_ORIGIN_N:.1f} m")
-                print(f"  UTM_ORIGIN_LAT = {UTM_ORIGIN_LAT:.6f}°")
-                print(f"  UTM_ORIGIN_LON = {UTM_ORIGIN_LON:.6f}°")
-                print(f"  UTM_ZONE       = {UTM_ZONE}{'N' if UTM_NORTHERN else 'S'}")
-                print()
+            print("MOD_BH_FILE is only used for a single model - ignored.")
 
-# --- (2) Derive UTM zone from finalised mesh-origin coordinates ------------
-UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
-    UTM_ORIGIN_LAT, UTM_ORIGIN_LON, override=UTM_ZONE_OVERRIDE)
-hemi = "N" if UTM_NORTHERN else "S"
-print(f"UTM zone: {UTM_ZONE}{hemi}  "
-      f"(origin lat={UTM_ORIGIN_LAT:.4f}°, lon={UTM_ORIGIN_LON:.4f}°)")
-print()
+    show = bool(MOD_SHOW_IN_SPYDER) and utl.runtime_env() == "spyder"
+    catalog_path = _catalog_path(models, work_dir)
+    catalog = None
+    if catalog_path:
+        from matplotlib.backends.backend_pdf import PdfPages
 
-# --- (3) Borehole resistivity logs ----------------------------------------
-if fviz is None:
-    sys.exit("femtic_viz not available — cannot plot.  "
-             "Check your installation.")
+        os.makedirs(os.path.dirname(catalog_path), exist_ok=True)
+        catalog = PdfPages(catalog_path)
 
-# Options shared by every figure of this run.
-_common = dict(
-    mesh_file      = MESH_FILE,
-    borehole_sites = BOREHOLE_SITES,
-    resolve_xy_fn  = None,
-    utm_zone       = UTM_ZONE,
-    utm_northern   = UTM_NORTHERN,
-    utm_origin_e   = UTM_ORIGIN_E,
-    utm_origin_n   = UTM_ORIGIN_N,
-    ocean_value    = OCEAN_RHO,
-    clim           = BOREHOLE_XLIM,
-    borehole_style = BOREHOLE_STYLE,
-    shared         = BOREHOLE_SHARED,
-    markers        = BOREHOLE_MARKERS or None,
-    legend_fontsize= LEGEND_FONTSIZE,
-    panel_titles   = bool(PANEL_TITLES),
-    figure_title_fontsize = FIGURE_TITLE_FONTSIZE,
-    tick_fontsize  = TICK_FONTSIZE,
-    label_fontsize = LABEL_FONTSIZE,
-    dpi            = PLOT_DPI,
-    out            = OUT,
-)
-
-def _model_title(m, spec):
-    """Figure title of model ``m`` (an entry of MODELS) from ``spec``
-    (FIGURE_TITLE / BATCH_TITLE): None = the block-file name, "" = none,
-    else the text."""
-    return fviz.resolve_title(
-        spec, m["label"], None, name="FIGURE_TITLE",
-        label=m["label"], tag=m["tag"],
-        iter="?" if m["iter"] is None else m["iter"],
-        nrms="n/a" if m["nrms"] is None else f"{m['nrms']:.3f}",
-        file=os.path.basename(str(m["file"])))
-
-
-if not BOREHOLE_SITES:
-    print("  Borehole plot skipped: BOREHOLE_SITES is empty.")
-elif not BATCH:
-    print(f"Sampling {len(BOREHOLE_SITES)} borehole(s) …")
-    fviz.plot_borehole_logs(
-        model_file     = MODELS[0]["file"],
-        figure_title   = _model_title(MODELS[0], FIGURE_TITLE),
-        npz_file       = (None   if BOREHOLE_NPZ is True
-                          else (False if BOREHOLE_NPZ is False
-                                else BOREHOLE_NPZ)),
-        plot_file      = BOREHOLE_FILE,
-        **_common,
-    )
-    print("Borehole plot done.")
-else:
-    # --- several models: one figure (and NPZ) per model + optional catalog --
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_pdf import PdfPages
-
-    _fmts = BATCH_FORMATS if BATCH_FORMATS is not None else (
-        (os.path.splitext(BOREHOLE_FILE)[1].lstrip(".") if BOREHOLE_FILE else "")
-        or "pdf",)
-    _fmts = [str(_f).lstrip(".") for _f in
-             ((_fmts,) if isinstance(_fmts, str) else _fmts)]
-
-    _cat_path = None
-    if BATCH_CATALOG:
-        if "pdf" not in _fmts:
-            print("  catalog: \"pdf\" is not among the formats - skipped.")
-        elif BATCH_CATALOG == "auto":
-            _cat_path = os.path.join(
-                BATCH_OUT_DIR or os.path.commonpath([_m["dir"] for _m in MODELS]),
-                "catalog_boreholes.pdf")
-        else:
-            _cat_path = str(BATCH_CATALOG)
-    if BATCH_OUT_DIR:
-        os.makedirs(BATCH_OUT_DIR, exist_ok=True)
-    _pdf = None
-    if _cat_path:
-        os.makedirs(os.path.dirname(os.path.abspath(_cat_path)), exist_ok=True)
-        _pdf = PdfPages(_cat_path)
-    _n_pages = 0
-    print(f"Sampling {len(BOREHOLE_SITES)} borehole(s) in {len(MODELS)} model(s) ...")
+    done, meshes = 0, {}
     try:
-        for _i, _m in enumerate(MODELS, 1):
-            _title = _model_title(
-                _m, BATCH_TITLE if BATCH_TITLE not in (None, "")
-                else FIGURE_TITLE)
-            _stem = os.path.join(BATCH_OUT_DIR or _m["dir"],
-                                 f"{_m['label']}_{_m['tag']}_boreholes")
-            print(f"[{_i}/{len(MODELS)}] {_m['label']} / {_m['tag']}")
-            for _k, _fmt in enumerate(_fmts):
-                # the NPZ holds the same data for every format: write it once
-                if BOREHOLE_NPZ is False or _k > 0:
-                    _npz = False
-                elif BOREHOLE_NPZ is True:
-                    _npz = None            # derived from the figure file
-                else:
-                    _npz = (os.path.splitext(str(BOREHOLE_NPZ))[0]
-                            + f"_{_m['label']}_{_m['tag']}.npz")
-                _fig = fviz.plot_borehole_logs(
-                    model_file   = _m["file"],
-                    figure_title = _title,
-                    npz_file     = _npz,
-                    plot_file    = f"{_stem}.{_fmt}",
-                    **_common,
-                )
-                if _fig is None:
-                    continue
-                if _fmt == "pdf" and _pdf is not None:
-                    _n_pages += bool(fviz.append_catalog_page(
-                        _pdf, _fig, _m["label"]))
-                plt.close(_fig)
-                del _fig
-            gc.collect()   # Matplotlib figures hold reference cycles
+        for i, model in enumerate(models, 1):
+            print(f"[{i}/{len(models)}] {model['label']} / {model['tag']}: "
+                  f"{model['file']}")
+            try:
+                _plot_model(model, work_dir, meshes=meshes, stem=stem,
+                            catalog=catalog, show=show)
+                done += 1
+            except Exception as exc:  # one bad run must not stop the others
+                print(f"  FAILED: {type(exc).__name__}: {exc}")
+                import matplotlib.pyplot as plt
+
+                plt.close("all")
+            gc.collect()  # Matplotlib figures hold reference cycles
     finally:
-        if _pdf is not None:
-            _info = _pdf.infodict()
-            _info["Title"] = "femtic_mod_plot_bh catalog"
-            _info["Author"] = "femtic_mod_plot_bh.py"
-            _pdf.close()
-    print(f"Borehole plots done: {len(MODELS)} model(s)")
-    if _cat_path:
-        print(f"  catalog: {_n_pages} page(s) -> {_cat_path}")
+        pages = 0
+        if catalog is not None:
+            pages = catalog.get_pagecount()
+            info = catalog.infodict()
+            info["Title"] = "femtic_mod_plot_bh catalog"
+            info["Author"] = "femtic_mod_plot_bh.py"
+            catalog.close()
+
+    print(f"\nBorehole plots: {done} of {len(models)} model(s) done")
+    if catalog_path:
+        print(f"  catalog: {pages} page(s) -> {catalog_path}")
+
+    utl.write_param_summary(
+        __file__,
+        namespace=dict(globals(), WORK_DIR=work_dir, RUN_PATHS=run_paths),
+        out_dir=work_dir)
+
+    return 0 if done == len(models) else 1
 
 
-# ---------------------------------------------------------------------------
-# Parameter summary
-# ---------------------------------------------------------------------------
-utl.write_param_summary(fname, out_dir=WORK_DIR)
+if __name__ == "__main__":
+    _rc = main(sys.argv[1:])
+    if _rc:  # no SystemExit on success (keeps Spyder sessions quiet)
+        sys.exit(_rc)

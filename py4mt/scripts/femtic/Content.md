@@ -12,18 +12,19 @@ summary plots (`femtic_ens_post.py`, `femtic_ens_plot_slices.py`,
 `femtic_ens_plot_bh.py`, `femtic_data_misfit.py`, `femtic_distort_stat.py`); the **mod** scripts plot
 single models, possibly with more refined figures (`femtic_mod_plot_slice.py`,
 `femtic_mod_plot_bh.py`, `femtic_mod_plot_3d.py`; `femtic_mod_math.py` /
-`femtic_mod_edit.py` for model arithmetic and editing). `femtic_mod_plot_slice.py`
-and `femtic_mod_plot_bh.py` also take lists, globs or run directories.
+`femtic_mod_edit.py` for model arithmetic and editing). The three
+`femtic_mod_plot_*.py` scripts take several runs (run directories, block or
+results files, globs; command line with `-w`).
 
 ## Model visualisation
 
 | Script | Purpose |
 |--------|---------|
-| `femtic_mod_plot_slice.py` | 2-D slice panels (map, N-S curtain, E-W curtain, arbitrary strike/dip plane) with optional embedded borehole columns, site overlays, compass corner labels, and nRMS annotation from `femtic.cnv`. One model, or a list / glob / run directories (`MODEL_ITER` = `"last"`, `"best"`, N, or a list such as `[0, "last"]`): one figure per model and an optional multi-page catalog PDF. |
-| `femtic_mod_plot_bh.py` | Standalone 1-D ρ(z) borehole resistivity logs; point-in-element sampling from a tetrahedral mesh (mesh read with `fem.read_femtic_mesh`). For ensembles see `femtic_ens_plot_bh.py`; for several models (list / glob / run directories, `MODEL_ITER`) one figure and NPZ per model and an optional catalog PDF. |
+| `femtic_mod_plot_slice.py` | 2-D slice panels (map, N-S, E-W, strike/dip plane, two-point profile / fault) with site and point markers, polylines, reference contours, blanking and nRMS annotation. Settings as in `femtic_ens_plot_slices.py` (`MOD_*`, km), no ensemble statistics; several runs (`RUN_PATHS` / command line, `ITERATION`): one figure per model, optional catalog PDF. |
+| `femtic_mod_plot_bh.py` | 1-D resistivity-depth borehole logs of single models. Settings as in `femtic_ens_plot_bh.py` (`MOD_BH`, km), reference line, annotations, shared panel; several runs (`RUN_PATHS` / command line, `ITERATION`): figure(s) and NPZ per model, optional catalog PDF. |
 | `femtic_plot_nrms.py` | Map of per-site nRMS misfit as colour-coded glyphs, optionally over an SRTM hillshade. The best iteration comes from `femtic.cnv`; per-site residuals from `results_iter<N>.h5` via `fem.read_results_data`. |
 | `femtic_plot_distort.py` | Map of the static galvanic distortion matrices as ellipses (optional Groom–Bailey decomposition panels, optional SRTM hillshade). |
-| `femtic_mod_plot_3d.py` | PyVista 3-D rendering and VTK/VTU export; axis-aligned and oblique slice planes, iso-surfaces, spatial clipping. |
+| `femtic_mod_plot_3d.py` | PyVista 3-D rendering and VTK/VTU export; axis-aligned and oblique slice planes, iso-surfaces, spatial clipping (`MOD_*`, km); several runs (`RUN_PATHS` / command line, `ITERATION`). |
 
 ---
 
@@ -151,4 +152,4 @@ femtic_data_misfit.py →  nRMS histogram from that .npz (method "nrms")
 
 ---
 
-*Generated 2026-06-26 from README files in `scripts/femtic/`; updated 2026-10-11 (new scripts, FEMTIC I/O table, removed `femtic_rto_post.py`); 2026-10-28 (added `femtic_clean.py`); 2026-11-13 (added `femtic_distcorr.py`, `femtic_distort_stat.py`).*
+*Generated 2026-06-26 from README files in `scripts/femtic/`; updated 2026-10-11 (new scripts, FEMTIC I/O table, removed `femtic_rto_post.py`); 2026-10-28 (added `femtic_clean.py`); 2026-11-13 (added `femtic_distcorr.py`, `femtic_distort_stat.py`); 2026-11-26 (`femtic_mod_plot_*.py` rewritten for several runs, defaults from the `femtic_ens_plot_*.py` scripts; Claude Sonnet 5.5 (Anthropic)).*

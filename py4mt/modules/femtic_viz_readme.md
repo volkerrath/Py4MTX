@@ -64,7 +64,9 @@ fviz.plot_model_slices(
 
 ### 1-D borehole log
 
-Driven by [`femtic_mod_plot_bh.py`](femtic_mod_plot_bh_readme.md).
+Library function; since 2026-11-26 `femtic_mod_plot_bh.py` draws with
+`plan_borehole_figures()` / `draw_borehole_figures()` instead (see
+[its readme](femtic_mod_plot_bh_readme.md)).
 
 ```python
 fviz.plot_borehole_logs(
@@ -807,8 +809,8 @@ through them runs on along strike as an extrapolation. With the spec keys
 - The verbose output of `plot_model_slices` names the stretch (along-strike
   range from the midpoint of p1-p2, km), the opacity far outside and the
   fade width. `limit_km` and `fade_km` are in **km** whatever unit the other
-  keys of the entry use (they are metres in a `femtic_viz` call, degrees /
-  metres in the km scripts); `alpha_outside` is a plain number.
+  keys of the entry use (they are metres in a `femtic_viz` call; degrees /
+  km in the scripts, since 2026-11-26); `alpha_outside` is a plain number.
 - A `limit_km` that is not a number (or `None`), a `fade_km` that is negative
   or not a number (or `None`), or an `alpha_outside` outside `[0, 1]` raises
   `ValueError` when the lines / the panel are prepared.
@@ -865,8 +867,8 @@ fviz.plot_model_slices(
 
 Samples the resistivity model along vertical boreholes using point-in-element
 search (`fem.extract_borehole_log`, exact barycentric test) and plots
-ρ vs depth on a **logarithmic x-axis** (Ohm·m).  Called from
-`femtic_mod_plot_bh.py`.
+ρ vs depth on a **logarithmic x-axis** (Ohm·m).  No script of the
+`femtic_mod_plot_*.py` family calls it since 2026-11-26.
 
 ```python
 fviz.plot_borehole_logs(
@@ -1240,21 +1242,37 @@ Not to be confused with `plot_borehole_logs` (single model, above).
 
 | Function / class | Purpose |
 |---|---|
-| `BoreholeFigureOptions` | Layout and style of the figures: `line_style`, `alpha`, `xlim`, `ncols`, `panel_size`, `share_depth`, `legend_loc`, `heat_cbar`, `heat_cbar_location` / `heat_cbar_shrink` / `heat_cbar_thickness` (side, length and thickness [inch] of the heat-map colour bar), `panel_titles`, `depth_km`, font sizes, `dpi`, `formats`, `show`, `ref_label`, `suptitle` (`None` / `False` = no figure title, and no source tag), `tag_sources`, `source_labels`, `out`. The fields are the `MOD_BH_*` / `MOD_*` settings of `femtic_ens_plot_bh.py`. |
+| `BoreholeFigureOptions` | Layout and style of the figures: `line_style`, `alpha`, `xlim`, `ncols`, `panel_size`, `share_depth`, `legend_loc`, `heat_cbar`, `heat_cbar_location` / `heat_cbar_shrink` / `heat_cbar_thickness` (side, length and thickness [inch] of the heat-map colour bar), `panel_titles`, `depth_km`, font sizes, `dpi`, `formats`, `show`, `ref_label`, `suptitle` (`None` / `False` = no figure title, and no source tag), `tag_sources`, `source_labels`, `out`, and (2026-11-26) `shared`, `markers`, `key_labels`, `ref_follows_color`, `catalog` (below). The fields are the `MOD_BH_*` / `MOD_*` settings of `femtic_ens_plot_bh.py` and `femtic_mod_plot_bh.py`. |
 | `plan_borehole_figures(profiles, cs, io, *, per_fig=None, layout="combined", share_scale=False, scale_file=None, default_source="converged", ensemble=None, ...)` | Splits the profiles into figures of `per_fig` panels and fixes one colour scale per figure (shared by the converged and perturbed heat maps of that figure; one scale for all figures with `share_scale` or a scale file that is read). Writes the scale file when asked. Returns the plan. |
 | `draw_borehole_figures(plan, cs, plot_base, opts, perturbed_suffix="_perturbed")` | Draws the planned figures. With converged and perturbed models either side by side in one figure (`layout="combined"`) or one figure per source (`"separate"`, the perturbed one at `plot_base + perturbed_suffix`). |
 | `plot_boreholes(groups, plot_base, cs, norm, extend, opts)` | One figure: a resistivity-depth panel per borehole (lines, member lines, heat map, reference). `groups` is `[(source, profiles)]`. |
+| `annotate_borehole_markers(panels, markers, *, depth_km=True)` | Arrows and text on the panels (`MOD_BH_MARKERS`); `panels` is `[(axes, borehole name)]`. |
 | `borehole_view(p, src)` | A profile dict as seen for model source `src`. |
 | `borehole_line_style(key, spec, base_style, ...)` | Line2D keywords of one draw key. |
 | `heat_display`, `heat_style`, `heat_log_ticks`, `heat_norm`, `depth_edges` | Heat-map helpers: displayed values (`"fraction"` / `"row_max"`), colormap and `pcolormesh` keywords, colour-bar ticks, colour scale of a figure, depth cell edges. |
+
+**Single models (2026-11-26, `femtic_mod_plot_bh.py`).** The same functions
+draw the profiles of one model (`femtic.sample_model_boreholes()`;
+`plan_borehole_figures(profiles, None, None, per_fig=...)`, `cs=None` in
+`draw_borehole_figures`). Further `BoreholeFigureOptions` fields; their
+defaults leave the ensemble figures unchanged:
+
+| Field | Default | Effect |
+|---|---|---|
+| `shared` | `False` | All boreholes of a figure on one axes (one per source), told apart by the legend; reference lines share one grey legend entry; depth and resistivity ranges are the union. No heat maps. |
+| `markers` | `None` | List of annotations: `depth` (km, required), `rho` (arrow tip [Ohm.m]; default left edge), `rho_text` (default `3 * rho`), `depth_text` (km; default 0.3 km above), `text`, `borehole` (name or list; default all), `arrowprops`, any other `Axes.annotate` keyword. |
+| `key_labels` | `{}` | Legend names of the draw keys, e.g. `{"best": "model"}`. |
+| `ref_follows_color` | `False` | A reference line without a colour takes the colour of the borehole's first line. |
+| `catalog` | `None` | Open `PdfPages`; every figure is added to it. |
 
 ---
 
 ## Batches of single-model figures
 
 Added 2026-11-08 for `femtic_mod_plot_slice.py` and `femtic_mod_plot_bh.py`,
-which can draw one figure per model (models from `femtic.resolve_model_files()`)
-and collect them in a multi-page PDF. matplotlib's pdf backend can raise an
+which draw one figure per model (models from `femtic.resolve_model_files()`)
+and can collect them in a multi-page PDF (since 2026-11-26 the borehole script
+draws with `plot_boreholes`, see above). matplotlib's pdf backend can raise an
 `IndexError` for an "Indexed" colour space (data-dependent, matplotlib issue
 #25806); one such figure should not end a run of hundreds.
 
@@ -1265,6 +1283,20 @@ and collect them in a multi-page PDF. matplotlib's pdf backend can raise an
 
 `plot_borehole_logs` returns its figure (left open when `plot_file` is given);
 close it with `plt.close(fig)` in a loop.
+
+## Single-panel figures (optional)
+
+Added 2026-11-26. Used by the `femtic_mod_*` scripts when their
+single-panel switch is on; the grid figures remain the default.
+
+| Function / option | Purpose |
+|---|---|
+| `single_panel_jobs(slices, *, polylines=None, nrms_annotation=None)` | One job per displayed slice: `suffix` (`_01_map`, `_02_ew`, ...), `label` and the `kwargs` that replace those of the multi-panel `plot_model_slices` call. `overlay` specs travel along as hidden slices, so fault traces stay; polylines restricted by `panels` go to the matching figures only; `nrms_annotation["panel"]` None = every figure. |
+| `draw_borehole_figures(..., name_suffix=True)` | With a plan made with `per_fig=1`: one figure per borehole, files `<base>_NN_<name>`; with `share_depth` all figures have the same depth range. |
+| `BoreholeFigureOptions.depth_range` | Fixed common depth range `(min, max)` in m. |
+
+Automatic colour limits come from the whole model, so the single figures of
+one model share their colour scale. The mesh is read once per figure.
 
 ---
 
@@ -1375,3 +1407,5 @@ Author: Volker Rath (DIAS)
 | 2026-11-15b | Claude Sonnet 5.5 (Anthropic) | **`alpha_outside` fades.** The opacity of a fault outside its defining points now falls linearly from 1 at the ends of the stretch to `alpha_outside` over the new spec key `fade_km` (default `2.0` km; `0` / `None` = the abrupt step of the first version; `alpha_outside=0` fades to fully transparent), like `alpha_mode="fade"`. `slice_overlay_polylines` returns one entry per panel (no more `..._out<k>`), cut at the ends and at the 16 steps of the fade, with the new entry key `alpha_fn` (opacity factor per segment, multiplies the style's `alpha`: `alpha_outside` is now relative to it, not absolute). New private `_FadeLine2D` (a `Line2D` with an opacity per segment, drawn as stacked layers: no seam, dash pattern continuous, butt caps) and helpers; the fault panel's veil is a stack of overlapping rectangles. `_prepare_polylines` carries `alpha_fn`; `_fault_limit_range` returns `(lo, hi, alpha_outside, fade)`. Without `limit_km` nothing changes (byte-identical figures). AI-generated code -- review before production use. Tests (`test_fault_limit.py`, 114 checks; `test_fade_draw.py`, 36 checks): the ramp and its staircase, exact cuts, dash positions of a faded dotted / dashed / dash-dot line equal to the plain line's within 1 px, no seam in a solid line, veil pixels over black, real figures of a synthetic mesh (plot_model_slices, plot_ensemble_slices; Agg, png / pdf / svg); not tried on a real model. |
 | 2026-11-15c | Claude Sonnet 5.5 (Anthropic) | **Point markers on the vertical sections.** `plot_model_slices(map_markers=...)`: entries take the new keys `depth` (m, positive down), `depth_err` (+- depth bar; `err_color`, `err_lw`, `err_cap`), `kinds` (`"map"`, `"ns"`, `"ew"`, `"plane"`, `"vertical"`, `"all"`; default `"all"` with a depth, else `"map"`) and `max_dist` (m, default `projection_dist`). With a depth a marker is also drawn on the ns / ew / vertical and dipping plane sections within `max_dist` of the section (distance measured to (x, y, depth)); the bar is the depth direction projected into the plane. The `is_model_centre` entry takes the same keys (e.g. a black cross on maps and sections) and its `name` is now used as legend label (it was ignored). Section markers are artists of the panel (no change of the axis limits); markers whose position is inside the final view are un-clipped. The legend is drawn above the white veil of a limited fault panel (zorder 6.5; the text was washed out there). **Changed:** lat/lon entries without `latlon_to_model_fn` are skipped with a message (they were drawn at the model origin). New private `_prepare_point_markers`. Entries with the old keys draw as before (figures byte-identical to the previous module, checked for maps, sections and sites). Tests: `test_markers.py` (positions on ns / ew / vertical / dipping sections against independent formulas, tolerance, limits, legends, byte-identity), `test_script_markers.py`. Not in `plot_ensemble_slices`. AI-generated code -- review before production use. |
 | 2026-11-20 | Claude Sonnet 5.5 (Anthropic) | **Phase wraps in `plot_data_ensemble`.** New keywords `phase_wrap_mode` (`"direct"` default, `"short"`, `"off"` = as before), `phase_wrap_style` and `phase_wrap_range`, passed to the `'phase'` panels only: a curve that jumps by more than half the window is interrupted and the two points are joined by a dotted line. The component markers skip the connection lines. Needs `data_viz.py` of the same date. AI-generated; review before use. |
+| 2026-11-26 | Claude Sonnet 5.5 (Anthropic) | **Borehole figures for single models** (`femtic_mod_plot_bh.py`). `BoreholeFigureOptions`: new `shared`, `markers` (new `annotate_borehole_markers`), `key_labels`, `ref_follows_color`, `catalog`. Defaults draw as before. `plot_borehole_logs` is unchanged but no longer used by the mod script. AI-generated; review before use. |
+| 2026-11-26b | Claude Sonnet 5.5 (Anthropic) | Optional single-panel figures: new `single_panel_jobs`; `draw_borehole_figures(name_suffix=...)`, `BoreholeFigureOptions.depth_range`. Defaults draw as before. AI-generated code -- review before production use. |

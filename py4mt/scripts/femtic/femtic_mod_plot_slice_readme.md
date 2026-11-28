@@ -1,409 +1,246 @@
-# femtic_mod_plot_slice.py — README
+# femtic_mod_plot_slice.py - README
 
-**Purpose:** 2-D slice panels (map, curtain, plane) for a FEMTIC tetrahedral
-resistivity model, with optional embedded borehole columns.
+2-D slice panels (map, N-S, E-W, oblique plane, two-point profile / fault) of
+single FEMTIC resistivity models.
 
-One of the "mod" scripts (plots of single models; the "ens" scripts are the
-quality-control and ensemble summary plots). It draws one model, or one figure
-per model for a list / glob / run directories, see "Several models (batch)".
+The settings are those of `femtic_ens_plot_slices.py` (same `MOD_*` names, same
+`MOD_SLICES` entries, lengths in km) without everything that belongs to
+ensemble statistics. Several runs can be given, as in `femtic_mod_misfit.py`:
+every entry is a model of its own and gets its own figure(s): all slices in one
+figure, or optionally one figure per slice (`MOD_SINGLE_PANELS`).
 
 Sister scripts:
-- [`femtic_mod_plot_bh.py`](femtic_mod_plot_bh_readme.md) — standalone 1-D ρ(z) borehole log figures.
-- [`femtic_mod_plot_3d.py`](femtic_mod_plot_3d_readme.md) — PyVista 3-D rendering and VTK/VTU export.
+[`femtic_mod_plot_bh.py`](femtic_mod_plot_bh_readme.md) (borehole logs),
+[`femtic_mod_plot_3d.py`](femtic_mod_plot_3d_readme.md) (3-D view, VTK).
+All plotting is done by `femtic_viz.py`.
+
+The defaults are those of `femtic_ens_plot_slices.py` (2026-11-26).
+
+AI-generated documentation (Claude Sonnet 5.5, Anthropic, 2026-11-26); review
+before use.
 
 ---
 
-## What this script does
+## Usage
 
 ```
-mesh.dat + resistivity_block_iterX.dat
-        │
-        └─(5)─► fviz.plot_model_slices(...)   [2-D map/curtain/plane panels]
-                 → PDF / PNG / interactive
-                 (optional embedded borehole columns when BOREHOLE_IN_SLICE=True)
+python femtic_mod_plot_slice.py                       # RUN_PATHS
+python femtic_mod_plot_slice.py kra_rto_0 kra_rto_1   # two run directories
+python femtic_mod_plot_slice.py "kra*/"               # quote globs
+python femtic_mod_plot_slice.py -w /data/ann ann_rto_orig-err_0/resistivity_block_iter10.dat
 ```
 
-All geometry lives in `femtic_viz.py`; no geometry code lives here.
+Command-line entries replace `RUN_PATHS`; `-w` / `--work-dir` replaces
+`WORK_DIR`. In Spyder just set the user section and run.
 
----
-
-## Execution steps
-
-| Step | What happens |
-|---|---|
-| (0) | Resolve `MODEL_FILE` / `MODEL_ITER` to the list of models (`femtic.resolve_model_files`); stop if there is none |
-| (1) | Optionally estimate UTM mesh-origin from `SITE_DAT` bounding-box or mean |
-| (2) | Derive UTM zone from finalised `UTM_ORIGIN_LAT` / `UTM_ORIGIN_LON` |
-| (3) | Resolve `PLOT_SLICES` positions to model-local metres (CRS conversion) |
-| (4) | Read site positions from `SITE_DAT` or `OBSERVE_FILE` for marker overlay |
-| (5) | Plot 2-D slice panels via `fviz.plot_model_slices_robust` (one figure per model; optional catalog PDF) |
-
----
-
-## Several models (batch)
-
-`MODEL_FILE` is, as before, one resistivity block file and `PLOT_FILE` its
-figure (the output is identical to the earlier version). It can also be
-
-- a list of block files,
-- a glob pattern (`"ens/ens_*/resistivity_block_iter0.dat"`),
-- run directories: one directory, a list, or a glob such as `"ens/ens_*"`.
-  `MODEL_ITER` then chooses the block file of each run:
-
-| `MODEL_ITER` | Block file |
-|---|---|
-| `"last"` (default) | the iteration of the last row of `femtic.cnv` (the best-fit model of a converged run, as `femtic_ens_post.py` takes it) |
-| `"best"` | the iteration with the lowest nRMS in `femtic.cnv` |
-| `N` or `"iterN"` | `resistivity_block_iterN.dat`; `0` = starting model (for an RTO member the perturbed prior) |
-| a list, e.g. `[0, "last"]` | one figure per entry and run, grouped by run |
-
-`MODEL_ITER` does not apply to block files given as files. With more than one
-resulting model there is **one figure per model**, `PLOT_FILE` is not used,
-and
+## Runs
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `BATCH_OUT_DIR` | `None` | directory of the figures; `None` = the model's own directory |
-| `BATCH_FORMATS` | `None` | e.g. `("pdf", "png")`; `None` = the extension of `PLOT_FILE` |
-| `BATCH_CATALOG` | `None` | multi-page PDF, one page per model: `"auto"` (= `catalog_slices.pdf` in `BATCH_OUT_DIR` or the common parent directory) or a path; needs `"pdf"` among the formats |
-| `BATCH_TITLE` | `"{label} - iteration {iter}"` | figure title; `{label}`, `{iter}`, `{tag}`, `{nrms}` |
+| `WORK_DIR` | `.../krafla2026/krafla_fine/krafla_ens_fine/` | base of relative paths; `None` / `""` = current directory |
+| `RUN_PATHS` | `["kra*/"]` | run directories, block files, `results_iterN.h5` files (= the block file of that iteration; the HDF5 file is not read) or globs |
+| `ITERATION` | `"best"` | for run directories: `"best"` (lowest nRMS), `"last"` (last row of the convergence file), `N` (`0` = starting model), or a list such as `[0, "best"]` |
+| `CNV_FILE` | `["femtic.cnv", "FEMTIC-DABIC.cnv"]` | convergence file; first name that exists |
 
-Files are named `<label>_<tag>_slices.<ext>` (label = run directory, tag =
-`iterN`), e.g. `ens_003_iter0_slices.pdf`. The nRMS (and alpha) of that
-iteration is read from `femtic.cnv` of the run directory and annotated on the
-figure (in the single-model case from `CNV_FILE`: the first of its names found
-in the directory of the model file, else in `WORK_DIR`). The same
-mesh (`MESH_FILE`), origin, slices and colour settings are used for all models.
+`MOD_MESH`, `MOD_SITE_DAT`, `MOD_OBSERVE_FILE`, `MOD_REF_FILE` and
+`MOD_ALPHA_FILE` are looked up per run: a relative name in the run directory
+first, then in `WORK_DIR`; an absolute path serves every run. Mesh centre and
+sites are therefore determined run by run.
 
-Example: prior and best-fit figure of every member of an RTO ensemble, with a
-catalog:
+An entry without a model is reported and skipped; a model that fails is
+reported and skipped, the others are still plotted. Return code: `0` all models
+found were plotted, `1` one failed or none was found, `2` `WORK_DIR` missing.
 
-    WORK_DIR   = "/data/ens/"                 # contains mesh.dat
-    MODEL_FILE = WORK_DIR + "ens_*"
-    MODEL_ITER = [0, "last"]
-    BATCH_CATALOG = "auto"
+## Output
 
----
+```
+<dir>/[<OUT_PREFIX>_]<label>_<tag>_slices.<fmt>
+```
 
-## Slice coordinate system
+`label` = run directory name, `tag` = `iterN`. With `MOD_SINGLE_PANELS = True`
+the names are `..._slices_01_<kind>.<fmt>`, `..._02_<kind>`, ... (number of the
+displayed slice and its kind).
 
-Every horizontal slice position (`x0`, `y0`, `point` horizontal component)
-accepts a coordinate-system tag:
-
-| Value | Meaning |
-|---|---|
-| plain `float` | model-local metres — origin at mesh centre (backward-compatible) |
-| `(value, "utm")` | UTM metres in the mesh UTM zone |
-| `(value, "latlon")` | decimal degrees (longitude for easting, latitude for northing) |
-
-Depth `z0` is always model-local metres (z positive-down); no geographic
-conversion applies.
-
-Conversion chain: `lat/lon → UTM → model-local`.
-
----
-
-## 2-D slice panels (`PLOT_SLICES`)
-
-### Panel kinds
-
-| `kind` | Position key | Description |
+| Setting | Default | Meaning |
 |---|---|---|
-| `"map"` | `z0` | Horizontal slice at depth `z0` |
-| `"ns"` | `x0` | N-S vertical section at easting `x0` |
-| `"ew"` | `y0` | E-W vertical section at northing `y0` |
-| `"plane"` | `point`, `strike`, `dip` | Arbitrary oblique plane |
-| `"profile"` | `p1`, `p2`, `z_top`, `z_bot`, `dip` | Fence section between two endpoints (vertical, or dipping: a fault from two surface points); strike auto-derived |
+| `MOD_PLOT_FORMAT` | `["pdf"]` | one or more extensions |
+| `OUT_DIR` | `None` | one directory for all runs; `None` = per run |
+| `OUT_PREFIX` | `None` | file-name prefix; with `OUT_DIR = None` also a sub-directory of the run |
+| `OUT_PREFIX_DIR` | `True` | `False` = no sub-directory |
+| `MOD_QC_FILE` | `None` | explicit path without extension, used when exactly one model is plotted |
+| `MOD_CATALOG` | `None` | multi-page PDF, one page per figure: `"auto"` (`catalog_slices.pdf` in `OUT_DIR` or the common parent of the runs) or a path; needs `"pdf"` among the formats |
+| `MOD_DPI` | `400` | resolution |
+| `MOD_SHOW_IN_SPYDER` | `True` | show figures inline under Spyder |
 
-### `kind="profile"` keys
+The parameter summary `femtic_mod_plot_slice_summary.md` is written to
+`WORK_DIR`.
 
-| Key | Type | Default | Description |
-|---|---|---|---|
-| `p1`, `p2` | position spec | required | Endpoint positions. Each accepts a bare 2-element list (model-local metres), `([x, y], "model")`, `([E, N], "utm")`, or `([lon, lat], "latlon")`. A 3-element `[x, y, z]` form is also accepted (z ignored). |
-| `z_top` | float | `0.0` | Shallowest depth of the panel [m, z-positive-down]; for `dip != 90` also the depth at which the plane contains the trace p1-p2 (`-elevation` for a trace above sea level) |
-| `z_bot` | float | `20000.0` | Deepest depth of the panel [m, z-positive-down] |
-| `dip` | float | `90.0` | `0 < dip < 180`. `90` = vertical fence section. Otherwise the plane through *p1*-*p2* dips by `dip` degrees to the **right** of the direction *p1* -> *p2* (`dip = 180 - d` dips `d` degrees to the left, same as swapping *p1* and *p2*); the panel axes are along strike and down dip (`ylim = [0, (z_bot - z_top) / sin(dip)]`) |
-| `overlay` | `True` / dict | none | Any slice kind: also draw this slice as a line on every other panel (fault trace on maps, dipping line on sections); a dict gives `Line2D` keywords and an optional `label` |
-| `panel` | bool | `True` | Any slice kind: `False` = the entry is **not** a panel, it only supplies its `overlay` line (the fault trace in all the other slices, without a fault panel). At least one entry must stay a panel |
+## Mesh, ocean, coordinates
 
-The resolver converts a `"profile"` spec into a `kind="plane"` dict (`dip=90` unless `dip` is given) before passing it to `fviz.plot_model_slices`. For `dip = 90` the horizontal axis of the panel runs along-strike from *p1* to *p2*; use `invert_x=True` to reverse the sense.
+| Setting | Default | Meaning |
+|---|---|---|
+| `MOD_MESH` | `"templates/mesh.dat"` | required |
+| `MOD_MESH_SWAP_XY` | `True` | `mesh.dat` holds x = northing, y = easting; `True` gives x = easting. `False` draws such a mesh transposed; `None` = femtic's default |
+| `MOD_OCEAN`, `MOD_AIR_RHO`, `MOD_OCEAN_RHO` | `None`, `1e9`, `0.25` | `None` = infer ocean from the block file |
+| `MOD_UTM_ORIGIN_LAT/LON/E/N` | `None` | literal mesh-centre origin (degrees; E / N in UTM **km**) |
+| `MOD_UTM_ZONE_OVERRIDE` | `None` | force the UTM zone |
+| `MOD_ORIGIN_METHOD` | `"box"` | `"box"` / `"average"` of the sites in `MOD_SITE_DAT`; `None` = literals |
+| `MOD_DISPLAY_COORDS` | `"utm"` | `"model"` / `"utm"` / `"latlon"` |
+| `MOD_TICK_DECIMALS` | `0` | decimals of the tick labels |
 
-**Fault from two surface points.** With `dip != 90` the profile is the fault plane; with `overlay` it is also drawn on all other panels. Add `panel=False` if you want the trace in the other slices but no panel of the fault itself (a slice along the fault is the same entry without `panel=False`, or a `kind="plane"`):
+Positions tagged `"utm"` or `"latlon"` need the origin; without it the model is
+reported as failed.
+
+## Slices (`MOD_SLICES`)
+
+One dict per panel. Positions are model-local **km**, or
+`(value, "utm")` (UTM km) / `(value, "latlon")` (degrees). Depths are km,
+positive down.
+
+| `kind` | Keys |
+|---|---|
+| `"map"` | `z0` |
+| `"ns"` | `x0` |
+| `"ew"` | `y0` |
+| `"plane"` | `point` `[x, y(, z)]`, `strike` (azimuth, clockwise from north), `dip` (towards strike + 90; 90 = vertical) |
+| `"profile"` | `p1`, `p2`, `z_top`, `z_bot`, `dip`, `limit_km`, `alpha_outside`, `fade_km` |
+
+Common keys: `title`, `invert_x`, `overlay` (also draw this slice as a line on
+the other panels), `panel=False` (overlay line only), `xlim` / `ylim` /
+`zlim`.
+
+**All lengths are km**, UTM coordinates too (as in the ensemble script):
+
+- `kind="profile"`: `p1` / `p2` without tag are model-local km, tagged
+  `"utm"` UTM km; `z_top` / `z_bot` are km.
+- Per-panel `xlim` / `ylim` / `zlim` are km. For a `"plane"`, `xlim` / `ylim`
+  are relative to `point` (along strike / down dip).
+
+A value that looks like metres stops with an error (`fem.KmUnitError`); smaller values given in metres cannot be recognised and are read as km. Coordinates read from files (`site.dat`) stay in metres.
+
+Default: maps at 0, 1, 2, 3, 4 and 5 km. Further forms:
 
 ```python
-PLOT_SLICES = [
-    dict(kind="map", z0=0.0), dict(kind="map", z0=3000.0),
-    dict(kind="ns", x0=0.0),
+MOD_SLICES = [
+    dict(kind="map", z0=2.0),                     # km
+    dict(kind="ns",  x0=0.0),                     # km, model-local
+    dict(kind="ew",  y0=(45.9383, "latlon")),
+    dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0),
     dict(kind="profile",
          p1=([6.030869, 45.962166], "latlon"),
          p2=([6.115936, 45.910655], "latlon"),
-         dip=70.0, z_top=0.0, z_bot=20000.0,
-         overlay=dict(color="k", linewidth=1.5), title="fault",
-         panel=False),                 # trace only; remove for a fault panel too
+         dip=110.0, z_top=0.0, z_bot=20.0,        # km
+         overlay=dict(color="k", linewidth=1.5), panel=False),
 ]
 ```
 
-`xlim=[-L/2, L/2]` (m along strike, relative to the midpoint of p1-p2) limits the fault to the segment of length `L`. Details and limits: `femtic_viz_readme.md`, "Fault planes: a panel and an overlay". Needs `femtic.py` and `femtic_viz.py` of 2026-11-12.
+In a figure with several rows that mixes maps and sections, axis labels and
+panel titles can overlap (layout of `fviz.plot_model_slices()`, which the
+ensemble script uses too). Use one row (`MOD_NROWS = 1`, `MOD_NCOLS` = number
+of slices) or `MOD_SINGLE_PANELS = True`.
 
-### Plane slices (`kind="plane"`)
+Fault planes in detail: `femtic_viz_readme.md`, "Fault planes: a panel and an
+overlay".
 
-`point` is any point on the plane (`[x, y, z]` model-local m, or
-`([x, y, z], "model")`, `([E, N, z], "utm")`, `([lon, lat, z], "latlon")`;
-`z` = depth in m, positive down). `strike` is the azimuth of the strike line,
-degrees clockwise from north, **for every dip**; `dip` is the angle below the
-horizontal, `0` .. `180`, towards `strike + 90` (`strike=325., dip=70.` dips
-70 deg towards N55E). `dip = 90` is a vertical section (horizontal axis =
-along-strike distance in model km, vertical axis = depth). For other dips the
-axes are the true in-plane distances from `point`: horizontal = along strike,
-vertical = down dip (positive downwards), in km if `DEPTH_KM` else m, with
-true aspect where the other sections get a fixed aspect (`PLOT_EQUAL_ASPECT`, or a
-vertical exaggeration set). The default extent is the plane cut with the box
-`PLOT_XLIM` x `PLOT_YLIM` x `PLOT_ZLIM` (mesh extent where one is `None`).
-Before 2026-11-09 dipping planes came out sheared and mislabelled.
-
-### Per-panel optional keys
-
-| Key | Description |
-|---|---|
-| `xlim` | `[xmin, xmax]`: easting axis limit; for a `"plane"`: along-strike range in m relative to `point` |
-| `ylim` | `[ymin, ymax]`: northing axis limit; for a `"plane"` with `dip != 90`: down-dip range in m relative to `point` |
-| `zlim` | `[zmin, zmax]` — depth axis limit (ns / ew / plane panels) |
-| `invert_x` | `True` → flip horizontal axis left-to-right (default `False`) |
-| `title` | Optional string override for panel title |
-
-Per-panel `xlim`/`ylim`/`zlim` override the global `PLOT_XLIM`/`PLOT_YLIM`/`PLOT_ZLIM`.
-
-### Example
-
-```python
-PLOT_SLICES = [
-    dict(kind="map", z0=-4000.0),
-    dict(kind="ns",  x0=(-70.90, "latlon")),
-    dict(kind="ew",  y0=(-16.40, "latlon")),
-    dict(kind="plane",
-         point=([-71.5, -16.4, 5000.0], "latlon"),
-         strike=45., dip=70.,
-         invert_x=True),
-    dict(kind="profile",
-         p1=([-71.536, -16.197], "latlon"),
-         p2=([-71.406, -16.299], "latlon"),
-         z_top=0.0, z_bot=25000.0,
-         title="NW-SE profile"),
-]
-```
-
----
-
-## Polylines on the slice panels (`PLOT_POLYLINES`)
-
-`PLOT_POLYLINES` is a dict `{name: entry}` of lines (faults, profiles,
-boundaries, borehole traces, ...) drawn on the slice panels. `{}` (default)
-draws nothing and leaves the figures unchanged. Lengths are in **metres**
-(like `PLOT_SLICES`); the dict is passed to
-`fviz.plot_model_slices(polylines=...)` with the other shared options, so it
-applies to every figure of a batch run.
-
-```python
-PLOT_POLYLINES = {
-    "fault F1": dict(
-        points=[[-4000., -3000., 500.], [0., 0., 2500.], [4000., 3000., 4500.]],
-        style=dict(color="white", linewidth=2.0), max_dist=1500.),
-    "profile": dict(points=([[-70.95, -16.40], [-70.85, -16.30]], "latlon"),
-                    kinds="map", style=dict(color="k", linestyle=":")),
-}
-```
-
-| Key of an entry | Default | Description |
-|---|---|---|
-| `points` | required | `[[x, y], ...]` or `[[x, y, z], ...]`, at least 2 rows, model-local m; z = depth, positive down (missing z = 0). Or CRS-tagged `(pts, "model" \| "utm" \| "latlon")`: `"utm"` = `[E, N(, z)]` in UTM m, `"latlon"` = `[lon, lat(, z)]` in degrees (longitude first); z is m in every case. A bare point list instead of the entry dict is shorthand. |
-| `style` | 1.5 pt solid, colour cycled | matplotlib `Line2D` keywords (`color`, `linewidth`, `linestyle`, `marker`, `alpha`, `zorder`, ...). |
-| `label` | the dict key | Legend text (lower right of each panel); `None` = no entry. |
-| `kinds` | all panels | `"map"`, `"ns"`, `"ew"`, `"plane"` (also the `"profile"` panels), `"vertical"` (= ns + ew + plane) or a list of these. |
-| `max_dist` | `PROJECTION_DIST` | m; vertical sections only: the parts of the polyline within `max_dist` of the section plane are projected into it (slab, like the site markers). `0` = only parts lying in the section plane. If `PROJECTION_DIST` is `None` the whole polyline is projected. |
-| `z_range` | none | `[zmin, zmax]` m; maps only: draw only on maps whose `z0` lies in the range. Default: plan view on every map. |
-| `panels` | all | A panel index or list of 0-based indices into `PLOT_SLICES`; draw the line on those panels only (2026-11-12). |
-
-Maps show the whole polyline in plan view. The polylines never change the axis
-limits; parts outside the panel are clipped by the axes.
-
-**Intersection line of two slices.** `fviz.slice_intersection_polyline(a, b,
-xlim=..., ylim=..., zlim=...)` returns the line in which two slices meet
-(clipped to the box and to the extents of the slices) as an `(n, 3)` array in
-model-local metres, which is what `points` takes;
-`fviz.slice_intersection_polylines(slices, ...)` makes ready entries for many
-pairs. For example the line of the map at 5 km depth and the N-S section
-through the origin:
-
-```python
-_p = fviz.slice_intersection_polyline(
-    dict(kind="map", z0=5000.0), dict(kind="ns", x0=0.0),
-    xlim=PLOT_XLIM, ylim=PLOT_YLIM, zlim=PLOT_ZLIM)
-PLOT_POLYLINES["map 5 km x ns 0"] = dict(
-    points=_p, max_dist=0.0, z_range=[5000., 5000.])
-```
-
-`max_dist=0.0` draws the line only on the panels that contain it, `z_range`
-only on the map at that depth. There is no automatic switch that draws the
-intersections of all `PLOT_SLICES`; a slice that carries `overlay` is drawn on
-every other panel (see the fault paragraph above). Slices with a CRS-tagged position or an
-unresolved `"profile"` must be resolved to model-local metres first
-(`slices_resolved` in the script).
-
-Needs the `femtic_viz.py` of 2026-11-11.
-
----
-
-## Embedded borehole columns (`BOREHOLE_IN_SLICE`)
-
-When `BOREHOLE_IN_SLICE = True` and `BOREHOLE_SITES` is non-empty, borehole
-ρ(z) panels are appended as extra columns to the right of the slice grid
-inside the **same figure**.  The borehole depth axis is linked to the leftmost
-curtain/plane panel for synchronised zoom/pan.
-
-For a standalone borehole figure (higher DPI, separate PDF), use
-`femtic_mod_plot_bh.py` instead.
-
-### Borehole spec dict keys
-
-| Key | Type | Required | Description |
-|---|---|---|---|
-| `"name"` | str | yes | Label in legend / panel title |
-| `"x"` | float or `(v, "crs")` | yes | Easting: float = model-local m; `(lon, "latlon")` = longitude [°]; `(E_m, "utm")` = UTM easting [m] |
-| `"y"` | float or `(v, "crs")` | yes | Northing: float = model-local m; `(lat, "latlon")` = latitude [°]; `(N_m, "utm")` = UTM northing [m] |
-| `"z_top"` | float or `"surface"` | no (def. 0) | Start depth [m, z-down]. `"surface"` → auto from mesh nodes (requires scipy) |
-| `"z_bot"` | float | no (def. 20000) | End depth [m, z-down] |
-| `"dz"` | float | no (def. 200) | Sampling interval [m] |
-| `"lat"` | float | no | Override legend latitude [°] (auto-inferred for `"latlon"` / `"utm"` CRS) |
-| `"lon"` | float | no | Override legend longitude [°] |
-| `"color"`, `"ls"`, `"lw"`, `"marker"`, `"alpha"`, … | any | no | Matplotlib `Line2D` kwargs — override `BOREHOLE_STYLE` for this trace |
-
-### Borehole configuration
-
-| Variable | Default | Description |
-|---|---|---|
-| `BOREHOLE_SITES` | `[]` | List of borehole spec dicts |
-| `BOREHOLE_STYLE` | `dict(lw=1.2, marker="none")` | Baseline line style; per-spec keys override |
-| `BOREHOLE_XLIM` | `[1., 1e4]` | x-axis limits [Ω·m, log scale]; `None` = auto |
-| `BOREHOLE_SHARED` | `True` | `True` = one shared column; `False` = one column per borehole |
-| `BOREHOLE_IN_SLICE` | `True` | Embed borehole columns inside the slice figure |
-
----
-
-## Configuration reference
-
-### Paths
-
-| Variable | Description |
-|---|---|
-| `WORK_DIR` | Working directory prefix for all paths |
-| `MODEL_FILE` | `resistivity_block_iterX.dat` to display; or a list / glob / run directories (batch, see above) |
-| `MODEL_ITER`, `BATCH_*` | Batch settings, see "Several models (batch)" |
-| `CNV_FILE` | Convergence file: one name or a list of candidate names (default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`; the first one that exists is used, names are also matched ignoring case; a full path still works). Used for `MODEL_ITER = "last"` / `"best"` and for the nRMS / alpha annotation. It is read by column name, so the old setting `DISTORTION` is gone. |
-| `MESH_FILE` | `mesh.dat` |
-| `MESH_SWAP_XY` (default `True`) | Swap of the first two node-coordinate columns when the mesh is read (`femtic.read_femtic_mesh`). `mesh.dat` holds x = northing, y = easting; the plots, sites and slice positions use x = easting, y = northing, so `True` (default) gives the right orientation. `False` draws the model transposed (NNE structures appear as ENE) and is only for meshes already written as x = easting, y = northing; `None` = leave femtic's module default (no swap). |
-| `OBSERVE_FILE` | `observe.dat` — fallback site source |
-| `SITE_DAT` | `mt_make_sitelist.py` CSV (`name,lat,lon,elev,sitenum,easting,northing`); `None` to disable |
-
-### Ocean / air
-
-| Variable | Default | Description |
-|---|---|---|
-| `OCEAN` | `None` | `None` = auto-infer; `True`/`False` = force |
-| `AIR_RHO` | `1e9` | Air sentinel Ω·m (region 0) |
-| `OCEAN_RHO` | `0.25` | Ocean sentinel Ω·m (region 1) |
-
-### UTM / CRS
-
-| Variable | Default | Description |
-|---|---|---|
-| `UTM_ORIGIN_LAT` | `None` | Mesh-centre latitude [°] |
-| `UTM_ORIGIN_LON` | `None` | Mesh-centre longitude [°] |
-| `UTM_ORIGIN_E` | `None` | Mesh-centre UTM easting [m] |
-| `UTM_ORIGIN_N` | `None` | Mesh-centre UTM northing [m] |
-| `UTM_ZONE_OVERRIDE` | `None` | Force UTM zone number; `None` = auto |
-| `ORIGIN_METHOD` | `"box"` | `None` / `"box"` / `"average"` — origin estimation from `SITE_DAT` |
-| `DISPLAY_COORDS` | `"model"` | `"model"` / `"utm"` / `"latlon"` |
-
-### Site overlay
-
-| Variable | Default | Description |
-|---|---|---|
-| `SITE_NAMES` | `None` | Site names from `SITE_DAT`; `None` = all |
-| `SITE_NUMBER` | `[5,6,7]` | Fallback: site numbers from `observe.dat` |
-| `PLOT_SITES_MAPS` | `True` | Show markers on map panels |
-| `PLOT_SITES_SLICES` | `True` | Show markers on curtain / plane panels |
-| `PROJECTION_DIST` | `1000.` | Max distance [m] from slice plane for site to appear |
-| `SITE_MARKER` | `dict(marker="v",…)` | Marker style for map panels |
-| `SITE_MARKER_SLICES` | `dict(marker="v",…)` | Marker style for curtain / plane panels |
-| `MAP_MARKERS` | `[]` | Extra lat/lon point markers on map panels only. An entry with `"is_model_centre": True` (instead of `"latlon"`) overrides the model-centre marker's style rather than plotting as a regular marker. |
-| `SHOW_MODEL_CENTRE` | `True` | Marks the model origin on `"map"` panels whenever `DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`). Default style: black `"+"`, `ms=10`; no legend entry. Override style via `MAP_MARKERS` as above; set `False` to force off. |
-
-### Plotting
-
-| Variable | Default | Description |
-|---|---|---|
-| `PLOT_FILE` | `*_slices.pdf` | Output path; `None` = interactive |
-| `PLOT_DPI` | `600` | Saved-figure DPI |
-| `PLOT_CMAP` | `"turbo_r"` | Matplotlib colormap |
-| `PLOT_CLIM` | `[0., 3.]` | `[log10_min, log10_max]` in log10(Ω·m); `None` = auto |
-| `PLOT_OCEAN_COLOR` | `"lightgrey"` | Flat colour for ocean cells; `None` = colormap |
-| `PLOT_AIR_COLOR` | `"whitesmoke"` | Flat colour for air polygons; `None` = blank |
-| `PLOT_AIR_BGCOLOR` | `None` | Axes facecolor for air/background |
-| `TICK_FONTSIZE` | `7` | Font size for axis tick labels and colourbar ticks |
-| `LABEL_FONTSIZE` | `8` | Font size for axis labels, panel titles, and colourbar label |
-
-### Alpha / blanking
-
-| Variable | Default | Description |
-|---|---|---|
-| `ALPHA_FILE` | `None` | Second block file whose `region_rho` values are log10 weights |
-| `ALPHA_MODE` | `"fade"` | `"fade"` = proportional transparency; `"blank"` = hard cutoff |
-| `ALPHA_BLANK_THRESH` | `0.0` | log10 threshold below which polygons are suppressed |
-
-### Axis limits and aspect
-
-| Variable | Default | Description |
-|---|---|---|
-| `PLOT_XLIM` | `[-15000., 15000.]` | Global easting limits [m] |
-| `PLOT_YLIM` | `[-15000., 15000.]` | Global northing limits [m] |
-| `PLOT_ZLIM` | `[-6000., 15000.]` | Global depth limits [m] |
-| `PLOT_EQUAL_ASPECT` | `True` | Equal-aspect on map / curtain panels |
-| `DEPTH_KM` | `True` | Depth axis in km on curtain / plane panels |
-| `HORIZ_KM` | `True` | Horizontal axes in km when `DISPLAY_COORDS="model"` |
-
-### Figure layout
-
-| Variable | Default | Description |
-|---|---|---|
-| `PLOT_NROWS` | `None` | Subplot rows; `None` = 1 |
-| `PLOT_NCOLS` | `None` | Subplot columns; `None` = `len(PLOT_SLICES)` |
-| `PLOT_PANEL_HEIGHT` | `16.0` | Panel height [cm] |
-| `PLOT_PANEL_WIDTH` | `None` | Fixed panel width [cm]; `None` = auto |
-| `PLOT_FIGSIZE` | `None` | Full figure size `[w, h]` [cm]; overrides auto |
-
----
-
-### Titles and colour bars
-
-Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use); the forms of the title settings (`"auto"`, `None` / `False` / `""`, text with `{placeholders}`, dict per figure) are described in `femtic_viz_readme.md`, *Titles and colour bars*. Defaults give the figures of before.
+## Sites and markers
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `FIGURE_TITLE` | `""` | Title above all panels (one model). `""`, `False` = none (the default of this script); `"auto"`, `None`, `True` = the block-file name; text with `{label}`, `{tag}`, `{iter}`, `{nrms}` (a number, `{nrms:.2f}` works), `{alpha}`, `{file}`, `{key}` (= `{label}`); dict keyed by model label `{"run1": "Reference", "default": "auto"}`. With several models `BATCH_TITLE` is used; `BATCH_TITLE = None` or `""` falls back to `FIGURE_TITLE` |
-| `PANEL_TITLES` | `True` | `False` = no panel titles. One panel only: `title="text"` in its `PLOT_SLICES` entry (`title=""` leaves just that panel untitled) |
-| `CBAR_LOCATION` | `"panel"` | `"panel"` = one colour bar per panel (as before); `"right"`, `"bottom"`, `"top"`, `"left"` = ONE colour bar for all panels of a figure, at that side of the panel grid |
-| `CBAR_SHRINK`, `CBAR_THICKNESS` | `0.7`, `None` | Joint bar: length as a fraction of the side of the panel grid; thickness in cm (`None` = 1.5 x `LABEL_FONTSIZE` points) |
+| `MOD_SITE_DAT` | `"templates/site.dat"` | `name,lat,lon,elev,sitenum,easting,northing`; `None` = off |
+| `MOD_OBSERVE_FILE`, `MOD_SITE_NUMBER` | `"templates/observe.dat"`, `None` | fallback site source |
+| `MOD_SITE_NAMES` | `None` | names to plot; `None` = all |
+| `MOD_PLOT_SITES_MAPS`, `MOD_PLOT_SITES_SLICES` | `True`, `False` | draw site markers |
+| `MOD_PROJECTION_DIST` | `1.0` | km from a section plane; `None` = all sites |
+| `MOD_SITE_MARKER`, `MOD_SITE_MARKER_SLICES` | black triangles, `None` | marker style |
+| `MOD_MAP_MARKERS` | model centre (black cross) | point markers: `latlon` `[lat, lon]`, `depth`, `depth_err`, `max_dist` (km), `kinds`, `name`, Line2D keywords |
+| `MOD_SHOW_MODEL_CENTRE` | `True` | mark the origin on maps (`"utm"` / `"latlon"` display) |
+
+## Polylines (`MOD_POLYLINES`)
+
+`{name: entry}`; `{}` = none. `points` are model-local km (z = depth) or
+`(pts, "utm")` (E, N in UTM km, z km) / `(pts, "latlon")` (lon, lat, z km); optional
+`style`, `label`, `kinds`, `max_dist` (km), `z_range` (km), `panels`. See
+`femtic_viz_readme.md` for the drawing rules.
+
+## Reference model
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `MOD_REF_FILE` | `"templates/referencemodel.dat"` | block file on the same mesh |
+| `MOD_REF_SLICES` | `False` | draw it as iso-resistivity lines |
+| `MOD_REF_LEVELS` | `None` | log10 levels; `None` = integer decades inside `MOD_CLIM` |
+| `MOD_REF_STYLE`, `MOD_REF_LABEL` | black lines | style and legend text |
+
+## Limits, colours, blanking
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `MOD_XLIM`, `MOD_YLIM`, `MOD_ZLIM` | `None` | km; `None` = auto |
+| `MOD_ROI_AUTO`, `MOD_ROI_PAD_XY`, `MOD_ROI_ZLIM` | `True`, `2.0`, `[-1, 6]` | x / y limits from the sites of each run, z limits as given |
+| `MOD_CMAP`, `MOD_CLIM` | `"jet_r"`, `[0, 4]` | log10(Ohm.m) |
+| `MOD_OCEAN_COLOR`, `MOD_AIR_COLOR`, `MOD_AIR_BGCOLOR` | grey, whitesmoke, `None` | |
+| `MOD_ALPHA_FILE` | `None` | block file whose region values are log10 weights |
+| `MOD_ALPHA_MODE`, `MOD_ALPHA_BLANK_THRESH` | `"fade"`, `0.0` | `"fade"` or `"blank"` below the threshold |
+| `MOD_NRMS_ANNOTATE`, `MOD_NRMS_PANEL` | `True`, `None` | nRMS / alpha box, from the run's own convergence file; none if it has no row for the iteration |
+
+## Layout, titles, colour bar
+
+### One figure per slice (optional)
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `MOD_SINGLE_PANELS` | `False` | `False` = one figure per model with all slices; `True` = one figure per model and slice |
+
+With `True`:
+
+- `panel=False` entries get no figure; `overlay` lines (fault traces) appear on
+  the other slices as in the combined figure.
+- All figures of a model share the colour scale (automatic limits are taken from
+  the whole model).
+- `MOD_NROWS` / `MOD_NCOLS` are not used; `MOD_FIGSIZE` and the title apply to
+  every figure.
+- `MOD_NRMS_PANEL = None` puts the nRMS box on every figure; a number only on
+  that slice.
+- The mesh is read once per figure and format, so large meshes take longer.
+
+| Setting | Default |
+|---|---|
+| `MOD_EQUAL_ASPECT`, `MOD_VERT_EXAG` | `True`, `None` |
+| `MOD_DEPTH_KM`, `MOD_HORIZ_KM` | `True`, `True` |
+| `MOD_NROWS`, `MOD_NCOLS` | `3`, `3` |
+| `MOD_PANEL_HEIGHT`, `MOD_PANEL_WIDTH`, `MOD_FIGSIZE` | `20.0`, `None`, `None` (cm) |
+| `MOD_TICK_FONTSIZE`, `MOD_LABEL_FONTSIZE`, `MOD_TITLE_FONTSIZE` | `16`, `16`, label size + 10 |
+| `MOD_TITLE` | `"auto"` (block file; run, iteration, nRMS) |
+| `MOD_PANEL_TITLES` | `True` |
+| `MOD_CBAR_LOCATION`, `MOD_CBAR_SHRINK`, `MOD_CBAR_THICKNESS` | `"bottom"`, `0.7`, `None` |
+
+`MOD_TITLE`: `"auto"`, `None` / `False` / `""` (none), text with `{label}`
+(= `{run}`, `{key}`, `{best}`), `{tag}`, `{iter}`, `{nrms}`, `{alpha}`,
+`{file}`, `{prefix}`, or a dict per run label with `"default"`.
+
+## Migration from the earlier version (2026-11-26)
+
+| Old | New |
+|---|---|
+| `MODEL_FILE`, `MODEL_ITER` | `RUN_PATHS`, `ITERATION` (default now `"best"`) |
+| `PLOT_FILE` | `MOD_QC_FILE` (no extension) + `MOD_PLOT_FORMAT` |
+| `BATCH_OUT_DIR`, `BATCH_FORMATS`, `BATCH_CATALOG`, `BATCH_TITLE` | `OUT_DIR`, `MOD_PLOT_FORMAT`, `MOD_CATALOG`, `MOD_TITLE` |
+| `FIGURE_TITLE` (default none) | `MOD_TITLE` (default `"auto"`) |
+| `MESH_FILE` | `MOD_MESH` |
+| `PLOT_SLICES`, `PLOT_POLYLINES` (m) | `MOD_SLICES`, `MOD_POLYLINES` (km) |
+| `PLOT_XLIM/YLIM/ZLIM` (m) | `MOD_XLIM/YLIM/ZLIM` (km) |
+| `PROJECTION_DIST` (m) | `MOD_PROJECTION_DIST` (km) |
+| `MAP_MARKERS` (`depth`, `depth_err`, `max_dist` in m) | `MOD_MAP_MARKERS` (km) |
+| `CNV_PANEL` | `MOD_NRMS_PANEL` |
+| `PLOT_<name>` | `MOD_<name>` |
+| other plot settings (`SITE_*`, `ALPHA_*`, `CBAR_*`, `UTM_*`, ...) | same name with `MOD_` in front |
+
+File names are now `<run>_iterN_slices.<fmt>` unless `MOD_QC_FILE` is set.
 
 ## Dependencies
 
-| Package | Role |
-|---|---|
-| `femtic` (Py4MTX) | `resolve_model_files`, `resolve_slice_positions`, `read_site_dat`, `read_site_position`, `utm_to_model`, `latlon_to_model` |
-| `femtic_viz` (Py4MTX) | `plot_model_slices`, `plot_model_slices_robust`, `append_catalog_page` |
-| `util` (Py4MTX) | `utm_zone_from_latlon`, `utm_to_latlon_zn`, `print_title` |
-| `matplotlib` | 2-D rendering (via `femtic_viz`) |
-| `scipy` | Only for `z_top="surface"` KD-tree lookup in embedded boreholes |
-| `numpy` | Array operations |
+`femtic.py`, `femtic_viz.py`, `util.py` (Py4MTX, of 2026-11-26 for the first
+two), `numpy`, `matplotlib`.
 
 ---
 
@@ -436,3 +273,7 @@ Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 | 2026-11-11b | Claude Sonnet 5.5 (Anthropic) | Titles and colour bars: `FIGURE_TITLE` takes the forms of all plot scripts (`"auto"`, none, text with `{label}`, `{tag}`, `{iter}`, `{nrms}`, `{alpha}`, `{file}`, dict per model label); `BATCH_TITLE` also knows `{alpha}`, `{file}`; new `PANEL_TITLES`, `CBAR_LOCATION` (`"panel"` default), `CBAR_SHRINK`, `CBAR_THICKNESS`. Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. |
 | 2026-11-11c | Claude Sonnet 5.5 (Anthropic) | Convergence file from a list of names: `CNV_FILE` is now a name or a list of candidate names (default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`), no longer `WORK_DIR + "femtic.cnv"`; it is passed to `fem.resolve_model_files()` and, for the annotation of a single model, searched first in the directory of the model file, then in `WORK_DIR`. The last row is read by column name (`fem.read_cnv_last()`); the setting `DISTORTION` and the guess from the number of columns are removed. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
 | 2026-11-12 | Claude Sonnet 5.5 (Anthropic) | Fault from two surface points. `kind="profile"` takes `dip` (default 90 = as before; otherwise the dipping plane through p1 -> p2, dipping to the right of p1 -> p2) and any slice may carry `overlay` (`True` or `Line2D` keywords, + `label`): that plane is also drawn on every other panel (trace on maps, dipping line on sections). New polyline-entry key `panels`. Documentation block and commented example in the script. Needs `femtic.py` and `femtic_viz.py` of the same date. Without `dip` / `overlay` the figures are unchanged. Tested on a synthetic mesh only. AI-generated; review before production use. New slice-spec key `panel=False`: the entry is no panel, it only draws its `overlay` line on all the other panels (fault trace without a fault panel). |
+| 2026-11-26 | Claude Sonnet 5.5 (Anthropic) | Rewritten with the settings of `femtic_ens_plot_slices.py` (without the ensemble statistics) and several runs as in `femtic_mod_misfit.py` (`RUN_PATHS`, command line, `-w`, `ITERATION`). `MOD_*` names, lengths in km, new `OUT_DIR` / `OUT_PREFIX`, `MOD_QC_FILE`, `MOD_CATALOG`, `MOD_REF_*`, `MOD_ROI_*`; per-run mesh, site list, reference and alpha file; titles on by default. Fixes the broken `WORK_DIR` line (`NameError`). This readme was rewritten; its sections on embedded borehole columns described settings that the script no longer had. Needs `femtic.py` and `femtic_viz.py` of the same date. Tested on synthetic files only. AI-generated; review before production use. |
+| 2026-11-26b | Claude Sonnet 5.5 (Anthropic) | Optional single-panel output (`MOD_SINGLE_PANELS`, default `False`): one figure per displayed slice. `RUN_PATHS` defaults to `["*_L2"]` (several runs) instead of one block file. Needs `femtic_viz.py` of the same date. Tested on synthetic files only. AI-generated; review before production use. |
+| 2026-11-26c | Claude Sonnet 5.5 (Anthropic) | Defaults replaced by those of `femtic_ens_plot_slices.py` (paths in `templates/`, `RUN_PATHS = ["kra*/"]`, maps at 0-5 km, UTM display, sites on maps, region of interest from the sites, `jet_r` [0, 4], 3 x 3 layout, bottom colour bar). No change of the code. Tested on synthetic files only. AI-generated; review before production use. |
+| 2026-11-26d | Claude Sonnet 5.5 (Anthropic) | All user settings are km, UTM coordinates too: `MOD_UTM_ORIGIN_E / _N`, `"utm"` positions, profile `p1` / `p2` / `z_top` / `z_bot`, per-panel limits and polyline points (before: metres). A value that looks like metres stops with an error (`fem.KmUnitError`); smaller values given in metres cannot be recognised and are read as km. Needs `femtic.py` of the same date. Tested on synthetic data only: same output as before for the same positions. AI-generated; review before production use. |

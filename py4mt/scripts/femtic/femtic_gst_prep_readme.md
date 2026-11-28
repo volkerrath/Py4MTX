@@ -129,8 +129,8 @@ All settings are at the top of the script.
 | `PERTURB_MOD`    | Enable / disable model perturbation.                                                 |
 | `MOD_PP_MODE`    | Pilot-point placement strategy: `"random"`, `"fixed"`, `"mixed"`, or `"extrema"`.   |
 | `MOD_N_PP`       | Number of randomly drawn pilot points per member (used when `MOD_PP_MODE` ≠ `"fixed"`; acts as random *fill* count in `"extrema"` mode). |
-| `MOD_PP_BBOX`    | Bounding box `[x_min, x_max, y_min, y_max, z_min, z_max]` (m) for random placement. |
-| `MOD_PP_COORDS`  | Explicit pilot-point coordinates, shape `(N, 3)` (easting, northing, depth). Required when `MOD_PP_MODE = "fixed"` or `"mixed"`. |
+| `MOD_PP_BBOX`    | Bounding box `[x_min, x_max, y_min, y_max, z_min, z_max]` (model-local km) for random placement. |
+| `MOD_PP_COORDS`  | Explicit pilot-point coordinates, shape `(N, 3)` (easting, northing, depth; model-local km). Required when `MOD_PP_MODE = "fixed"` or `"mixed"`. |
 | `MOD_PP_ROI`     | Bounding box restricting the extremum search (same format as `MOD_PP_BBOX`). `None` = full free-region extent. Only used in `"extrema"` mode. |
 | `MOD_PP_EXTREMA_K` | Neighbourhood size (including self) for the local extremum test. Larger k → smoother field, fewer extrema. Recommended: 20–40; increase further (e.g. 30+) if too many spurious minima/maxima are detected. Only used in `"extrema"` mode. |
 | `MOD_PP_EXTREMA_WHICH` | Which extrema to use as seeds: `"both"` (default), `"minima"` (conductive anomalies), or `"maxima"` (resistive anomalies). Only used in `"extrema"` mode. |
@@ -225,7 +225,7 @@ three spatial dimensions (easting, northing, depth) are handled natively.
 | Variable            | Description                                                                                           |
 |---------------------|-------------------------------------------------------------------------------------------------------|
 | `MOD_VARIO_MODEL`   | gstools covariance model class name: `"Spherical"` (default), `"Gaussian"`, `"Exponential"`, `"Matern"`, `"Linear"`, `"PowerLaw"`, etc. |
-| `MOD_VARIO_RANGE`   | Correlation length (m). Scalar = isotropic. Tuple `(h_range, v_range)` = geometric anisotropy with separate horizontal and vertical ranges. |
+| `MOD_VARIO_RANGE`   | Correlation length (km). Scalar = isotropic. Tuple `(h_range, v_range)` = geometric anisotropy with separate horizontal and vertical ranges. |
 | `MOD_VARIO_SILL`    | Sill (variance) in (log₁₀ Ω·m)². Controls total variability of the Kriged field. Typical range: 0.1 – 1.0. |
 | `MOD_VARIO_NUGGET`  | Nugget (short-range discontinuity) in (log₁₀ Ω·m)². Keep ≤ 10% of sill for spatial coherence.      |
 | `MOD_VARIO_ANGLES`  | Rotation angles `[α, β, γ]` in degrees orienting the anisotropy axes (converted to radians internally). `None` = axis-aligned. |
@@ -302,7 +302,7 @@ statistical summary rows.
 | Variable | Default | Description |
 |---|---|---|
 | `PLOT_SLICES_ENS` | `False` | Enable / disable the ensemble slice plot |
-| `ENS_SLICES` | 4 slices | Slice-spec list in model-local metres — same format as `femtic_mod_plot.PLOT_SLICES`; kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`; optional `invert_x=True` per panel flips horizontal axis on curtain/plane panels |
+| `ENS_SLICES` | 4 slices | Slice-spec list in km (UTM positions in UTM km), same format as `MOD_SLICES`; kinds: `"map"`, `"ns"`, `"ew"`, `"plane"`; optional `invert_x=True` per panel flips horizontal axis on curtain/plane panels |
 | `ENS_CMAP` | `"turbo_r"` | Matplotlib colormap for member and mean/median rows |
 | `ENS_CLIM` | `[0., 4.]` | log₁₀(Ω·m) colour limits; `None` = auto from ensemble range |
 | `ENS_XLIM`, `ENS_YLIM`, `ENS_ZLIM` | `MOD_XLIM`/`YLIM`/`ZLIM` | Global axis limits in model-local **km**; `None` = auto. Follow the `MOD_ROI_AUTO` result automatically unless set to their own separate value |
@@ -524,6 +524,7 @@ Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | Titles and colour bars of the slice figures: new `MOD_TITLE` / `ENS_TITLE`, `MOD_PANEL_TITLES` / `ENS_PANEL_TITLES`, `MOD_CBAR_LOCATION` / `ENS_CBAR_LOCATION`, `MOD_CBAR_SHRINK` / `ENS_CBAR_SHRINK`, `MOD_CBAR_THICKNESS` / `ENS_CBAR_THICKNESS` (section *Titles and colour bars of the slice figures*). `_plot_member_slices()` got the arguments `kind` and `index` for the title placeholders. Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. Not run end to end (no site / mesh data here); the changed calls were compile-checked. |
 | 2026-11-12 | Claude Sonnet 5.5 (Anthropic) | Fault trace in the slice figures. `ENS_SLICES` / `MOD_SLICES` may contain a fault from two surface points (`kind="profile"` with `p1`, `p2`, `dip`; `overlay=True`, optionally `panel=False` for the trace without a fault panel). `ENS_SLICES` are resolved with `fem.resolve_slice_positions()` for `plot_ensemble_slices` only when an entry is a `"profile"` or has `overlay` / `panel=False` (otherwise unchanged). Needs `femtic.py` / `femtic_viz.py` of the same date; see `femtic_viz_readme.md`, "Fault planes". Script not run here (syntax check and a synthetic-mesh test of the plot function). AI-generated; review before production use. |
 | 2026-11-20 | Claude Sonnet 5.5 (Anthropic) | Phase curves of the data plots that leave the +-180 deg window are interrupted and the two points joined by a dotted line: new `DAT_PHASE_WRAP_MODE` / `DAT_PHASE_WRAP_STYLE`, passed to `fviz.plot_data_ensemble`. Needs `femtic_viz.py` / `data_viz.py` of the same date. AI-generated; review before use. |
+| 2026-11-26 | Claude Sonnet 5.5 (Anthropic) | All user settings are km, UTM coordinates too: `MOD_UTM_ORIGIN_E / _N`, `"utm"` positions, profiles and per-panel limits of `MOD_SLICES` / `ENS_SLICES` (before: metres). The local converter is replaced by `fem.slices_km_to_m`, which also converts a plane `point` and profile entries (before: left in km). Pilot-point box / coordinates, variogram range and plot limits were km already and are now checked too. A value that looks like metres stops with an error (`fem.KmUnitError`); smaller values given in metres cannot be recognised and are read as km. Needs `femtic.py` of the same date. Tested on synthetic data only. AI-generated; review before production use. |
 
 ## Author
 

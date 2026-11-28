@@ -56,6 +56,12 @@ Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS)
 AI-assisted development: Claude (Anthropic), 2026-06-29.
 License: GNU General Public License v3 (GPL-3.0-or-later).
 AI-generated code — review before use in production.
+
+Changes
+-------
+2026-11-27  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            COLORBAR_PAD is in cm (before: inch); the default 0.254 is
+            the former 0.10. Multiply own values by 2.54.
 """
 
 import warnings
@@ -410,7 +416,7 @@ OCEAN_COLOR = "#6baed6"
 SHOW_COLORBAR = True
 COLORBAR_POSITION = "right"  # "right" | "left" | "bottom" | "top"
 COLORBAR_SIZE = 0.85  # bar length, fraction of the map edge
-COLORBAR_PAD = 0.10  # inches
+COLORBAR_PAD = 0.254  # [cm]
 COLORBAR_ASPECT = 20
 COLORBAR_LABEL_SIZE = 12
 COLORBAR_TICK_SIZE = 12
@@ -911,7 +917,7 @@ def _colorbar_settings():
         show=SHOW_COLORBAR,
         position=COLORBAR_POSITION,
         size=COLORBAR_SIZE,
-        pad=COLORBAR_PAD,
+        pad=COLORBAR_PAD / 2.54,
         aspect=COLORBAR_ASPECT,
         label_size=COLORBAR_LABEL_SIZE,
         tick_size=COLORBAR_TICK_SIZE,

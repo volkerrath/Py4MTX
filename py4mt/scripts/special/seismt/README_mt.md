@@ -438,7 +438,7 @@ stroke/halo effect. `SHOW_VOLC_LABELS`/`SHOW_CITY_LABELS` (default
   new meaning.)
 - `COLORBAR_ASPECT` (default `20`) — bar length ÷ bar thickness;
   thickness is derived from this and `COLORBAR_SIZE`.
-- `COLORBAR_PAD` (inches), `COLORBAR_LABEL_SIZE`, `COLORBAR_TICK_SIZE`,
+- `COLORBAR_PAD` (cm), `COLORBAR_LABEL_SIZE`, `COLORBAR_TICK_SIZE`,
   `COLORBAR_NTICKS` — unchanged.
 
 **Axis fonts:** `AXIS_LABEL_SIZE` (default `8`pt), `AXIS_TICK_SIZE`
@@ -531,3 +531,10 @@ Run precompute again whenever the `.rho`/`.dat` files, `TRIM_PAD`,
 settings, since a single run covers both). Everything else (colours,
 styling, crop views, profile definitions, annotations, sensitivity
 shading) only needs re-running the plot script.
+
+## Changes 2026-11-27 (sizes in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.
+
+`plot_modem.py`, `plot_modem_image.py`, `plot_modem_mesh.py`: `COLORBAR_PAD` is in **cm** (before: inch); the default `0.254` is the former
+`0.10`. Multiply a personal value by 2.54.

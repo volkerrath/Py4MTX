@@ -21,6 +21,12 @@ convention as `femtic_ens_post.py`, `femtic_rto_prep.py`,
    its original name — REPAIR only ever creates, it never renames or
    deletes.
 
+3. **RESTART** (optional, `MOD_RESTART`) - for every run directory with a
+   usable iteration, points `control.dat` at the **last completed
+   iteration**, so FEMTIC continues from there instead of from iteration 0.
+   Only `control.dat` is changed; the original is first saved as
+   `control.orig`. See the RESTART section below.
+
 This functionality was originally prototyped inside `femtic_ens_post.py`,
 then split out into this standalone script once the design settled, so
 `femtic_ens_post.py` stays focused on its own scope (summary statistics,
@@ -31,25 +37,31 @@ covariance, QC/statistics slice plots over converged members only).
 ## Workflow
 
 ```
-Ensemble sub-directories  (rto_*, gst_*, member_*, …)
-          │
-          ▼
+Ensemble sub-directories  (rto_*, gst_*, member_*, ...)
+          |
+          v
   Scan ALL directories  (not just accepted)
-          │
-          ├──▶ conv_list: label, dir, nrms, status
-          │      status ∈ {accepted, rejected_nrms,
-          │                missing_cnv, missing_model}
-          │
-          ├──▶  MOD_CONV = True
-          │        → nRMS bar chart / histogram, every scanned dir
-          │
-          └──▶  MOD_REPAIR = True
-                   → for each non-accepted dir:
-                       pick 2 random accepted members
-                       repaired = mean(log10ρ_1, log10ρ_2)
-                       copytree(<dir>, <dir>_restart, symlinks=True)
-                       overwrite <dir>_restart/resistivity_block_iter0.dat
-                       (original <dir> left untouched)
+          |
+          +--> conv_list: label, dir, nrms, status
+          |      status in {accepted, rejected_nrms,
+          |                 missing_cnv, missing_model}
+          |
+          +-->  MOD_CONV = True
+          |        -> nRMS bar chart / histogram, every scanned dir
+          |
+          +-->  MOD_REPAIR = True
+          |        -> for each non-accepted dir:
+          |            pick 2 random accepted members
+          |            repaired = mean(log10(rho_1), log10(rho_2))
+          |            copytree(<dir>, <dir>_restart, symlinks=True)
+          |            overwrite <dir>_restart/resistivity_block_iter0.dat
+          |            (original <dir> left untouched)
+          |
+          +-->  MOD_RESTART = True          (runs after REPAIR)
+                   -> for each scanned dir (not *_restart):
+                       N = last iteration with a complete model
+                       control.dat (link or file) -> copy to control.orig
+                       control.dat := same file, initial iteration = N
 ```
 
 ---
@@ -156,6 +168,82 @@ results existed, logs, plus all the `LINK_LIST`/`COPY_LIST` run
 machinery — with only the starting model swapped out. It is a
 ready-to-run restart directory, not just a bare model file.
 
+### RESTART
+
+Continue every run where it stopped, by changing only its `control.dat`.
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `MOD_RESTART` | bool | `False` | Enable the RESTART step. Off by default, since it rewrites `control.dat` in every run directory. |
+| `RESTART_FROM` | `"last"` / `"best"` | `"last"` | `"last"` = highest usable iteration (continue where the run stopped); `"best"` = the usable iteration with the lowest nRMS (ties: lowest iteration). |
+| `RESTART_UNCONDITIONAL` | bool | `False` | `True` = take the iteration from the convergence file alone (its last iteration > 0, or with `RESTART_FROM = "best"` the lowest nRMS), **without** checking that the model files exist and without falling back to an earlier iteration. Missing files only give a warning in the report. See below. |
+| `RESTART_CONTROL_FILE` | str | `"control.dat"` | Control file in each run directory. |
+| `RESTART_ORIG_NAME` | str | `"control.orig"` | Name under which the original content is saved. |
+| `RESTART_KEY` | str | `"ITERATION"` | Keyword of the control file that holds the initial iteration number. |
+| `RESTART_VALUE_INDEX` | int | `0` | Which value token after `RESTART_KEY` is the initial iteration (`0` = the first, the `0` in `ITERATION 0 30`). |
+| `RESTART_MAXITER_INDEX` | int / None | `1` | Which value token is the maximum iteration (the `30`); only used to warn when it is `<=` the start iteration, since such a run would not iterate. `None` = no check. |
+| `RESTART_DRY_RUN` | bool | `False` | `True` = print and report what would be changed in every directory, write nothing. |
+
+**Which iteration.** Only iterations `> 0` listed in the convergence file
+count, and only those with a complete model: `resistivity_block_iter<N>.dat`,
+plus `distortion_iter<N>.dat` if the directory has a `distortion_iter0.dat`.
+If the last iteration of the convergence file lacks its files, the highest
+iteration that has them is used, and the report says so. This is **not** the
+`NRMS_MAX` / best-nRMS rule of the scan: a run that is not "accepted" is
+restarted as well (that is usually the one that needs it).
+
+**Unconditional (`RESTART_UNCONDITIONAL = True`).** The checks on the model files
+are dropped: the iteration is the last one listed in the convergence file
+(`"last"`), or the one with the lowest nRMS (`"best"`), whatever its nRMS and
+whether or not its files exist. A directory is then never skipped or moved to an
+earlier iteration because of missing files; if the files of the chosen iteration
+are missing, the note says `WARNING unconditional: <file> not found` and
+`control.dat` is written anyway (FEMTIC will fail on a missing
+`resistivity_block_iter<N>.dat`, so look at those warnings before submitting).
+Still left alone: directories without any iteration `> 0` in the convergence file
+(there is nothing to restart from), directories whose control file is missing or
+unusable (`FAILED`), and `*_restart` directories of REPAIR.
+
+**What is written, per directory.**
+
+1. `control.dat` is read (a symbolic link is followed). If `control.orig` does
+   not exist yet, the **content** is copied to it. An existing `control.orig` is
+   never overwritten, so a second RESTART (or a restart from a later iteration)
+   keeps the true original.
+2. `control.dat` is rewritten as a **regular file** that is identical except for
+   the one value token (`RESTART_KEY`, value `RESTART_VALUE_INDEX`), set to the
+   iteration found. It is written to a temporary file and renamed over
+   `control.dat`; if `control.dat` was a link, the rename replaces the link only,
+   so the **shared template is never written**. Line endings, comments, indentation
+   and everything after the value are kept byte for byte; the file keeps its
+   permissions plus owner-write (a read-only template gives a writable copy).
+3. Nothing else in the directory is touched. If the value already equals the
+   iteration, nothing is written (`unchanged`).
+
+Control file rules (as in `femtic_lcurve_prep.py`): whitespace-separated tokens,
+a value may follow its keyword on the same or a later line, a comment is a whole
+line starting with `#`, reading stops at `END`, a keyword may appear once. A
+directory whose control file is missing, a broken link, lacks the keyword, or has
+a non-integer value is reported as `FAILED` and left untouched; the others carry on.
+
+**Directories that are skipped:** no usable convergence rows or no iteration with a
+complete model; and every directory whose name ends with `MOD_REPAIR_SUFFIX`
+(`*_restart`, made by REPAIR), which is meant to start afresh from its new
+iteration-0 model.
+
+**Together with REPAIR.** RESTART runs after REPAIR, so a `_restart` copy made in the
+same run still has the original `control.dat`. If REPAIR copies a directory that
+went through RESTART in an earlier run, it puts the original control file back in
+the copy (from `control.orig`, as a regular file) and does not carry
+`control.orig` along.
+
+**Check the keyword before the first real run.** The keyword and value position
+(`ITERATION`, first value) are the defaults of this script; they could not be
+checked against FEMTIC's own `control.dat` parser while it was written. Run once with
+`RESTART_DRY_RUN = True` and compare the `old -> new` column with a real `control.dat`
+of yours; change `RESTART_KEY` / `RESTART_VALUE_INDEX` if your FEMTIC version spells it
+differently. To undo a RESTART, copy `control.orig` back to `control.dat`.
+
 ### Directory scan report (in the summary file)
 
 The section appended to `femtic_ens_repair_summary.md` accounts for every
@@ -217,6 +305,8 @@ for a known ensemble size.
 - `<MOD_CONV_FILE>.<fmt>` — one convergence figure per `MOD_PLOT_FORMAT` entry (e.g. `..._convergence.pdf`, `..._convergence.jpg`).
 - `femtic_ens_repair_summary.md` (in `ENSEMBLE_DIR`) - the UPPERCASE settings, script path and run date/time, followed by a **"Directory scan report"** section: why each scanned directory that is not in the ensemble was left out (see below).
 - `<dir>_restart/` — one complete copy of `<dir>` per repaired non-converged directory, when `MOD_REPAIR=True`, with `MOD_REPAIR_MODEL_NAME` overwritten by the repaired starting model.
+- `<dir>/control.orig` and the rewritten `<dir>/control.dat` - in every restarted run directory, when `MOD_RESTART=True` (and `RESTART_DRY_RUN=False`).
+- A **"RESTART report"** section at the end of `femtic_ens_repair_summary.md`: one row per scanned directory (result, iteration, old -> new value, note). If the summary file cannot be appended to, it goes to `femtic_ens_repair_restart_report.md` in `ENSEMBLE_DIR`.
 
 This script does **not** write a `.npz` results file — that remains
 `femtic_ens_post.py`'s job, over converged members only.
@@ -241,6 +331,13 @@ directly (`mesh.dat`/`control.dat`/etc. symlinks and `observe.dat` all
 present via the copy, only the starting model swapped). Re-running again
 is safe — already-repaired `_restart` directories are detected and
 skipped.
+
+To continue the runs where they stopped instead, set `MOD_RESTART = True`
+(first with `RESTART_DRY_RUN = True` to see the `old -> new` values). Every
+run directory gets `control.orig` (the original `control.dat`) and a
+`control.dat` that starts at its last completed iteration. Re-running is safe
+here too: a directory already at that iteration is reported `unchanged`, and
+`control.orig` is never overwritten.
 
 ---
 
@@ -278,3 +375,5 @@ skipped.
 Author: Volker Rath (DIAS)
 | 2026-11-08 | Claude Sonnet 5.5 (Anthropic) | The scan-report helpers (`_scan_reason_text`, `_index_check`, building and appending the "Directory scan report") were copies of the ones in `femtic_ens_post.py`; both scripts now use the shared `femtic.build_scan_report` / `femtic.append_scan_report` (script shortened by about 200 lines). No change in the report or the settings. `femtic_ens_post.py` itself no longer draws figures (see `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py`, `femtic_data_misfit.py`). |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | The member directories are searched for the convergence file with `fem.find_cnv_file()` (names of `CNV_FILE` tried in order, then ignoring case); the scan report is unchanged. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
+| 2026-11-24 | Claude Sonnet 5.5 (Anthropic) | **New optional step (4), `MOD_RESTART`**: points `control.dat` of every run directory at its last completed iteration, so FEMTIC continues there instead of from iteration 0. The content of the original `control.dat` (a link is followed) is copied to `control.orig`, which is never overwritten; `control.dat` is then replaced by a regular file in which only the initial-iteration value (`RESTART_KEY`, `RESTART_VALUE_INDEX`) is changed, so a shared template is never written. New settings `RESTART_FROM` (`"last"` / `"best"`), `RESTART_CONTROL_FILE`, `RESTART_ORIG_NAME`, `RESTART_KEY`, `RESTART_VALUE_INDEX`, `RESTART_MAXITER_INDEX`, `RESTART_DRY_RUN`. The iteration needs a `resistivity_block_iter<N>.dat` (and a `distortion_iter<N>.dat` when the directory has a `distortion_iter0.dat`); not the `NRMS_MAX` rule. Directories ending in `MOD_REPAIR_SUFFIX` are skipped; REPAIR restores the original control file in a `_restart` copy of a directory that was restarted before. A RESTART report is appended to `femtic_ens_repair_summary.md`. Tested on a synthetic 13-directory ensemble (link and regular `control.dat`, CRLF, read-only file and template, drifted last iteration, missing last block / distortion file, broken link, missing keyword, low maximum iteration, multi-line value, REPAIR before and after RESTART, repeated runs, dry run): the template and all other files are bit-identical afterwards, with RESTART off the script behaves as before. **Not tested against FEMTIC itself; the keyword `ITERATION` and the position of the initial-iteration value are the defaults of this script and were not checked against FEMTIC's `control.dat` parser** -- run once with `RESTART_DRY_RUN = True` first. AI-generated; review before production use. |
+| 2026-11-24b | Claude Sonnet 5.5 (Anthropic) | New **`RESTART_UNCONDITIONAL`** (default `False`): the restart iteration is taken from the convergence file alone (last iteration > 0, or lowest nRMS with `RESTART_FROM = "best"`), with no check for `resistivity_block_iter<N>.dat` / `distortion_iter<N>.dat` and no fallback to an earlier iteration; missing files give a `WARNING unconditional` note and the directory is still written. `select_restart_iteration()` gets the argument `check_files`. Default behaviour unchanged: previous and new version give identical directory trees and console output on a synthetic 13-directory ensemble (REPAIR + RESTART on). Unconditional mode tested on the same ensemble (last iteration without block file, without distortion file, directory with no block file at all, dry run writes nothing, template and all other files bit-identical). AI-generated; review before production use. |

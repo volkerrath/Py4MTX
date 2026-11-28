@@ -3,8 +3,9 @@
 """
 Plot MT station data (rho_a, phase, tipper, phase tensor).
 
-Reads .npz, .edi, or .dat station files and generates per-station
-diagnostic subplots. Optionally assembles a PDF catalogue.
+Reads .npz station files and generates per-station diagnostic subplots.
+Optionally assembles a PDF catalogue. (The USE_EDI / USE_DAT selections
+are not handled by the plotting loop.)
 
 @author: vrath
 Cleanup: 4 Mar 2026 by Claude (Anthropic)
@@ -19,6 +20,16 @@ Cleanup: 4 Mar 2026 by Claude (Anthropic)
            "Fontsize", was passed to add_rho / add_phase, which hand unknown
            keywords on to Matplotlib: the script stopped there);
            Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+@modified:  2026-11-27 -- new setting FIG_SIZE [cm] (before: 8 x 14 inch, fixed in the code; the
+            default gives the same figures);
+            Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+@modified:  2026-11-28 -- two errors that stopped the script: PdfPages is now imported from
+            matplotlib.backends.backend_pdf (mpl.backends.backend_pdf is only there if
+            something else has imported it); the station file is read with
+            data_proc.load_npz (allow_pickle, station as str) and turned into the
+            plotting table with data_viz.datadict_to_plot_df (pd.DataFrame on the open
+            .npz file gave KeyError: 'freq' under pandas 3.0);
+            Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 import os
@@ -29,9 +40,9 @@ import getpass
 from datetime import datetime
 
 import numpy as np
-import pandas as pd
 import matplotlib as mpl
 import matplotlib.pyplot as plt
+from matplotlib.backends.backend_pdf import PdfPages
 
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
@@ -43,13 +54,19 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
 
 from version import versionstrg
 import util as utl
-from data_viz import add_phase, add_rho, add_tipper, add_pt
+from data_proc import load_npz
+from data_viz import add_phase, add_rho, add_tipper, add_pt, datadict_to_plot_df
 
 version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
+
+def _figsize(size_cm) -> tuple:
+    """Figure size (width, height) given in cm, in the inches Matplotlib uses."""
+    return tuple(round(float(v) / 2.54, 6) for v in size_cm)
+
 
 # =============================================================================
 #  Configuration
@@ -86,6 +103,8 @@ FIGURE_TITLE = "auto"
 PHASE_WRAP_MODE = "direct"
 PHASE_WRAP_STYLE = None
 
+FIG_SIZE = (20.32, 35.56)  # [cm] width, height of the station figures
+
 FILES_ONLY = False
 PLT_FMT = [".png", ".pdf"]
 
@@ -105,7 +124,7 @@ if FILES_ONLY:
 
 if CATALOG:
     pdf_list = []
-    catalog = mpl.backends.backend_pdf.PdfPages(CAT_NAME)
+    catalog = PdfPages(CAT_NAME)
 
 mpl.rcParams["figure.dpi"] = 400
 mpl.rcParams["axes.linewidth"] = 0.5
@@ -139,11 +158,14 @@ if not os.path.isdir(PLT_DIR):
 #  Plot data sets
 # =============================================================================
 for site in DAT_LIST:
-    data = np.load(site)
-    station = data["station"]
-    df = pd.DataFrame(data)
+    # station file as written by data_proc.save_npz (mt_data_processor.py):
+    # Z, T, P are (n, ...) arrays, the plotting functions need one column per
+    # component
+    data = load_npz(site)
+    station = str(data["station"])
+    df = datadict_to_plot_df(data)
 
-    fig, axs = plt.subplots(3, 2, figsize=(8, 14), sharex=True)
+    fig, axs = plt.subplots(3, 2, figsize=_figsize(FIG_SIZE), sharex=True)
 
     # the wrap keywords belong to add_phase only (add_rho would hand them on
     # to Matplotlib)

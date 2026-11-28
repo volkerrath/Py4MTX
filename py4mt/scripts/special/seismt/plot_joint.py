@@ -111,6 +111,12 @@ plot_seis.py (settings/plotting style) and cluster.py
 (grid-mode-aware data loading) as models: Claude (Anthropic), 2026-08-05.
 License: GNU General Public License v3 (GPL-3.0-or-later).
 AI-generated code — review before use in production.
+
+Changes
+-------
+2026-11-27  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            COLORBAR_PAD is in cm (before: inch); the default 0.254 is
+            the former 0.10. Multiply own values by 2.54.
 """
 
 import warnings
@@ -348,7 +354,7 @@ AXES_KM_COMMA    = True
 SHOW_COLORBAR       = True
 COLORBAR_POSITION   = "right"
 COLORBAR_SIZE       = 0.85
-COLORBAR_PAD        = 0.10
+COLORBAR_PAD        = 0.254     # [cm]
 COLORBAR_ASPECT     = 20
 COLORBAR_LABEL_SIZE = 12
 COLORBAR_TICK_SIZE  = 12
@@ -620,7 +626,7 @@ def _region():
 
 def _colorbar_settings():
     return dict(show=SHOW_COLORBAR, position=COLORBAR_POSITION,
-                size=COLORBAR_SIZE, pad=COLORBAR_PAD, aspect=COLORBAR_ASPECT,
+                size=COLORBAR_SIZE, pad=COLORBAR_PAD / 2.54, aspect=COLORBAR_ASPECT,
                 label_size=COLORBAR_LABEL_SIZE, tick_size=COLORBAR_TICK_SIZE,
                 nticks=COLORBAR_NTICKS, title_size=AXIS_TITLE_SIZE)
 

@@ -30,12 +30,12 @@ ensemble of runs (chosen calculated response of each member).
 @author   vrath
 @project  py4mt
 @created  2026-09-26
-@modified 2026-11-11
+@modified 2026-11-27
 
 Provenance
 ----------
 Author      : Claude (Anthropic)
-Generated   : 2026-09-26 (last modified 2026-11-11)
+Generated   : 2026-09-26 (last modified 2026-11-27)
 Notice      : This code is AI-generated. Review and test it before any
               production use.
 
@@ -186,6 +186,16 @@ Full_Interstation_TF is not drawn.
 
 Changelog
 ---------
+2026-11-27  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            New settings PANEL_MEASURES, PANEL_MEASURES_FONTSIZE,
+            HIST_SCALE_MEASURE and SITE_MEASURES choose the measures of
+            data fit that are plotted (default: as before); "curves"
+            titles also know {fit} and one field per measure. The measure
+            routines come from the new module misfit_measures.py (needed
+            in modules/); fit_measures() now also returns std, skew and
+            kurt. PANEL_SIZE, HIST_PANEL_SIZE, QQ_PANEL_SIZE and
+            CURVES_PANEL_SIZE are in cm (before: inch; multiply own
+            values by 2.54). Tested on synthetic files only.
 2026-11-20  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             "curves": phase curves that leave the +-180 deg window. Where a
             phase curve jumps by more than 180 deg between two periods, the
@@ -264,7 +274,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import numpy as np
 
 # ---------------------------------------------------------------------------
-# py4mt environment: make the modules importable (modem.py, inverse.py)
+# py4mt environment: make the modules importable (modem.py, misfit_measures.py)
 # ---------------------------------------------------------------------------
 PY4MTX_ROOT = os.environ.get("PY4MTX_ROOT", "")
 if PY4MTX_ROOT:
@@ -274,7 +284,10 @@ if PY4MTX_ROOT:
             sys.path.insert(0, _pth)
 
 import modem as mdm  # noqa: E402  (read_data_rows, read_data_calc, read_data_misfit, ...)
-import inverse as inv  # noqa: E402  (nrms, r_mae, r_med, q95)
+from misfit_measures import (  # noqa: E402  (the measures and their selection)
+    FIT_MEASURE_NAMES, HIST_SCALES, MEASURE_LABELS, SIGNED_MEASURES, box_items,
+    box_text, fit_measures, hist_scale, qq_quartile_line, site_measures,
+    site_value)
 
 # ---------------------------------------------------------------------------
 # User configuration
@@ -346,12 +359,39 @@ FIGURE_TITLE: Union[str, bool, None, dict] = "auto"
 # "auto" = the titles of before; None, False or "" = no figure title; a
 # string, used as given ({title} = the run description of the title,
 # {datatype} / {group} = data type or group of the figure, {axis},
-# {per_decade} for histogram / Q-Q, {site}, {sid}, {nrms} for curves,
+# {per_decade} for histogram / Q-Q, {site}, {sid}, {fit}, {nrms}, {r_med}
+# and the other measure names for curves,
 # {key} = the kind of figure; other braces: used as they stand); a dict
 # {"crossplot": spec, "histogram": spec, "qq": spec, "curves": spec,
 # "default": spec}
 PANEL_TITLES: bool = True     # titles of the panels of the crossplot,
 # histogram and Q-Q figures (False = none)
+
+# --- which measures of data fit are plotted ---
+# Names: "nrms", "r_mae", "r_med", "q95", "mean" (bias), "std", "skew",
+# "kurt" (excess); for normally distributed residuals with correct errors
+# nrms = r_mae = r_med = 1, q95 = 1.96, mean = skew = kurt = 0, std = 1.
+PANEL_MEASURES: Union[None, bool, str, Sequence[str], dict] = None
+# Text box of every crossplot, histogram and Q-Q panel. Besides the names above:
+# "n" (number of values), "slope" and "icpt" (quartile line of the normal Q-Q
+# plot), "n_out" (histogram, Q-Q: values outside +/- *_LIMIT, only if > 0) and
+# "out_pct" (Q-Q: dots outside the envelope).
+# None  = as before (crossplot n, nrms; histogram n, nrms, n_out; Q-Q n, slope,
+#         icpt)
+# False = no box
+# list  = for all three figures, e.g. ["n", "nrms", "r_med", "q95"]
+# dict  = per figure, e.g. {"crossplot": ["n", "r_med"],
+#                           "histogram": ["n", "nrms", "r_mae", "skew"],
+#                           "qq": ["slope", "icpt", "out_pct"]}
+PANEL_MEASURES_FONTSIZE: float = 8.0   # [pt] of that box (smaller for long lists)
+HIST_SCALE_MEASURE: Optional[str] = "nrms"   # histogram: scale s of the red curve
+# N(0, s^2) and of the blue lines at +/- s: "nrms" (as before), "r_mae",
+# "r_med", "q95" (s = q95 / 1.96); None = not drawn
+SITE_MEASURES: Union[str, Sequence[str]] = "nrms"
+# "curves": per-site value(s), e.g. "r_med" or ["nrms", "r_med"]: all entries in
+# the figure title and in <prefix>_site_nrms.txt; the FIRST entry decides
+# CURVES_SITE_ORDER "worst" / "best". "mean", "skew", "kurt" can be negative:
+# worst / best go by the absolute value
 
 # --- selection (None = everything) ---
 DATATYPES: Optional[Sequence[str]] = None     # e.g. ["Full_Impedance"]
@@ -359,7 +399,7 @@ COMPONENTS: Optional[Sequence[str]] = None    # e.g. ["ZXY", "ZYX"]
 
 # --- crossplot ---
 NCOLS: int = 4
-PANEL_SIZE: float = 3.3
+PANEL_SIZE: float = 8.382     # [cm] side of one panel
 EQUAL_ASPECT: bool = True
 CMAP: str = "turbo"
 COLOR_RANGE: str = "global"   # "global" | "panel" (range of log10 f)
@@ -381,7 +421,7 @@ HIST_LIMIT: float = 10.0            # histogram range +/- (values outside
 HIST_BIN_WIDTH: float = 0.5
 HIST_MIN_N: int = 5                 # skip bands with fewer values
 HIST_NCOLS: int = 4
-HIST_PANEL_SIZE: float = 3.0
+HIST_PANEL_SIZE: float = 7.62     # [cm] side of one panel
 
 # --- Q-Q plots (same normalized residuals as the histograms) ---
 QQ_BAND_AXIS: str = "frequency"     # "frequency" | "period"
@@ -393,7 +433,7 @@ QQ_EQUAL_AXES: bool = True         # True: same range on both axes, square
 QQ_CONFIDENCE: Optional[float] = 0.95   # pointwise envelope; None = off
 QQ_MIN_N: int = 10                  # skip bands with fewer values
 QQ_NCOLS: int = 4
-QQ_PANEL_SIZE: float = 3.0
+QQ_PANEL_SIZE: float = 7.62       # [cm] side of one panel
 
 
 # --- response curves (optional method "curves"; add it to METHODS) ---
@@ -407,7 +447,8 @@ CURVES_SITES: Union[None, int, Sequence[str]] = 12
                                    # codes of the data file
 CURVES_SITE_ORDER: str = "even"    # for an int CURVES_SITES: "even" (spread
                                    # over the site list), "id" (first N),
-                                   # "worst" / "best" (by site nRMS)
+                                   # "worst" / "best" (by site nRMS, or by
+                                   # the first entry of SITE_MEASURES)
 CURVES_MAX_SITES: int = 200        # safety cap on the number of figures
 
 # ensemble display (ignored for a single run: observed + calculated line)
@@ -438,7 +479,7 @@ CURVES_INVERT_X: bool = False      # False = period increasing to the right
 CURVES_PERIOD_LIM: Optional[Tuple[float, float]] = None   # (Tmin, Tmax) [s]
 CURVES_YLIM: Dict[str, Optional[Tuple[float, float]]] = {
     "rho": None, "phase": None, "tipper": None, "pt": None}
-CURVES_PANEL_SIZE: Tuple[float, float] = (4.2, 3.4)       # width, height [in]
+CURVES_PANEL_SIZE: Tuple[float, float] = (10.668, 8.636)  # width, height [cm]
 CURVES_LEGEND_LOC: Optional[str] = "below"   # "below" (under each panel), a
                                    # matplotlib loc such as "upper right", or
                                    # None for no legend. Avoid "best" with
@@ -591,6 +632,11 @@ def resolve_run(obs_path: str, calc_spec: str, *, iteration: Union[str, int],
             f"for {calc_spec!r} against {obs_path!r}.")
     best["n_candidates"] = n_ok
     return best
+
+
+def _inch(cm: float) -> float:
+    """A length in cm (user settings) in the inches Matplotlib uses."""
+    return round(float(cm) / 2.54, 6)
 
 
 def expand_run_pairs(run_paths: Sequence[Tuple[str, str]]) -> List[Tuple[str, str]]:
@@ -822,24 +868,6 @@ def build_panels(ds: dict, *, datatypes: Optional[Sequence[str]] = None,
     return panels
 
 
-def fit_measures(r: np.ndarray) -> dict:
-    """
-    Fit measures of error-normalized residuals (non-finite values ignored):
-    n, nrms, r_mae, r_med, q95 (all from inverse.py) and the mean (bias).
-    Expected for N(0,1) residuals: nrms = r_mae = r_med = 1, q95 = 1.96.
-    """
-    r = np.asarray(r, dtype=float).ravel()
-    r = r[np.isfinite(r)]
-    return dict(
-        n=int(r.size),
-        nrms=float(inv.nrms(r)),
-        r_mae=float(inv.r_mae(r)),
-        r_med=float(inv.r_med(r)),
-        q95=float(inv.q95(r)),
-        mean=float(np.mean(r)) if r.size else float("nan"),
-    )
-
-
 def panel_stats(p: dict) -> dict:
     """
     n, plain rms, and the fit measures of the panel's normalized residuals:
@@ -901,12 +929,16 @@ def plot_crossplot_datatype(
     alpha: float, log_rho: bool, show_errorbars: bool, equal_aspect: bool,
     figure_title: Optional[str] = None, panel_titles: bool = True,
     cbar_location: Optional[str] = None, cbar_shrink: float = 0.85,
-    ensemble_mean: Optional[bool] = None,
+    ensemble_mean: Optional[bool] = None, measures=None,
+    box_fontsize: float = 8.0,
 ):
     """One figure with all crossplot panels of a data type.
 
     has_syn: show nRMS1 and nRMS2 (else nRMS = nRMS1 only). ensemble_mean:
     the calculated values are the ensemble mean (y label); None = as has_syn.
+
+    measures: entries of the panel text box, as the setting PANEL_MEASURES
+    (None = n and nRMS); box_fontsize: its font size [pt].
 
     figure_title: None = the automatic title, "" = none, else the text.
     panel_titles: False = no panel titles. cbar_location: None = at the right
@@ -916,6 +948,7 @@ def plot_crossplot_datatype(
     from matplotlib import cm
     from matplotlib.colors import Normalize
 
+    items = box_items(measures, "crossplot")
     n = len(panels)
     nc = max(1, min(ncols, n))
     nr = int(math.ceil(n / nc))
@@ -958,11 +991,12 @@ def plot_crossplot_datatype(
         ax.plot([lo, hi], [lo, hi], color="k", lw=0.8, zorder=3)
         if equal_aspect:
             ax.set_aspect("equal", adjustable="box")
-        st = panel_stats(p)
-        txt = (f"n={st['n']}\nnRMS1={st['nrms1']:.2f}\nnRMS2={st['nrms2']:.2f}"
-               if has_syn else f"n={st['n']}\nnRMS={st['nrms1']:.2f}")
-        ax.text(0.04, 0.96, txt, transform=ax.transAxes, ha="left", va="top",
-                fontsize=8, bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
+        _, r1, r2 = normalized_residuals(p)
+        txt = box_text(items, "crossplot", n=x.size, r1=r1, r2=r2, has_syn=has_syn)
+        if txt:
+            ax.text(0.04, 0.96, txt, transform=ax.transAxes, ha="left", va="top",
+                    fontsize=box_fontsize,
+                    bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
         if panel_titles:
             ax.set_title(p["label"], fontsize=10)
         ax.set_xlabel("observed", fontsize=9)
@@ -1022,15 +1056,13 @@ def select_bands(freq: np.ndarray, *, per_decade: int, axis: str,
     return sel
 
 
-def _rms(a: np.ndarray) -> float:
-    return float(inv.nrms(a))
-
-
 def plot_residual_histograms(
     title: str, freq: np.ndarray, r1: np.ndarray, r2: np.ndarray, *,
     has_syn: bool, per_decade: int, axis: str, ncols: int, panel_size: float,
     limit: float, bin_width: float, min_n: int, run_label: str = "",
     figure_title: Optional[str] = None, panel_titles: bool = True,
+    measures=None, scale_measure: Optional[str] = "nrms",
+    box_fontsize: float = 8.0,
 ):
     """
     Histograms of normalized residuals: first panel pools all bands, then
@@ -1039,12 +1071,19 @@ def plot_residual_histograms(
     `has_syn` the RMS1 histogram is added as a step outline. Red: N(0, RMS^2)
     of the bars; blue dashed: +/- RMS of the bars (Baba 2023, Fig. 10a).
 
+    measures: entries of the panel text box, as the setting PANEL_MEASURES
+    (None = n, RMS, n_out); box_fontsize: its font size [pt]. scale_measure:
+    the scale used instead of the RMS for the red curve and the blue lines,
+    as the setting HIST_SCALE_MEASURE (None = neither is drawn).
+
     Returns (figure, stats) where stats is a list of dicts with keys
     band, n, m1, m2 (fit_measures of the RMS1- / RMS2-normalized residuals),
     n_out (values of the plotted variant outside +/- limit).
     """
     import matplotlib.pyplot as plt
 
+    items = box_items(measures, "histogram")
+    scale = hist_scale(scale_measure)
     sel = select_bands(freq, per_decade=per_decade, axis=axis, min_n=min_n)
 
     n = len(sel)
@@ -1065,8 +1104,6 @@ def plot_residual_histograms(
         a1, a2 = r1[m], r2[m]
         main = a2 if has_syn else a1
         nn = main.size
-        rms1, rms2 = _rms(a1), _rms(a2)
-        rms_main = rms2 if has_syn else rms1
         n_out = int(np.count_nonzero(np.abs(main) > limit))
 
         counts, _ = np.histogram(main, bins=edges)
@@ -1077,19 +1114,22 @@ def plot_residual_histograms(
             c1, _ = np.histogram(a1, bins=edges)
             ax.step(centres, 100.0 * c1 / nn, where="mid", color="tab:orange",
                     linewidth=1.0, label="RMS1-normalized")
-        if np.isfinite(rms_main) and rms_main > 0.0:
-            g = 100.0 * bin_width * np.exp(-xs**2 / (2.0 * rms_main**2)) \
-                / (rms_main * math.sqrt(2.0 * math.pi))
-            ax.plot(xs, g, color="red", linewidth=1.0, label="N(0, RMS^2)")
-            for s in (-rms_main, rms_main):
-                ax.axvline(s, color="tab:blue", linestyle="--", linewidth=0.8)
+        if scale is not None:
+            divisor, curve_label = HIST_SCALES[scale]
+            sig = fit_measures(main)[scale] / divisor
+            if np.isfinite(sig) and sig > 0.0:
+                g = 100.0 * bin_width * np.exp(-xs**2 / (2.0 * sig**2)) \
+                    / (sig * math.sqrt(2.0 * math.pi))
+                ax.plot(xs, g, color="red", linewidth=1.0, label=curve_label)
+                for s in (-sig, sig):
+                    ax.axvline(s, color="tab:blue", linestyle="--", linewidth=0.8)
         ax.set_xlim(-limit, limit)
-        txt = (f"n={nn}\nRMS1={rms1:.2f}\nRMS2={rms2:.2f}" if has_syn
-               else f"n={nn}\nRMS={rms1:.2f}")
-        if n_out:
-            txt += f"\nout: {n_out}"
-        ax.text(0.03, 0.97, txt, transform=ax.transAxes, ha="left", va="top",
-                fontsize=8, bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
+        txt = box_text(items, "histogram", n=nn, r1=a1, r2=a2, has_syn=has_syn,
+                       limit=limit)
+        if txt:
+            ax.text(0.03, 0.97, txt, transform=ax.transAxes, ha="left", va="top",
+                    fontsize=box_fontsize,
+                    bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
         if panel_titles:
             ax.set_title(label, fontsize=10)
         ax.set_xlabel("normalized residual", fontsize=9)
@@ -1120,22 +1160,13 @@ def qq_points(a: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     return norm.ppf(p), a
 
 
-def qq_quartile_line(sample_sorted: np.ndarray) -> Tuple[float, float]:
-    """(slope, intercept) of the line through the sample's and the standard
-    normal's first and third quartiles (robust scale and location)."""
-    from scipy.stats import norm
-    q1, q3 = np.quantile(sample_sorted, [0.25, 0.75])
-    z1, z3 = norm.ppf([0.25, 0.75])
-    slope = float((q3 - q1) / (z3 - z1))
-    return slope, float(q1 - slope * z1)
-
-
 def plot_qq_bands(
     title: str, freq: np.ndarray, r1: np.ndarray, r2: np.ndarray, *,
     has_syn: bool, per_decade: int, axis: str, ncols: int, panel_size: float,
     limit: float, confidence: Optional[float], min_n: int,
     equal_axes: bool = False, run_label: str = "",
     figure_title: Optional[str] = None, panel_titles: bool = True,
+    measures=None, box_fontsize: float = 8.0,
 ):
     """
     Normal Q-Q plots of the normalized residuals: first panel pools all
@@ -1150,6 +1181,8 @@ def plot_qq_bands(
     se_i = sqrt(p_i (1 - p_i) / n) / phi(z_i), so it judges the Gaussian
     shape irrespective of scale and bias. With `equal_axes` both axes get
     the same range (at most +/- `limit`) and the panels are square.
+    measures: entries of the panel text box, as the setting PANEL_MEASURES
+    (None = n, slope, icpt); box_fontsize: its font size [pt].
 
     Returns (figure, stats); stats rows have keys band, n, slope1, slope2,
     icpt, out_pct (percentage of the dots outside the envelope).
@@ -1157,6 +1190,7 @@ def plot_qq_bands(
     import matplotlib.pyplot as plt
     from scipy.stats import norm
 
+    items = box_items(measures, "qq")
     sel = select_bands(freq, per_decade=per_decade, axis=axis, min_n=min_n)
     n = len(sel)
     nc = max(1, min(ncols, n))
@@ -1198,11 +1232,12 @@ def plot_qq_bands(
             lo, hi = fit - zc * slope2 * se, fit + zc * slope2 * se
             ax.fill_between(z, lo, hi, color="0.5", alpha=0.25, linewidth=0, zorder=1)
             out_pct = 100.0 * float(np.count_nonzero((q < lo) | (q > hi))) / nn
-        txt = (f"n={nn}\nslope1={slope1:.2f}\nslope2={slope2:.2f}" if has_syn
-               else f"n={nn}\nslope={slope2:.2f}")
-        txt += f"\nicpt={icpt:.2f}"
-        ax.text(0.03, 0.97, txt, transform=ax.transAxes, ha="left", va="top",
-                fontsize=8, bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
+        txt = box_text(items, "qq", n=nn, r1=a1, r2=a2, has_syn=has_syn,
+                       limit=limit, out_pct=out_pct)
+        if txt:
+            ax.text(0.03, 0.97, txt, transform=ax.transAxes, ha="left", va="top",
+                    fontsize=box_fontsize,
+                    bbox=dict(boxstyle="round", fc="white", ec="0.7", alpha=0.8))
         if panel_titles:
             ax.set_title(label, fontsize=10)
         ax.set_xlabel("theoretical N(0,1) quantile", fontsize=9)
@@ -1276,6 +1311,7 @@ def _curves_cfg() -> dict:
     """Snapshot of the CURVES_* settings (read when the method is run)."""
     return dict(
         what=tuple(CURVES_WHAT), comps=CURVES_COMPS, sites=CURVES_SITES,
+        measures=site_measures(SITE_MEASURES),
         site_order=CURVES_SITE_ORDER, max_sites=CURVES_MAX_SITES,
         ens_mode=CURVES_ENS_MODE, max_curves=CURVES_MAX_CURVES,
         subsample=CURVES_SUBSAMPLE, member_alpha=CURVES_MEMBER_ALPHA,
@@ -1286,7 +1322,7 @@ def _curves_cfg() -> dict:
         obs_errors=CURVES_OBS_ERRORS, obs_ms=CURVES_OBS_MARKERSIZE,
         lw=CURVES_LINEWIDTH, invert_x=CURVES_INVERT_X, title=FIGURE_TITLE,
         period_lim=CURVES_PERIOD_LIM, ylim=dict(CURVES_YLIM),
-        panel_size=tuple(CURVES_PANEL_SIZE), multipage=CURVES_MULTIPAGE,
+        panel_size=tuple(_inch(v) for v in CURVES_PANEL_SIZE), multipage=CURVES_MULTIPAGE,
         appres_deg=CURVES_APPRES_PHASE_DEG, legend_loc=CURVES_LEGEND_LOC,
         wrap_mode=CURVES_PHASE_WRAP_MODE, wrap_style=CURVES_PHASE_WRAP_STYLE,
         wrap_range=tuple(CURVES_PHASE_WRAP_RANGE),
@@ -1335,10 +1371,11 @@ def _datatype_kind(dname: str) -> str:
 
 def site_nrms(ds: dict) -> Dict[str, dict]:
     """
-    Per site: number of residual values n, conventional nRMS (RMS1 reference,
-    real and imaginary parts, as in the other methods) and, if the data
-    carry them, the site coordinates x, y (NaN otherwise). Keys are the site
-    codes of the data file.
+    Per site: number of residual values n, the fit measures of
+    FIT_MEASURE_NAMES (nrms, r_mae, r_med, q95, mean, std, skew, kurt; RMS1
+    reference, real and imaginary parts, as in the other methods) and, if the
+    data carry them, the site coordinates x, y (NaN otherwise). Keys are the
+    site codes of the data file.
     """
     n = ds["freq"].size
     dn = ds["datatype_name"]
@@ -1360,14 +1397,16 @@ def site_nrms(ds: dict) -> Dict[str, dict]:
         r = np.concatenate([p[m] for p in parts])
         r = r[np.isfinite(r)]
         i0 = int(np.flatnonzero(m)[0])
+        meas = (fit_measures(r) if r.size
+                else {k: float("nan") for k in FIT_MEASURE_NAMES})
         out[str(s)] = dict(
-            n=int(r.size),
-            nrms=float(inv.nrms(r)) if r.size else float("nan"),
+            n=int(r.size), **{k: meas[k] for k in FIT_MEASURE_NAMES},
             x=float(ds["site_x"][i0]), y=float(ds["site_y"][i0]))
     return out
 
 
-def select_sites(info: Dict[str, dict], spec, order: str, max_sites: int) -> List[str]:
+def select_sites(info: Dict[str, dict], spec, order: str, max_sites: int, *,
+                 measure: str = "nrms") -> List[str]:
     """
     Choose the sites to plot from the per-site table `info` (see site_nrms).
 
@@ -1376,6 +1415,8 @@ def select_sites(info: Dict[str, dict], spec, order: str, max_sites: int) -> Lis
     order for an int spec: "even" (evenly spread over the sorted site codes),
           "id" (first N), "worst" / "best" (largest / smallest nRMS first).
           Without an int spec "worst"/"best" still order the whole list.
+    measure: the per-site value that "worst" / "best" go by (one of
+          FIT_MEASURE_NAMES; for SIGNED_MEASURES its absolute value).
     """
     ids = sorted(info)
     if spec is not None and not isinstance(spec, (int, np.integer)):
@@ -1396,13 +1437,16 @@ def select_sites(info: Dict[str, dict], spec, order: str, max_sites: int) -> Lis
             raise ValueError(f"CURVES_SITE_ORDER {order!r} not in even/id/worst/best.")
 
         def key(s: str) -> float:
-            v = info[s]["nrms"]
+            v = site_value(info[s], measure)
+            if measure in SIGNED_MEASURES:
+                v = abs(v)
             return v if np.isfinite(v) else float("-inf")
 
         if order == "worst":
             ids = sorted(ids, key=lambda s: -key(s))
         elif order == "best":
-            ids = sorted(ids, key=lambda s: (not np.isfinite(info[s]["nrms"]), key(s)))
+            ids = sorted(ids, key=lambda s: (
+                not np.isfinite(site_value(info[s], measure)), key(s)))
         if spec is None:
             sel = ids
         else:
@@ -1804,23 +1848,38 @@ def plot_site_curves(sid: str, series: Dict[str, dict], info: dict, *, M: int,
             ax.invert_xaxis()
     xy = (f", x={info['x']:g}, y={info['y']:g}"
           if np.isfinite(info["x"]) and np.isfinite(info["y"]) else "")
-    fit = "" if obs_only else f"nRMS = {info['nrms']:.2f}, "
-    _auto = (f"site {sid}{xy}, {fit}"
-             f"n = {info['n']}{' (observed only)' if obs_only else ''}\n{title_extra}")
+    measures = tuple(cfg.get("measures") or ("nrms",))
+    values = {m: ("n/a" if obs_only else f"{site_value(info, m):.2f}")
+              for m in FIT_MEASURE_NAMES}
+    fit_list = ", ".join(f"{MEASURE_LABELS[m]} = {values[m]}" for m in measures)
+    fit = "" if obs_only else f"{fit_list}, "
+    tail = f"n = {info['n']}{' (observed only)' if obs_only else ''}"
+    # many measures: on a line of their own, so that the title stays narrow
+    if not obs_only and len(measures) > 2:
+        head = f"site {sid}{xy}, {tail}\n{fit_list}"
+    else:
+        head = f"site {sid}{xy}, {fit}{tail}"
+    _auto = f"{head}\n{title_extra}"
     _sup = _resolve_title(
         cfg.get("title", "auto"), "curves", _auto, title=title_extra,
-        site=sid, sid=sid, nrms=("n/a" if obs_only else f"{info['nrms']:.2f}"))
+        site=sid, sid=sid, fit=("n/a" if obs_only else fit_list), **values)
     if _sup:
         fig.suptitle(_sup, fontsize=10)
     return fig
 
 
-def format_site_nrms(info: Dict[str, dict]) -> str:
-    hdr = f"{'site':<16} {'x':>14} {'y':>14} {'n':>7} {'nrms':>8}"
+def format_site_nrms(info: Dict[str, dict],
+                     measures: Sequence[str] = ("nrms",)) -> str:
+    """Table of every site: n, nRMS and a column for every further entry of
+    `measures` (names of FIT_MEASURE_NAMES; ASCII)."""
+    more = [m for m in measures if m != "nrms"]
+    hdr = (f"{'site':<16} {'x':>14} {'y':>14} {'n':>7} {'nrms':>8}"
+           + "".join(f" {m:>8}" for m in more))
     lines = ["=" * len(hdr), hdr, "-" * len(hdr)]
     for s in sorted(info):
         d = info[s]
-        lines.append(f"{s:<16} {d['x']:>14.6g} {d['y']:>14.6g} {d['n']:>7d} {d['nrms']:>8.3f}")
+        lines.append(f"{s:<16} {d['x']:>14.6g} {d['y']:>14.6g} {d['n']:>7d} {d['nrms']:>8.3f}"
+                     + "".join(f" {site_value(d, m):>8.3f}" for m in more))
     lines.append("=" * len(hdr))
     return "\n".join(lines)
 
@@ -1878,11 +1937,14 @@ def run_curves(ds: dict, *, out_dir: str, prefix: str, title_extra: str,
     info = site_nrms(ds)
     if WRITE_STATS:
         _write(os.path.join(out_dir, f"{prefix}_site_nrms.txt"),
-               f"# {title_extra}; per-site nRMS, conventional normalization (RMS1)\n"
+               f"# {title_extra}; per-site nRMS"
+               + (" and further measures" if cfg["measures"] != ("nrms",) else "")
+               + ", conventional normalization (RMS1)\n"
                "# x / y: site coordinates if the data carry them (nan otherwise)",
-               format_site_nrms(info))
+               format_site_nrms(info, cfg["measures"]))
     try:
-        sids = select_sites(info, cfg["sites"], cfg["site_order"], cfg["max_sites"])
+        sids = select_sites(info, cfg["sites"], cfg["site_order"], cfg["max_sites"],
+                            measure=cfg["measures"][0])
     except ValueError as exc:
         print(f"modem_data_misfit: curves: {exc}")
         return 1
@@ -2174,7 +2236,7 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
             fig = plot_crossplot_datatype(
                 dname, lst, title_extra=title_extra, has_syn=has_syn,
                 ensemble_mean=ensemble, ncols=NCOLS,
-                panel_size=PANEL_SIZE, cmap=CMAP, color_range=crange,
+                panel_size=_inch(PANEL_SIZE), cmap=CMAP, color_range=crange,
                 marker_size=MARKER_SIZE, alpha=ALPHA, log_rho=LOG_RHO,
                 show_errorbars=SHOW_ERRORBARS, equal_aspect=EQUAL_ASPECT,
                 figure_title=_resolve_title(
@@ -2182,7 +2244,9 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
                     datatype=dname),
                 panel_titles=bool(PANEL_TITLES),
                 cbar_location=CROSSPLOT_CBAR_LOCATION,
-                cbar_shrink=CROSSPLOT_CBAR_SHRINK)
+                cbar_shrink=CROSSPLOT_CBAR_SHRINK,
+                measures=PANEL_MEASURES,
+                box_fontsize=PANEL_MEASURES_FONTSIZE)
             _save(fig, os.path.join(fig_dir, f"{prefix}_crossplot_{_safe_name(dname)}"),
                   PLOT_FORMATS, PLOT_DPI)
             if SHOW:
@@ -2212,14 +2276,16 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
             fig, stats = plot_residual_histograms(
                 gname, freq, r1, r2, has_syn=has_syn,
                 per_decade=HIST_BANDS_PER_DECADE, axis=HIST_BAND_AXIS,
-                ncols=HIST_NCOLS, panel_size=HIST_PANEL_SIZE, limit=HIST_LIMIT,
+                ncols=HIST_NCOLS, panel_size=_inch(HIST_PANEL_SIZE), limit=HIST_LIMIT,
                 bin_width=HIST_BIN_WIDTH, min_n=HIST_MIN_N,
                 run_label=title_extra,
                 figure_title=_resolve_title(
                     FIGURE_TITLE, "histogram", None, title=title_extra,
                     group=gname, axis=HIST_BAND_AXIS,
                     per_decade=HIST_BANDS_PER_DECADE),
-                panel_titles=bool(PANEL_TITLES))
+                panel_titles=bool(PANEL_TITLES), measures=PANEL_MEASURES,
+                scale_measure=HIST_SCALE_MEASURE,
+                box_fontsize=PANEL_MEASURES_FONTSIZE)
             all_stats[gname] = stats
             _save(fig, os.path.join(fig_dir, f"{prefix}_hist_{_safe_name(gname)}"),
                   PLOT_FORMATS, PLOT_DPI)
@@ -2247,14 +2313,15 @@ def process_runs(runs: Sequence[dict], *, mode: str, out_dir: str, prefix: str) 
             fig, stats = plot_qq_bands(
                 gname, freq, r1, r2, has_syn=has_syn,
                 per_decade=QQ_BANDS_PER_DECADE, axis=QQ_BAND_AXIS,
-                ncols=QQ_NCOLS, panel_size=QQ_PANEL_SIZE, limit=QQ_LIMIT,
+                ncols=QQ_NCOLS, panel_size=_inch(QQ_PANEL_SIZE), limit=QQ_LIMIT,
                 confidence=QQ_CONFIDENCE, min_n=QQ_MIN_N,
                 equal_axes=QQ_EQUAL_AXES, run_label=title_extra,
                 figure_title=_resolve_title(
                     FIGURE_TITLE, "qq", None, title=title_extra,
                     group=gname, axis=QQ_BAND_AXIS,
                     per_decade=QQ_BANDS_PER_DECADE),
-                panel_titles=bool(PANEL_TITLES))
+                panel_titles=bool(PANEL_TITLES), measures=PANEL_MEASURES,
+                box_fontsize=PANEL_MEASURES_FONTSIZE)
             qq_stats[gname] = stats
             _save(fig, os.path.join(fig_dir, f"{prefix}_qq_{_safe_name(gname)}"),
                   PLOT_FORMATS, PLOT_DPI)
@@ -2283,10 +2350,28 @@ def _pairs_from_argv(argv: Sequence[str]) -> List[Tuple[str, str]]:
     return [(argv[i], argv[i + 1]) for i in range(0, len(argv), 2)]
 
 
+def _measures_ok() -> bool:
+    """False (with a message) if a setting that selects measures is invalid."""
+    try:
+        for kind in ("crossplot", "histogram", "qq"):
+            box_items(PANEL_MEASURES, kind)
+        hist_scale(HIST_SCALE_MEASURE)
+        site_measures(SITE_MEASURES)
+        size = PANEL_MEASURES_FONTSIZE
+        if isinstance(size, (bool, str)) or not float(size) > 0.0:
+            raise ValueError(f"PANEL_MEASURES_FONTSIZE must be a number > 0, got {size!r}.")
+    except (TypeError, ValueError) as exc:
+        print(f"modem_data_misfit: {exc}")
+        return False
+    return True
+
+
 def main(argv: Sequence[str]) -> int:
     import matplotlib
     if not SHOW:
         matplotlib.use("Agg")
+    if not _measures_ok():
+        return 1
 
     argv = list(argv)
     mode = RUN_MODE

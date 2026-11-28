@@ -28,8 +28,9 @@ Methods (`METHODS`):
 3. **qq** -- normal Q-Q plots of the same residuals, in the same bands.
 4. **curves** (optional) -- observed data with errors against the calculated
    response, one figure per site.
-5. **outliers** (optional) -- the sites whose nRMS is outside the limits of the
-   distribution of the site nRMS values (default: the 2-sigma quantiles); table, CSV, figure.
+5. **outliers** (on by default) -- the sites whose nRMS is outside the limits of the
+   distribution of the site nRMS values (default: the 2-sigma quantiles); table, CSV, figure,
+   separately for every run.
 
 The ensemble method `"nrms"` (nRMS histogram of all scanned members) needs an
 ensemble; it is ignored here with a message. Use `femtic_ens_misfit.py` for it,
@@ -42,8 +43,8 @@ and for RMS2, for the member curves, and for an ensemble in general.
     python femtic_mod_misfit.py "./runs/run_*/"         # glob: one set each
     python femtic_mod_misfit.py ./run01/results_iter25.h5   # a results file
 
-`femtic.py`, `inverse.py` (and `aniso.py`) and `femtic_misfit.py` must be
-importable; if `PY4MTX_ROOT` is set, `$PY4MTX_ROOT/py4mt/modules` and
+`femtic.py`, `inverse.py` (and `aniso.py`), `misfit_measures.py` and
+`femtic_misfit.py` must be importable; if `PY4MTX_ROOT` is set, `$PY4MTX_ROOT/py4mt/modules` and
 `.../scripts` are added to `sys.path`. Method `"curves"` needs `data_viz.py`.
 
 Output per run (directory = `OUT_DIR` if set, else `<directory of the chosen
@@ -62,6 +63,31 @@ results file>/<OUT_PREFIX>/`, made if missing; figures in `PLOT_DIR` if set):
   `<prefix>_site_nrms.txt`
 - `"outliers"`: `<prefix>_site_outliers.txt`, `<prefix>_site_outliers.csv` and
   `<prefix>_site_outliers.<fmt>`
+
+### Single-panel figures (optional, `SINGLE_PANELS = True`)
+
+Default `False`: the figures above, with a grid of panels. With `True` every
+panel is a figure of its own; the text tables are the same.
+
+| Method | Files |
+|---|---|
+| `"crossplot"` | `<prefix>_crossplot_<DATATYPE>_<panel>.*`, e.g. `..._MT_Re_Zxy` |
+| `"histogram"`, `"qq"` | `<prefix>_hist_<GROUP>_all.*`, `_band01`, `_band02`, ... (`qq` likewise) |
+| `"curves"` | one figure per site and entry of `CURVES_WHAT`: `..._curves_site<ID>_<name>_<what>.*`; in the multi-page PDF one page each |
+| `"outliers"` | `<prefix>_site_outliers.*` (sites) and `<prefix>_site_outliers_hist.*` (histogram) |
+
+- `NCOLS`, `HIST_NCOLS`, `QQ_NCOLS` are not used; `PANEL_SIZE`,
+  `HIST_PANEL_SIZE`, `QQ_PANEL_SIZE` and `CURVES_PANEL_SIZE` [cm] set the size
+  of one figure.
+- Colour range of the crossplots (`COLOR_RANGE`) and axis ranges of the Q-Q
+  figures are those of the combined figures.
+- The `"all"` figure pools all bands, as the first panel of the grid does.
+- With `PANEL_TITLES = False` the panel or band label is a title line of its
+  own. The saved page is fitted to the drawing, so a long title (run name,
+  own `FIGURE_TITLE`) is not cut off; the image size therefore varies a little.
+- Many files result: (data types x components x parts) crossplots, (groups x
+  bands) histograms and Q-Q figures, (sites x quantities) curves. `PLOT_DIR`
+  keeps them apart from the tables.
 
 ## Differences to femtic_data_misfit.py
 
@@ -85,32 +111,34 @@ The defaults are those in the script; paths are shortened.
 | `RUN_PATHS` | `['/media/vrath/LargeBack/Ensemb...` | Run dirs / files / globs (argv overrides) |
 | `ITERATION` | `'best'` | `"best"`, `"last"`, or integer |
 | `ITER_PATTERN` | `'results_iter*.h5'` | Search pattern in run dirs |
-| `METHODS` | `('crossplot', 'histogram', 'qq'...` | `"crossplot"`, `"histogram"`, `"qq"`, `"curves"`, `"nrms"`, `"outliers"` |
+| `METHODS` | `('crossplot', 'histogram', 'qq', 'curves', 'outliers', 'nrms')` | `"crossplot"`, `"histogram"`, `"qq"`, `"curves"`, `"outliers"`, `"nrms"` (ignored here); remove a name to switch that method off |
 | `OUT_DIR` | `None` | `None` = the directory `<run directory>/<OUT_PREFIX>/`, made if missing; or a path, used as given (no `OUT_PREFIX` sub-directory) |
 | `OUT_PREFIX` | `'Misfits'` | File prefix (prepended if several runs); also the NAME OF THE OUTPUT DIRECTORY while `OUT_DIR` is `None` |
 | `OUT_PREFIX_DIR` | `True` | `False`: with `OUT_DIR` `None` write into the run directory itself (no `OUT_PREFIX` sub-directory) |
 | `PLOT_FORMATS`, `PLOT_DPI` | `('.pdf',); 300` | Figure output; must be a tuple (`(".pdf",)` -- with the comma), a plain string is accepted as one format |
 | `PLOT_DIR` | `None` | Directory for all figures: `None` = with the tables; relative name = sub-directory of the output directory (per run); absolute path = one directory for all figures |
 | `DATATYPES`, `COMPONENTS` | `None; None` | Restrict selection |
-| `NCOLS`, `PANEL_SIZE`, `EQUAL_ASPECT` | `4; 3.3; True` | Crossplot layout |
+| `NCOLS`, `PANEL_SIZE`, `EQUAL_ASPECT` | `4; 8.382; True` | Crossplot layout; `PANEL_SIZE` = side of one panel [cm] |
 | `CMAP`, `COLOR_RANGE` | `'turbo'; 'global'` | log10 f colouring |
 | `MARKER_SIZE`, `ALPHA`, `LOG_RHO`, `SHOW_ERRORBARS` | `14.0; 0.85; True; False` | Crossplot appearance |
-| `FIGURE_TITLE` | `"auto"` | Figure titles. `"auto"` = the titles of before; `None`, `False`, `""` = none; a string, used as given, with `{key}` and the fields below filled in (`str.format`; text that cannot be filled in is used as it stands, with a note); a dict `{"crossplot": spec, "histogram": spec, "qq": spec, "curves": spec, "default": spec}` per kind of figure. Fields: all `{title}` (the run title); crossplot `{datatype}`; histogram and Q-Q `{group}`, `{axis}`, `{per_decade}`; curves `{site}`, `{sid}`, `{nrms}` (text, already formatted, `n/a` for observed-only) |
+| `FIGURE_TITLE` | `"auto"` | Figure titles. `"auto"` = the titles of before; `None`, `False`, `""` = none; a string, used as given, with `{key}` and the fields below filled in (`str.format`; text that cannot be filled in is used as it stands, with a note); a dict `{"crossplot": spec, "histogram": spec, "qq": spec, "curves": spec, "default": spec}` per kind of figure. Fields: all `{title}` (the run title); crossplot `{datatype}`; histogram and Q-Q `{group}`, `{axis}`, `{per_decade}`; curves `{site}`, `{sid}`, `{fit}`, `{nrms}` and the other measure names (text, already formatted, `n/a` for observed-only) |
 | `PANEL_TITLES` | `True` | `False` = no titles of the crossplot, histogram and Q-Q panels |
+| `PANEL_MEASURES`, `PANEL_MEASURES_FONTSIZE`, `HIST_SCALE_MEASURE`, `SITE_MEASURES` | `None`, `8.0`, `"nrms"`, `"nrms"` | Which measures of data fit are plotted; see "Choosing the plotted measures" |
+| `SINGLE_PANELS` | `False` | `True` = one figure per panel (see "Single-panel figures"); `FIGURE_TITLE` also knows `{panel}` (crossplot) and `{band}` (histogram, Q-Q) |
 | `CROSSPLOT_CBAR_LOCATION`, `CROSSPLOT_CBAR_SHRINK` | `None; 0.85` | Colour bar of the crossplots (log10 frequency): `None` = at the right as before; `"right"`, `"left"`, `"top"`, `"bottom"`; length as a fraction of the side of the panel grid. These figures use `constrained_layout`, so the thickness is not offered |
 | `HIST_BAND_AXIS` | `'frequency'` | `"frequency"` or `"period"` bands |
 | `HIST_BANDS_PER_DECADE` | `2` | Band density |
 | `HIST_BY_COMPONENT` | `False` | Per component instead of per data type |
 | `HIST_LIMIT`, `HIST_BIN_WIDTH` | `10.0; 0.5` | Histogram range and bins (values outside the range are counted as `out`) |
 | `HIST_MIN_N` | `5` | Minimum values per band |
-| `HIST_NCOLS`, `HIST_PANEL_SIZE` | `4; 3.0` | Histogram layout |
+| `HIST_NCOLS`, `HIST_PANEL_SIZE` | `4; 7.62` | Histogram layout; side of one panel [cm] |
 | `QQ_BAND_AXIS`, `QQ_BANDS_PER_DECADE` | `'frequency'; 2` | Q-Q band definition |
 | `QQ_BY_COMPONENT` | `False` | Per component instead of per data type |
 | `QQ_LIMIT` | `10.0` | Max absolute sample quantile shown |
 | `QQ_EQUAL_AXES` | `True` | Same range on both axes, square panels |
 | `QQ_CONFIDENCE` | `0.95` | Envelope level (`None` = no envelope) |
 | `QQ_MIN_N` | `10` | Minimum values per band |
-| `QQ_NCOLS`, `QQ_PANEL_SIZE` | `4; 3.0` | Q-Q layout |
+| `QQ_NCOLS`, `QQ_PANEL_SIZE` | `4; 7.62` | Q-Q layout; side of one panel [cm] |
 | `WRITE_STATS`, `SHOW` | `True; False` | Text tables / interactive display |
 | `FIT_MEASURES` | `True` | Overall fit-measure table (`<prefix>_fit_measures.txt`) |
 | `OUTLIER_METHOD` | `'quantile'` | Method `"outliers"`: `"quantile"` (the 2.275 / 97.725 % quantiles of the site nRMS for `OUTLIER_SIGMA = 2`; always flags the extreme sites), `"sigma"` (mean -+ k std), `"mad"` (median -+ k * 1.4826 * MAD) |
@@ -122,11 +150,11 @@ The defaults are those in the script; paths are shortened.
 | `CURVES_WHAT` | `('rho', 'phase', 'tipper')` | Panels: `"rho"`, `"phase"`, `"tipper"`, `"pt"` |
 | `CURVES_COMPS` | `'xx, xy, yx, yy'` | Impedance components for rho / phase panels |
 | `SITE_MERGE_BY_POSITION` | `True` | Same position = same site id (first occurrence); see "Site ids" |
-| `SITE_MERGE_TOL` | `1.0` | Positions closer than this [m] are the same site |
+| `SITE_MERGE_TOL` | `0.001` | Positions closer than this [km] are the same site (0.001 = 1 m); a value of 1 or more is refused |
 | `CURVES_SITE_DAT` | `'auto'` | `site.dat` for site names (`None` = no names): `"auto"` = the local `site.dat` (results directory and up to two levels above, then the current working directory), or a path |
 | `CURVES_SITE_ID_OFFSET` | `0` | `site_id` = `sitenum` + offset (only for `CURVES_SITE_MATCH = "id"` and as the no-coordinates fallback) |
 | `CURVES_SITE_MATCH` | `'auto'` | Assign names by position (`"auto"`, `"coords"`) or by id (`"id"`) |
-| `CURVES_SITE_TOL` | `15.0` | Largest distance [m] for a coordinate match |
+| `CURVES_SITE_TOL` | `0.015` | Largest distance [km] for a coordinate match (0.015 = 15 m); a value of 1 or more is refused |
 | `CURVES_NAME_CASE` | `None` | Site names in the figure title and the file names: `None` = as in `site.dat`, `"upper"`, `"lower"`. The title reads `site NAME (site#)`, or `site site#` for a site without a name |
 | `CURVES_SITES` | `None` | `None` = all; int N; or a LIST of `site_id` values and/or names of the local `site.dat` (any case; merged-away ids such as VTF 1001 select their site; one string `"A01, A02"` also works). A list gives one file per site, see `CURVES_MULTIPAGE` The string `"outliers"` = the sites found by the method `"outliers"` (one file per site, as for a list). |
 | `CURVES_SITE_ORDER` | `'even'` | For int `CURVES_SITES`: `"even"`, `"id"`, `"worst"`, `"best"` |
@@ -136,7 +164,7 @@ The defaults are those in the script; paths are shortened.
 | `CURVES_OBS_MARKERSIZE`, `CURVES_LINEWIDTH` | `3.5; 1.2` | Appearance |
 | `CURVES_INVERT_X` | `False` | Period increasing to the right (a frequency axis would decrease to the right). `True` = flipped, the old `data_viz` orientation (period decreasing to the right); default `True` before 2026-11-11 |
 | `CURVES_PERIOD_LIM`, `CURVES_YLIM` | `None; {'rho': None, 'phase': (-180.0,...` | Period limits; dict of y limits per panel |
-| `CURVES_PANEL_SIZE` | `(4.2, 3.4)` | Panel width, height [in] |
+| `CURVES_PANEL_SIZE` | `(10.668, 8.636)` | Panel width, height [cm] |
 | `CURVES_LEGEND_LOC` | `'below'` | `"below"`, a matplotlib `loc`, or `None` |
 | `CURVES_MULTIPAGE` | `None` | `None` = auto: one multi-page PDF for all / N sites, single PDFs for a list of sites; `True` / `False` force it. Other formats (`.jpg`, `.png`, ...) are always one file per site in `<prefix>_curves/` |
 | `CURVES_APPRES_PHASE_DEG` | `True` | APP_RES_AND_PHS phase in degrees (else radians) |
@@ -145,18 +173,20 @@ The defaults are those in the script; paths are shortened.
 | `CURVES_PHASE_WRAP_RANGE` | `(-180.0, 180.0)` | The phase window; `(-3.14159, 3.14159)` for phases in radians |
 | `CURVES_MAP` | `False` | Small map of the sites in every "curves" figure: the current site marked, all sites coloured by their nRMS (see "Site map in the curves figures" in `femtic_misfit_readme.md`) |
 | `CURVES_MAP_PLACEMENT` | `'right'` | `"right"` / `"left"`: an own column next to the panels (the figure gets wider by `CURVES_MAP_SIZE`); `"top"` / `"bottom"` (also `"above"` / `"below"`): an own row above / below the panels, across the whole width (the figure gets higher by `CURVES_MAP_SIZE`); `"upper right"`, `"upper left"`, `"lower right"`, `"lower left"`: inset in that corner of the last (right) / first (left) panel, on top of the curves |
-| `CURVES_MAP_SIZE` | `4.3` | Side of the map block (map and colour bar) in **cm**: width of the column, height of the row, or size of the inset (4.3 cm = 1.7 in; figure sizes such as `CURVES_PANEL_SIZE` stay in inches) |
+| `CURVES_MAP_SIZE` | `4.3` | Side of the map block (map and colour bar) in **cm**: width of the column, height of the row, or size of the inset (all figure sizes are in cm) |
 | `CURVES_MAP_TICKS` | `True` | Ticks and labels in model coordinates [km]; `False` = none (frame only) |
 | `CURVES_MAP_AXES` | `'ne'` | Which results-file coordinate is which: `"ne"` = `site_x` north (vertical), `site_y` east (horizontal), the FEMTIC convention; `"en"` = `site_x` east, `site_y` north. The map always has east horizontal and north vertical |
-| `CURVES_MAP_CMAP` | `None` | `None` = single-hue blue ramp, light = low nRMS, dark = high; or the name of a Matplotlib colormap |
+| `CURVES_MAP_CMAP` | `None` | `None` = single-hue blue ramp, light = low, dark = high (signed measures: `coolwarm`); or the name of a Matplotlib colormap |
 | `CURVES_MAP_NRMS_RANGE` | `None` | `(lo, hi)` of the colour scale; `None` = smallest / largest site nRMS |
+| `CURVES_MAP_MEASURE_RANGE` | `None` | The same, used instead if the first entry of `SITE_MEASURES` is not `"nrms"`; signed measures: symmetric about 0 by default |
 | `CURVES_MAP_MARKER_SIZE` | `12.0` | Size of a site marker [pt^2]; the current site is 4 times larger, with a ring |
 
 ## Site outliers (method `"outliers"`)
 
-Which sites fit much worse (or better) than the others? Add `"outliers"` to `METHODS`: the
-nRMS of every site (the value of `<prefix>_site_nrms.txt`) is compared with the
-distribution of the site values, and the sites outside the limits are listed. Default:
+Which sites fit much worse (or better) than the others? With `"outliers"` in `METHODS` (the
+default; remove it to switch the method off) the nRMS of every site (as in
+`<prefix>_site_nrms.txt`) is compared with the distribution of the site values, and the
+sites outside the limits are listed. Default:
 the 2-sigma quantiles of the site nRMS values (2.275 % and 97.725 %, `OUTLIER_METHOD =
 "quantile"`, `OUTLIER_SIGMA = 2`); `"sigma"` (mean -+ k std) and `"mad"` (median -+ k *
 1.4826 MAD, robust) are the alternatives; `OUTLIER_SIDE` = `"both"` | `"high"` | `"low"`;
@@ -174,7 +204,7 @@ Site names as for `"curves"` (`CURVES_SITE_DAT`, ...). The work is done in `femt
 ## Fit measures
 
 Several measures of data fit are computed for the error-normalized
-residuals r, using the routines in `inverse.py` (`nrms`, `r_mae`, `r_med`,
+residuals r (`modules/misfit_measures.py`), using the routines in `inverse.py` (`nrms`, `r_mae`, `r_med`,
 `q95`), the mean of r (bias) and its higher moments:
 
 | Measure | Definition | Expected for r ~ N(0,1) |
@@ -219,6 +249,68 @@ Q-Q table keeps its own robust slope/intercept statistics and adds
 `skew` and `kurt` of the plotted residuals (RMS2-normalized for an
 ensemble, else RMS1).
 
+### Choosing the plotted measures
+
+Which measures the figures show is chosen with the settings below; the defaults
+give the figures of before. The text tables list what they listed before (only
+the per-site files follow `SITE_MEASURES`, see below).
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `PANEL_MEASURES` | `None` | Text box of every crossplot, histogram and Q-Q panel. `None` = as before: crossplot `n`, `nrms`; histogram `n`, `nrms`, `n_out`; Q-Q `n`, `slope`, `icpt`. A list is used for all three kinds of figure; a dict `{"crossplot": list, "histogram": list, "qq": list, "default": list}` sets them one by one; `False` or `()` = no box |
+| `PANEL_MEASURES_FONTSIZE` | `8.0` | Font size of that box [pt] |
+| `HIST_SCALE_MEASURE` | `"nrms"` | Scale s of the red curve N(0, s^2) and of the blue dashed lines at +/- s in the histograms: `"nrms"`, `"r_mae"`, `"r_med"` or `"q95"` (s = q95 / 1.96); `None` = neither is drawn |
+| `SITE_MEASURES` | `"nrms"` | Per-site value(s): a name or a list of names, see below |
+| `CURVES_MAP_MEASURE_RANGE` | `None` | `(lo, hi)` of the colour scale of the site map if the first entry of `SITE_MEASURES` is not `"nrms"` (for nRMS: `CURVES_MAP_NRMS_RANGE`); `None` = smallest / largest value, for signed measures symmetric about 0 |
+
+Entries of `PANEL_MEASURES`:
+
+- the measures `nrms`, `r_mae`, `r_med`, `q95`, `mean`, `std`, `skew`, `kurt`
+  (also accepted: `rms`, `rmae`, `rmed`, `bias`);
+- `n` (number of values), `slope` and `icpt` (quartile line of the normal Q-Q
+  plot; also `intercept`);
+- `n_out` (histogram and Q-Q only: values outside +/- `HIST_LIMIT` / `QQ_LIMIT`,
+  written only if > 0) and `out_pct` (Q-Q only: dots outside the envelope).
+
+In a list for all figures an entry that does not apply to a kind of figure is
+left out there; in the list of that one kind it is an error. With RMS2 shown
+(`SHOW_RMS2`), the measures and `slope` are written twice (suffix 1 / 2), while
+`icpt` and `n_out` refer to the plotted variant. An unknown name stops the run
+with a message. Long lists need a smaller `PANEL_MEASURES_FONTSIZE` or larger
+panels.
+
+```python
+PANEL_MEASURES = {"crossplot": ["n", "nrms", "r_med"],
+                  "histogram": ["n", "nrms", "r_mae", "r_med", "skew", "n_out"],
+                  "qq": ["slope", "icpt", "out_pct"]}
+HIST_SCALE_MEASURE = "r_med"
+SITE_MEASURES = ["r_med", "nrms"]
+```
+
+`SITE_MEASURES`:
+
+- method `"outliers"`: one analysis per entry (table, CSV and figure; the file
+  names of entries other than `nrms` get the suffix `_<measure>`, e.g.
+  `<prefix>_site_outliers_r_med.txt`);
+- method `"curves"`: all entries appear in the figure title; the FIRST entry
+  colours the site map, orders `CURVES_SITE_ORDER = "worst"` / `"best"` and
+  selects `CURVES_SITES = "outliers"`;
+- `<prefix>_site_nrms.txt` gets one column per further entry;
+- `mean`, `skew` and `kurt` can be negative: worst / best go by the absolute
+  value, the map uses `coolwarm` about 0 (unless `CURVES_MAP_CMAP` /
+  `CURVES_MAP_MEASURE_RANGE` are set) and `OUTLIER_LOG10` is ignored.
+
+A site value is computed from the residuals of that site only. With few values,
+`std`, `skew` and `kurt` in particular scatter strongly (`skew` needs n >= 3,
+`kurt` n >= 4; otherwise the value is `nan`).
+
+Title fields of "curves" (`FIGURE_TITLE`): `{fit}` (all entries of
+`SITE_MEASURES`, e.g. `rMED = 1.12, nRMS = 1.35`) and one field per measure
+(`{nrms}`, `{r_med}`, ...; `n/a` for observed-only).
+
+The routines are in `modules/misfit_measures.py` (see
+`misfit_measures_readme.md`).
+
 ## Site ids: one id per position
 
 Different data types often number the same station differently; in one
@@ -229,7 +321,7 @@ data type would be a separate "site" in the per-site table and in the
 
 With `SITE_MERGE_BY_POSITION = True` (default) the script therefore checks
 the position (`site_x`, `site_y`) of each station of each data type and gives
-all rows at the same position -- within `SITE_MERGE_TOL` (default 1 m) --
+all rows at the same position -- within `SITE_MERGE_TOL` (default 0.001 km = 1 m) --
 the `site_id` of the **first occurrence** of that position, in the row order
 of the results file (normally the impedance data). VTF 1001 becomes 1, and so
 on. Consequences:
@@ -282,6 +374,39 @@ conductivity structure models. Earth, Planets and Space 75, 67.
 https://doi.org/10.1186/s40623-023-01832-5
 
 ## Changelog
+
+### 2026-11-27 -- choice of the plotted measures, sizes in cm (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- The measures of data fit that are plotted can be chosen: `PANEL_MEASURES` (panel boxes),
+  `PANEL_MEASURES_FONTSIZE`, `HIST_SCALE_MEASURE` (red curve and blue lines of the histograms),
+  `SITE_MEASURES` (outliers, curve titles, site map, ordering of sites) and
+  `CURVES_MAP_MEASURE_RANGE`; see "Choosing the plotted measures". The defaults give the
+  output of before (compared on synthetic data).
+- `PANEL_SIZE`, `HIST_PANEL_SIZE`, `QQ_PANEL_SIZE` and `CURVES_PANEL_SIZE` are in **cm**
+  (before: inch). Defaults: `8.382`, `7.62`, `7.62`, `(10.668, 8.636)`, i.e. the former
+  `3.3`, `3.0`, `3.0`, `(4.2, 3.4)`. Multiply personal values by 2.54.
+- Needs `femtic_misfit.py` of the same date and the new module `misfit_measures.py`.
+
+### 2026-11-26 -- site tolerances in km (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- All user settings are in km, as in the other scripts: `SITE_MERGE_TOL` `0.001` (before `1.0` m) and
+  `CURVES_SITE_TOL` `0.015` (before `15.0` m). A personal setting in metres must be converted; a value
+  of 1 or more is refused with a message and the run stops.
+- Site coordinates read from `site.dat` and from the results file stay in metres.
+- Needs `femtic_misfit.py` of the same date. Results are the same as before for the same tolerances.
+
+### 2026-11-26b -- optional single-panel figures (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- New setting `SINGLE_PANELS` (default `False` = figures as before): one figure per crossplot panel,
+  per histogram / Q-Q band, per site and quantity of `"curves"`, and the sites and the histogram of
+  `"outliers"` separately. Needs `femtic_misfit.py` of the same date.
+- Tested on synthetic data only; **not run on results of a real run.**
+
+### 2026-11-26 -- "outliers" on by default (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- `"outliers"` is now in the default `METHODS` of the script (before: to be added by hand), so every
+  run also gets `<prefix>_site_outliers.txt` / `.csv` / `.<fmt>`. The `OUTLIER_*` settings and
+  `femtic_misfit.py` are unchanged.
+- Tested through `main()` on two synthetic runs with planted bad and unusually well fitted sites
+  (both found), with the `"mad"` method and `CURVES_SITES = "outliers"`, and with `OUTLIER_SIDE =
+  "high"`; `femtic.read_results_data` replaced by a stand-in (no h5py).
+  `test_femtic_site_outliers.py` passes. **Not run on results of a real run.**
 
 ### 2026-11-22 -- method "outliers" (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
 - New method `"outliers"` (add it to `METHODS`) and the settings `OUTLIER_METHOD` (`"quantile"` = the

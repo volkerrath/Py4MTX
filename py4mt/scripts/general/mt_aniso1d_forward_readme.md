@@ -75,3 +75,10 @@ are written to text files and optionally plotted.
 ## Dependencies
 
 `numpy`, `matplotlib`; py4mt: `aniso`, `data_proc`, `viz`, `util`, `version`.
+
+## Changes 2026-11-27 (figure size in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.  The figure sizes are
+settings in cm: `FIG_SIZE = (40.64, 40.64)` (impedance and rho/phase figures)
+and `FIG_SIZE_PT = (40.64, 20.32)` (phase tensor figure). Before, they were
+fixed in the code in inch; the defaults give the same figures.

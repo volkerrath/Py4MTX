@@ -157,3 +157,10 @@ whenever `CLUSTER_VARS`, `CLUSTER_WEIGHTS`, `STANDARDIZE`,
 any plotting setting change. Re-run `interpolate.py` first (see
 `README_interpolate.md`) whenever the interpolated grid itself needs to
 change.
+
+## Changes 2026-11-27 (sizes in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.
+
+`cluster.py`: `COLORBAR_PAD` is in **cm** (before: inch); the default `0.254` is the former
+`0.10`. Multiply a personal value by 2.54.

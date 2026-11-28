@@ -1,105 +1,74 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-femtic_mod_plot_slice.py — 2-D slice panels for a FEMTIC resistivity model.
+femtic_mod_plot_slice.py -- slice figures of single FEMTIC resistivity models
+(mod family): horizontal maps, N-S / E-W curtains, arbitrary planes and fence
+sections by exact tetrahedron-plane intersection (fviz.plot_model_slices).
 
-Produces one figure with horizontal map, N-S curtain, E-W curtain, and/or
-arbitrary plane slices using exact tetrahedron-plane intersection
-(``fviz.plot_model_slices``).
+The settings are those of femtic_ens_plot_slices.py (same MOD_* names, same
+meaning, lengths in km) without everything that belongs to ensemble
+statistics. Several runs can be given, as in femtic_mod_misfit.py: every entry
+of RUN_PATHS is a model of its own (no ensemble) and gets its own figure.
 
-Sister scripts:
-  ``femtic_mod_plot_bh.py``  — 1-D ρ(z) borehole log figures.
-  ``femtic_mod_plot_3d.py``  — PyVista 3-D rendering and VTK/VTU export.
+Usage
+-----
+    python femtic_mod_plot_slice.py                       # RUN_PATHS
+    python femtic_mod_plot_slice.py kra_rto_0 kra_rto_1   # two run directories
+    python femtic_mod_plot_slice.py "kra*/"               # quote globs
+    python femtic_mod_plot_slice.py -w /data/ann ann_rto_orig-err_0/resistivity_block_iter10.dat
 
-Family: the "mod" scripts draw SINGLE models (this script, mod_plot_bh,
-mod_plot_3d, with mod_math / mod_edit for model arithmetic and editing); the
-"ens" scripts (femtic_ens_post, femtic_ens_plot_slices, femtic_ens_plot_bh,
-and the quality-control script femtic_data_misfit) work on the ensemble.
+Runs
+----
+An entry of RUN_PATHS (or of the command line, which replaces it) is a run
+directory (the model of ITERATION), a block file, a results_iterN.h5 file
+(= the block file of that iteration; the HDF5 file is not read) or a glob of
+these. Relative entries start at WORK_DIR (-w / --work-dir replaces it; None
+or "" = current directory). Quote globs so the shell does not expand them.
 
-One model or several (batch)
-----------------------------
-MODEL_FILE is, as before, ONE resistivity block file; PLOT_FILE is its figure.
-It can also be
+MOD_MESH, MOD_SITE_DAT, MOD_OBSERVE_FILE, MOD_REF_FILE and MOD_ALPHA_FILE are
+looked up per run: a relative name in the run directory first, then in
+WORK_DIR; an absolute path is used for every run. Mesh centre, sites and the
+automatic region of interest are therefore determined run by run.
 
-    a list of block files,
-    a glob pattern  ("ens/ens_*/resistivity_block_iter0.dat"),
-    run directories (a directory, a list, or a glob such as "ens/ens_*"):
-        the block file is chosen by MODEL_ITER,
-            "last" -- the iteration of the last row of femtic.cnv,
-            "best" -- the iteration with the lowest nRMS in femtic.cnv,
-            N      -- resistivity_block_iterN.dat (0 = starting model; for
-                      an RTO member the perturbed prior),
-            or a list such as [0, "last"] (one figure each).
+An entry without a model is reported and skipped. A model that fails is
+reported and skipped too; the others are still plotted. Return code: 0 = all
+models found were plotted, 1 = one failed or none found, 2 = WORK_DIR missing.
 
-With more than one resulting model there is ONE FIGURE PER MODEL, named
-<label>_<tag>_slices.<ext> (label = run directory, tag = "iterN") in
-BATCH_OUT_DIR (None = the model's own directory); the nRMS of that iteration
-(from femtic.cnv) is annotated, and, with BATCH_CATALOG, all figures are also
-collected in one multi-page PDF. PLOT_FILE is not used then. This takes over
-the per-member "iter0 / best" figures of the former femtic_ens_plot.py.
+Output
+------
+Per model and MOD_PLOT_FORMAT entry:
 
-Slice positions can be given in three equivalent systems
----------------------------------------------------------
-Every horizontal slice position key (``x0``, ``y0``, and the horizontal
-components of ``point``) can optionally carry a coordinate-system tag by
-replacing the plain scalar with a two-element tuple:
+    <dir>/[<OUT_PREFIX>_]<label>_<tag>_slices.<fmt>
 
-    (value, "crs")
+label = run directory name, tag = "iterN"; <dir> = OUT_DIR, else
+<run dir>/<OUT_PREFIX> (if OUT_PREFIX is set and OUT_PREFIX_DIR), else the run
+directory. MOD_QC_FILE names the files of a single model explicitly;
+MOD_CATALOG collects all figures in one multi-page PDF. With
+MOD_SINGLE_PANELS = True every slice becomes a figure of its own
+(..._slices_01_<kind>.<fmt>, ..._02_<kind>, ...). The parameter summary
+femtic_mod_plot_slice_summary.md goes to WORK_DIR.
 
-where ``crs`` is one of:
+Slice positions
+---------------
+All lengths are km, UTM coordinates too.
+x0 / y0: model-local km, or (value, "utm") [km] / (value, "latlon") [deg];
+z0: km, positive down. "plane" entries: point in km (or tagged), strike, dip.
+"profile" entries: p1, p2 (model-local km, UTM km or latlon), z_top, z_bot
+in km, as in femtic_ens_plot_slices.py. See the comments at MOD_SLICES.
 
-    "model"   model-local metres, origin at mesh centre (default; a bare
-              float is treated as "model" — fully backward-compatible)
-    "utm"     UTM metres in the same zone as the mesh origin (zone number
-              is auto-derived from UTM_ORIGIN_LAT / UTM_ORIGIN_LON)
-    "latlon"  geographic decimal degrees (longitude for x0 / NS slices,
-              latitude for y0 / EW slices)
+Needs femtic.py, femtic_viz.py and util.py (PY4MTX_ROOT, PY4MTX_DATA).
 
-The conversion chain is always:
+Sister scripts: femtic_mod_plot_bh.py (borehole logs), femtic_mod_plot_3d.py
+(PyVista), femtic_mod_misfit.py (data misfit); ensemble counterpart:
+femtic_ens_plot_slices.py.
 
-    lat/lon ──► UTM(m) ──► model-local(m)
-    UTM(m)            ──► model-local(m)
-    model-local(m)    ──► (no-op)
+AI-generated code (Claude Sonnet 5.5, Anthropic, 2026-11-26) -- review before
+production use.
 
-Depth (z0) is always in model-local metres; no geographic conversion applies.
-
-Examples (inside PLOT_SLICES)
-------------------------------
-    # Plain float — model-local metres (unchanged from previous version):
-    dict(kind="map",  z0=5000.0)
-    dict(kind="ns",   x0=0.0)
-
-    # UTM easting for the NS curtain:
-    dict(kind="ns",   x0=(229047.0, "utm"))
-
-    # Geographic longitude for the NS curtain:
-    dict(kind="ns",   x0=(-71.537, "latlon"))
-
-    # Geographic latitude for the EW curtain:
-    dict(kind="ew",   y0=(-16.409, "latlon"))
-
-    # Arbitrary plane through a geographic point:
-    dict(kind="plane",
-         point=([-71.5, -16.4, 5000.0], "latlon"),
-         strike=45., dip=70.)
-
-    # Two-point vertical profile (fence section) — strike auto-derived:
-    dict(kind="profile",
-         p1=([-71.50, -16.30], "latlon"),  # start endpoint [lon, lat]
-         p2=([-70.90, -16.40], "latlon"),  # end   endpoint [lon, lat]
-         z_top=0.0, z_bot=20000.0)         # depth extent [m, z-down]
-
-UTM zone derivation
---------------------
-    Zone number is computed from ``UTM_ORIGIN_LON`` (standard 6° bands,
-    ignoring Norway / Svalbard exceptions).  Override with
-    ``UTM_ZONE_OVERRIDE`` (positive integer) when needed.
-
-Display coordinate system
---------------------------
-    DISPLAY_COORDS = "model"  — axis ticks in model-local metres (default)
-    DISPLAY_COORDS = "utm"    — axis ticks in absolute UTM metres
-    DISPLAY_COORDS = "latlon" — axis ticks in decimal degrees
+@author vrath
+@project py4mt
+@created 2026-05-06 (Claude Sonnet 4.6, Anthropic)
+@modified 2026-11-26 (Claude Sonnet 5.5, Anthropic)
 
 Provenance
 ----------
@@ -207,7 +176,6 @@ Provenance
                 the same date; vertical sections and other kinds unchanged.
                 AI-generated; review before production use.
 
-@author: vrath
     2026-11-10  Claude Sonnet 5.5 (Anthropic)
                 Slice maps were transposed (x = easting and y = northing
                 exchanged: a NNE structure was drawn ENE). Cause: since
@@ -291,18 +259,69 @@ Provenance
                 femtic_viz.py of the same date. Tested on a synthetic mesh
                 only.
                 AI-generated; review before production use.
+
+    2026-11-26  Claude Sonnet 5.5 (Anthropic)
+                Rewritten with the settings of femtic_ens_plot_slices.py
+                (without the ensemble statistics) and several runs as in
+                femtic_mod_misfit.py. CHANGED: MODEL_FILE / PLOT_FILE /
+                MODEL_ITER / BATCH_* -> RUN_PATHS, ITERATION (default "best"),
+                command line and -w / --work-dir; OUT_DIR, OUT_PREFIX,
+                OUT_PREFIX_DIR, MOD_QC_FILE, MOD_CATALOG, MOD_PLOT_FORMAT.
+                PLOT_* and unprefixed settings are now MOD_*, and lengths are
+                km (model-local positions, z0, limits, projection distance,
+                polylines, markers). New: MOD_REF_*, MOD_ROI_*, MOD_VERT_EXAG,
+                MOD_TICK_DECIMALS, MOD_SHOW_IN_SPYDER, main(). Figure titles
+                are on by default (MOD_TITLE = "auto"). Mesh, site list,
+                reference and alpha file, mesh centre and sites are per run.
+                nRMS box and title use the row of the plotted iteration in the
+                run's own convergence file (before: one model = last row, with
+                WORK_DIR as fall-back). Fix: the broken WORK_DIR line raised
+                NameError. Needs femtic.py and femtic_viz.py of the same date.
+                Tested on synthetic files only.
+                AI-generated; review before production use.
+
+    2026-11-26b Claude Sonnet 5.5 (Anthropic)
+                Optional single-panel output: new MOD_SINGLE_PANELS (default
+                False) draws one figure per displayed slice
+                (fviz.single_panel_jobs). RUN_PATHS now defaults to the glob
+                "*_L2" (all run directories, ITERATION) instead of one block
+                file. Needs femtic_viz.py of the same date. Tested on
+                synthetic files only. AI-generated; review before production
+                use.
+    2026-11-26c Claude Sonnet 5.5 (Anthropic)
+                Default settings replaced by those of
+                femtic_ens_plot_slices.py; the former ones (carried over from
+                the earlier script) did not fit the current surveys: WORK_DIR
+                (Krafla ensemble), RUN_PATHS ["kra*/"], mesh, site list,
+                observe and reference file in templates/, MOD_SLICES (maps at
+                0 ... 5 km), MOD_MAP_MARKERS (model centre), UTM display,
+                sites on maps, region of interest from the sites
+                (MOD_ROI_AUTO, MOD_*LIM None), "jet_r" [0, 4], 3 x 3 layout,
+                one colour bar at the bottom, font sizes, MOD_DPI 400. No
+                change of the code. Tested on synthetic files only.
+                AI-generated; review before production use.
+
+2026-11-26 (km)  Claude Sonnet 5.5 (Anthropic)
+              User settings are km throughout, UTM coordinates too (before:
+              UTM and some per-entry values in metres). Personal settings in
+              metres must be converted; values that look like metres stop
+              with an error (fem.KmUnitError). Concerns MOD_UTM_ORIGIN_E /
+              _N, (value, 'utm') positions, profile p1 / p2 / z_top / z_bot
+              / xlim / ylim, per-panel limits and polylines. Needs femtic.py
+              of the same date. Tested on synthetic files only.
+              AI-generated; review before production use.
 """
 
+from __future__ import annotations
+
+import argparse
+import gc
 import os
 import sys
 from pathlib import Path
-import gc
-import inspect
+
 import numpy as np
 
-# ---------------------------------------------------------------------------
-# Py4MTX-specific settings and imports
-# ---------------------------------------------------------------------------
 PY4MTX_DATA = os.environ["PY4MTX_DATA"]
 PY4MTX_ROOT = os.environ["PY4MTX_ROOT"]
 
@@ -311,760 +330,774 @@ for _base in [PY4MTX_ROOT + "/py4mt/modules/"]:
         if _p.is_dir() and str(_p) not in sys.path:
             sys.path.insert(0, str(_p))
 
-from version import versionstrg
-import util as utl
 import femtic as fem
-
-try:
-    import femtic_viz as fviz
-except ImportError:
-    fviz = None
+import femtic_viz as fviz
+import util as utl
+from version import versionstrg
 
 version, _ = versionstrg()
-fname = inspect.getfile(inspect.currentframe())
-titstrng = utl.print_title(version=version, fname=fname, out=False)
+titstrng = utl.print_title(version=version, fname=__file__, out=False)
 print(titstrng + "\n\n")
 
 # ===========================================================================
-# Configuration
+# USER SECTION -- all user-set parameters below are UPPERCASE
 # ===========================================================================
-
 # ---------------------------------------------------------------------------
-# Paths
+# Runs to plot (as in femtic_mod_misfit.py / femtic_ens_misfit.py)
 # ---------------------------------------------------------------------------
-WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/1_L2/"
-#: Resistivity block to display (any iteration).
-MODEL_FILE = WORK_DIR + "resistivity_block_iter21.dat"
-PLOT_FILE = WORK_DIR + "UbiSlice_alpha_10.pdf"
+#: Base directory: relative entries of RUN_PATHS and of the command line, and
+#: relative OUT_DIR, MOD_CATALOG and MOD_QC_FILE start here; it is also the
+#: second place where the per-run files (mesh, site list, ...) are looked for.
+#: None or "" = current directory. Command line: -w / --work-dir.
+WORK_DIR = r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial_nodist/"
+# WORK_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
+# WORK_DIR = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_fine/krafla_ens_fine_paired/"
 
+#: Runs to plot: one entry or many, every model gets its own figure(s).
+#:   a run directory   "1_L2"          -> the model of ITERATION in it
+#:   a block file      "1_L2/resistivity_block_iter21.dat"
+#:   a results file    "1_L2/results_iter21.h5" -> block file of iteration 21
+#:   a glob of these   "*_L2"
+#: Command-line arguments replace this list.
+RUN_PATHS = [
+    # "kra*/",                                 # every member run in WORK_DIR
+    # single runs / block files instead:
+    # "krafla_rto_0/",
+    # "krafla_rto_0/resistivity_block_iter10.dat",
+    r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial_restart/ini_*/"
+]
 
-# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/05_L2/"
-# #: Resistivity block to display (any iteration).
-# MODEL_FILE = WORK_DIR + "resistivity_block_iter26.dat"
-# PLOT_FILE = WORK_DIR + "UbiSlice_alpha_05.pdf"
+#: Iteration taken from a run directory (not used for files):
+#:   "best"  lowest nRMS in the convergence file
+#:   "last"  last row of the convergence file
+#:   N       resistivity_block_iterN.dat (0 = starting model / perturbed prior)
+#:   a list  e.g. [0, "best"]: one figure per entry and run
+ITERATION = "best"
 
-# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/105_L2/"
-# #: Resistivity block to display (any iteration).
-# MODEL_FILE = WORK_DIR + "resistivity_block_iter13.dat"
-# PLOT_FILE = WORK_DIR + "UbiSlice_alpha_15.pdf"
-
-# WORK_DIR = r"/home/vrath/MT_Data/Ubinas/ubinas_10_LC/2_L2/"
-# #: Resistivity block to display (any iteration).
-# MODEL_FILE = WORK_DIR + "resistivity_block_iter20.dat"
-# PLOT_FILE = WORK_DIR + "UbiSlice_alpha_20.pdf"
-
-
-# ---------------------------------------------------------------------------
-# Several models in one run (batch) - optional
-# ---------------------------------------------------------------------------
-#: MODEL_FILE above may also be a list of block files, a glob pattern, or run
-#: directories (a directory, a list, or a glob such as WORK_DIR + "../ens_*").
-#: For run directories MODEL_ITER chooses the block file:
-#:   "last" - iteration of the last row of femtic.cnv (best-fit model of a
-#:            converged run)
-#:   "best" - iteration with the lowest nRMS in femtic.cnv
-#:   N      - resistivity_block_iterN.dat (0 = starting model / perturbed prior)
-#:   a list - e.g. [0, "last"]: one figure per entry and run
-#: MODEL_ITER does not apply to block files given as files.
-MODEL_ITER = "last"
-
-#: With more than one model: one figure per model, named
-#: <label>_<tag>_slices.<ext> (label = run directory, tag = "iterN").
-#: Directory for the figures; None = the model's own directory.
-BATCH_OUT_DIR = None
-#: Figure formats (without dot), e.g. ("pdf", "png"); None = the extension of
-#: PLOT_FILE.
-BATCH_FORMATS = None
-#: Multi-page PDF with one page per model: None = none; "auto" =
-#: <BATCH_OUT_DIR or the common parent directory>/catalog_slices.pdf; or a
-#: path. Needs "pdf" among the formats.
-BATCH_CATALOG = None
-#: Figure title template of the batch; {label}, {iter}, {tag}, {nrms} (and
-#: {alpha}, {file}) are filled in, as for FIGURE_TITLE (which takes its place
-#: when BATCH_TITLE is None or "").
-BATCH_TITLE = "{label} - iteration {iter}"
-
-#: Mesh file — always required for plotting.
-MESH_FILE = WORK_DIR + "mesh.dat"
-
-
-#: x/y column swap applied when the mesh is read (femtic.read_femtic_mesh).
-#: FEMTIC stores mesh.dat nodes as x = northing, y = easting, z down; the
-#: plotting code (femtic_viz, sites from site.dat, slice positions) works in
-#: a geographic frame (x = easting, y = northing). True (default) swaps the
-#: two columns on read, which gives that frame: maps, curtains and sites then
-#: line up, and strikes come out with the right bearing. False draws the
-#: model transposed (a N30E structure appears as N60E, x/y exchanged); it is
-#: only for meshes that were already written as x = easting, y = northing.
-#: None = leave femtic's module default (False) untouched.
-MESH_SWAP_XY = True
-if MESH_SWAP_XY is not None:
-    fem.MESH_SWAP_XY = bool(MESH_SWAP_XY)
-
-#: observe.dat — used as fallback site-overlay source when SITE_DAT is None
-#: and SITE_NUMBER is not None.
-OBSERVE_FILE = WORK_DIR + "observe.dat"
-
-#: Site list produced by mt_make_sitelist.py (WHAT_FOR="femtic_site").
-#: Format (comma-separated, no header):
-#:   name, lat, lon, elev, sitenum, easting, northing
-#: Easting/northing are UTM metres; model-local x/y is derived via
-#: fem.utm_to_model using the mesh-centre origin.
-#: Set to None to fall back to the observe.dat / SITE_NUMBER path.
-SITE_DAT = WORK_DIR + "site.dat"   # set to None to disable
-#: Name of the FEMTIC convergence file: one name or a list of candidate names
-#: (the first one that exists is used; names are also matched ignoring upper /
-#: lower case). Searched in each run directory (MODEL_FILE = run directories)
-#: and, for one model file, in the directory of that file, then in WORK_DIR.
-#: A full path is also accepted. Same setting as in all femtic_* scripts.
+#: Convergence file of a run: one name or candidates (first that exists; case
+#: is ignored). Used for ITERATION and the nRMS annotation / title.
 CNV_FILE = ["femtic.cnv", "FEMTIC-DABIC.cnv"]
+
+# ---------------------------------------------------------------------------
+# Mesh (required)
+# ---------------------------------------------------------------------------
+#: Relative names: looked for in each run directory, then in WORK_DIR.
+MOD_MESH = "templates/mesh.dat"
+
+#: Swap of the first two node-coordinate columns when reading MOD_MESH.
+#: FEMTIC stores mesh.dat nodes as x = northing, y = easting, z down; the
+#: plotting code (femtic_viz, sites, slice positions) works in a geographic
+#: frame (x = easting, y = northing). True (default) swaps on read; False draws
+#: the model transposed (only for meshes already written as x = easting).
+#: None = leave femtic's module default (False) untouched.
+MOD_MESH_SWAP_XY = True
+
+# --- Ocean / air handling (must match the inversion setup) ----------------
+MOD_OCEAN = None        # None = infer from the block file (reference model)
+MOD_AIR_RHO = 1.0e9     # Ohm.m (region 0); information only
+MOD_OCEAN_RHO = 0.25    # Ohm.m (region 1 when treated as ocean)
+
+# ---------------------------------------------------------------------------
+# Output
+# ---------------------------------------------------------------------------
+#: One or more file extensions ("pdf", "svg", "png", "jpg", "tif", ...); a
+#: bare string works too. Every figure is saved once per entry.
+MOD_PLOT_FORMAT = ["pdf"]
+
+#: One directory for the figures of all runs (relative: to WORK_DIR), used as
+#: given. None = per run, see OUT_PREFIX.
+OUT_DIR = None
+#: Put in front of every file name; with OUT_DIR None it also names a
+#: sub-directory of each run directory (OUT_PREFIX_DIR). None = neither.
+OUT_PREFIX = None
+OUT_PREFIX_DIR = True   # False: with OUT_DIR None write into the run directory
+
+#: Explicit output path WITHOUT extension (relative: to WORK_DIR), used only
+#: when exactly one model is plotted. None = the naming scheme above.
+MOD_QC_FILE = None      # e.g. "1_L2/UbiSlice_alpha_10"
+
+#: Multi-page PDF with one page per figure: None = none; "auto" =
+#: <OUT_DIR or the common parent of the run directories>/catalog_slices.pdf;
+#: or a path. Needs "pdf" in MOD_PLOT_FORMAT.
+MOD_CATALOG = None
+
+# ---------------------------------------------------------------------------
+# Geographic / UTM origin of the mesh centre
+# ---------------------------------------------------------------------------
+#: None when MOD_ORIGIN_METHOD estimates the origin from MOD_SITE_DAT.
+MOD_UTM_ORIGIN_LAT = None   # decimal degrees, positive = North
+MOD_UTM_ORIGIN_LON = None   # decimal degrees, positive = East
+MOD_UTM_ORIGIN_E = None     # UTM easting  [km]
+MOD_UTM_ORIGIN_N = None     # UTM northing [km]
+MOD_UTM_ZONE_OVERRIDE = None  # override the auto-derived zone; None = auto
+
+#: "box"     midpoint of the UTM bounding box of all sites in MOD_SITE_DAT
+#: "average" arithmetic mean of the site UTM coordinates
+#: None      use the literals above
+MOD_ORIGIN_METHOD = "box"
+
+# --- Display coordinate system ---------------------------------------------
+#: "model" (axis ticks model-local) | "utm" | "latlon"
+MOD_DISPLAY_COORDS = "utm"
+#: Decimal digits of the axis tick labels; None = plot_model_slices' own.
+MOD_TICK_DECIMALS = 0
+
+# --- Site overlay ------------------------------------------------------------
+#: Primary source: mt_make_sitelist.py CSV (name,lat,lon,elev,sitenum,E,N).
+#: Set to None to fall back to MOD_OBSERVE_FILE / MOD_SITE_NUMBER.
+MOD_SITE_DAT = "templates/site.dat"
+#: Fallback source (used when there is no site list).
+MOD_OBSERVE_FILE = "templates/observe.dat"
+MOD_SITE_NAMES = None          # list of names to plot, or None = all sites
+MOD_SITE_NUMBER = None    # site number(s) in observe.dat; None = none
+
+MOD_PLOT_SITES_MAPS = True    # show markers on map panels
+MOD_PLOT_SITES_SLICES = False  # show markers on curtain / plane panels
+#: Max distance [km] from a curtain plane for a site to appear on it.
+MOD_PROJECTION_DIST = 1.0      # km; None = all sites on every panel
+
+MOD_SITE_MARKER = dict(marker="v", color="black", ms=8, zorder=10, label=None)
+MOD_SITE_MARKER_SLICES = None
+
+#: Point markers (epicentres, wells, ...): a list of dicts. Every marker is
+#: drawn on all map panels; on the vertical sections those with a depth, within
+#: max_dist of the section plane. Keys:
+#:   latlon     [lat, lon], degrees
+#:   depth      km, positive down
+#:   depth_err  km, +- of a depth bar on the sections (err_color, err_lw,
+#:              err_cap)
+#:   kinds      "map", "ns", "ew", "plane", "vertical", "all" or a list;
+#:              default "all" with a depth, else "map"
+#:   max_dist   km (default MOD_PROJECTION_DIST)
+#:   name       legend label; None = no label
+#:   marker, color, ms, zorder and any matplotlib Line2D keyword
+MOD_MAP_MARKERS = [
+    # Epagny 1996 earthquake: 45.9383 N, 6.0883 E, depth 2 +- 1 km. Yellow
+    # star on every map; on a section through it (or within max_dist) at 2 km
+    # depth with a bar from 1 to 3 km. The Vuache fault plane (panel=True
+    # below) passes ~0.2 km from it at 2 km depth, so it shows on that panel.
+    # dict(latlon=[45.9383, 6.0883], marker="*", color="black",
+    #      markerfacecolor="yellow", markeredgecolor="black", ms=30, mew=1.0,
+    #      zorder=14, depth=2.0, depth_err=1.0, name="Epagny 1996 (2 +- 1 km)"),
+    # # Model centre (model-local x = y = 0): a black cross on the maps and, at
+    # depth 0, on the sections that pass within max_dist of it. Without this
+    # entry the centre is the default yellow star on the maps only.
+    dict(is_model_centre=True, marker="+", color="black", ms=16, mew=2.2,
+         kinds="all", depth=0.0, name="model centre"),
+]
+#: Mark the model origin on every map panel when MOD_DISPLAY_COORDS is
+#: "utm" / "latlon"; override the style by a MOD_MAP_MARKERS entry with
+#: "is_model_centre": True. False = no centre marker.
+MOD_SHOW_MODEL_CENTRE = True
+
+# ---------------------------------------------------------------------------
+# Slice specification
+# ---------------------------------------------------------------------------
+#: One dict per panel (left to right):
+#:   kind   "map" | "ns" | "ew" | "plane" | "profile"
+#:   z0     (map) depth, km, positive down
+#:   x0     (ns)  model-local km, or (value, "utm") [km] / (value, "latlon")
+#:   y0     (ew)  as x0
+#:   point  (plane) [x, y(, z)] model-local km, or ([x, y, z], "model"),
+#:          ([E, N, z], "utm") [all km],
+#:          ([lon, lat, z], "latlon") [z km]
+#:   strike (plane) azimuth, degrees clockwise from north
+#:   dip    (plane) degrees below horizontal towards strike + 90; 90 = vertical
+#:          xlim / ylim of a plane: along-strike / down-dip range, km relative
+#:          to point
+#:   p1, p2 (profile) end points: [x, y] model-local km,
+#:          ([E, N], "utm") [km] or ([lon, lat], "latlon");
+#:          z_top (default 0), z_bot (default 20) km; dip (default 90;
+#:          else the plane dips to the right of p1 -> p2); limit_km,
+#:          alpha_outside, fade_km limit a fault to the stretch p1 ... p2.
+#:   overlay  (any kind) True or Line2D keywords (+ label): also draw this
+#:            slice as a line on every other panel (fault trace)
+#:   panel    (any kind) False = no panel, only the overlay line
+#:   invert_x True = flip the horizontal axis
+#:   title    panel title ("" = none)
+#:   xlim, ylim, zlim (any kind) per-panel limits, km
+#: All lengths are km (UTM coordinates too), as in femtic_ens_plot_slices.py.
+MOD_SLICES = [
+    # dict(kind="map", z0=-0.25),  # km
+    dict(kind="map", z0=-2.0),  # km
+    # dict(kind="map", z0=0.5),  # km
+    dict(kind="map", z0=.0),  # km
+    dict(kind="map", z0=5.0),  # km
+    # dict(kind="map", z0=2.5),  # km
+    dict(kind="map", z0=10.0),  # km
+    dict(kind="map", z0=20.0),  # km
+    dict(kind="map", z0=50.0),  # km
+    # dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0),
+    # dict(kind="ns", x0=0.0),  # km
+    # dict(kind="ew", y0=0.0),  # km
+    #: Vertical section along a strike through ``point`` (model-local km,
+    #: [0, 0] = model origin). strike = geographic azimuth, degrees
+    #: clockwise from north: 45 = SW (left) -> NE (right), 135 = NW -> SE.
+    #: Horizontal axis = along-strike distance from ``point`` in model km;
+    #: its range follows MOD_XLIM x MOD_YLIM (projected onto the strike),
+    #: its depth range MOD_ZLIM. Optional: xlim=[min, max] (km) to override.
+    # dict(kind="plane", point=[0.0, 0.0], strike=45.0, dip=90.0),
+    #: Dipping plane (dip < 90): strike = azimuth (deg clockwise from north)
+    #: of the strike line, the plane dips towards strike + 90. ``point`` may
+    #: be model-local km or CRS-tagged (z = depth in km, positive down):
+    #:   point=[x, y, z]                       model-local km
+    #:   point=([x, y, z], "model")            model-local km
+    #:   point=([E, N, z], "utm")              UTM km, z in km
+    #:   point=([lon, lat, z], "latlon")       degrees (longitude first)
+    #: Axes = along-strike and down-dip distance from ``point`` (km if
+    #: MOD_DEPTH_KM else m, true aspect, see the readme). Default extent = the plane cut
+    #: with the MOD_XLIM x MOD_YLIM x MOD_ZLIM box; optional per-entry
+    #: xlim=[min, max] (along strike) and ylim=[min, max] (down dip), km
+    #: relative to ``point``.
+    # dict(kind="plane", point=([6.12, 45.90, 0.0], "latlon"), strike=325.0, dip=70.0),
+    # dict(kind="plane", point=([E_utm, N_utm, 2.0], "utm"), strike=325.0, dip=45.0),
+    #: Fault from two surface points + dip (kind="profile"): the plane
+    #: through p1 -> p2 that dips to the RIGHT of the direction p1 -> p2
+    #: (dip=110 dips the same amount to the left; or swap p1 and p2). p1, p2:
+    #: ([lon, lat], "latlon"), ([E, N], "utm") [km] or [x, y] model-local km.
+    #: z_top = depth of the plane at the trace (default 0; -elevation for a
+    #: trace above sea level), z_bot = bottom of the panel, both in km.
+    #: overlay=True (or Line2D keywords, optionally label=...) also draws the
+    #: fault on every other panel of every figure of this script: trace on the
+    #: maps, dipping line on the sections. panel=False: the entry is NOT a
+    #: panel, it only supplies that trace (the fault line in all the other
+    #: slices, no fault panel); leave it out to get the fault panel (the
+    #: model on the fault plane) as well. xlim=[a, b] (km along strike,
+    #: relative to the midpoint of p1-p2) limits its length.
+    #: Limit to the defining points (femtic_viz.py of 2026-11-15): the part of
+    #: the fault between p1 and p2 is drawn as given, the rest -- the
+    #: extrapolation along strike -- fades out. limit_km (km, default 0.0 for
+    #: a fault, i.e. exactly p1 ... p2): > 0 widens that stretch at both ends,
+    #: < 0 narrows it (e.g. 2.0 = 2 km beyond each point), None = no
+    #: distinction (the line is drawn alike everywhere, as before).
+    #: alpha_outside (0 ... 1, default 0.25): opacity far outside, relative
+    #: to the line's own alpha; 0 = fully transparent, 1 = no difference.
+    #: fade_km (km, default 2.0): the opacity falls linearly from 1 at the
+    #: ends of the stretch to alpha_outside over this width, as
+    #: MOD_ALPHA_MODE="fade" does for cells; 0 = abrupt step. All three also
+    #: act on the fault panel (panel=True, the part outside is faded towards
+    #: white).
+    # dict(kind="profile",
+    #      p1=([6.030869, 45.962166], "latlon"),
+    #      p2=([6.115936, 45.910655], "latlon"),
+    #      dip=110.0,  # = 70 deg to the NE (p1 -> p2 runs NW -> SE; dip < 90
+    #                  # would dip to its right, i.e. SW). Third point of the
+    #                  # same plane: (6.079571, 45.941367) at 2 km depth.
+    #      z_top=0.0, z_bot=20.0,
+    #      overlay=dict(color="k", linewidth=1.5), title="fault",
+    #      limit_km=0.0, alpha_outside=0.25, fade_km=2.0,     # see above
+    #      panel=False),
+    # dict(kind="ns",  x0=(-71.40723, 'latlon')),    # km
+    # dict(kind="ew",  y0=(-16.299593, 'latlon')),    # km
+    #: Sections through the MOD_MAP_MARKERS examples (uncomment): the Epagny
+    #: epicentre (star, depth bar) and the model centre (black cross).
+    # dict(kind="ns", x0=(6.0883, "latlon")),    # N-S through the epicentre
+    # dict(kind="ew", y0=(45.9383, "latlon")),   # E-W through the epicentre
+    # dict(kind="ns", x0=0.0),                   # N-S through the model centre
+    # dict(kind="ew", y0=0.0),                   # E-W through the model centre
+    # dict(kind="profile",
+    #  p1=([6.030869, 45.962166], "latlon"),
+    #  p2=([6.115936, 45.910655], "latlon"),
+    #  dip=110.0, z_top=0.0, z_bot=20.0,
+    #  overlay=dict(color="magenta", linestyle=":", linewidth=10.0, alpha=0.9),
+    #  title="Vuache fault",
+    #  limit_km=0.0, alpha_outside=0.1,   # p1 ... p2 as given, then fading
+    #  fade_km=2.0,                        # ... to 25 % over 2 km (0 = abrupt)
+    #  panel=False)
+]
+
+# --- Polylines (optional) ----------------------------------------------------
+#: Lines drawn on the slice panels: faults, profiles, boundaries, ... A dict
+#: {name: entry}; {} = none. An entry is the point list or a dict:
+#:   points    [[x, y(, z)], ...] model-local km (z = depth), or
+#:             (pts, "utm") [E, N, z in km] / (pts, "latlon")
+#:             [lon, lat, z km]
+#:   style     Line2D keywords
+#:   label     legend text (default = the key, None = no entry)
+#:   kinds     "map", "ns", "ew", "plane", "vertical" or a list
+#:   max_dist  km, vertical sections: parts within this distance are projected
+#:   z_range   [zmin, zmax] km, maps only
+MOD_POLYLINES = {}
+# MOD_POLYLINES = {
+#     "fault F1": dict(
+#         points=[[-4.0, -3.0, 0.5], [0.0, 0.0, 2.5], [4.0, 3.0, 4.5]],
+#         style=dict(color="white", linewidth=2.0), max_dist=1.5),
+#     "profile": dict(points=([[-70.95, -16.40], [-70.85, -16.30]], "latlon"),
+#                     kinds="map", style=dict(color="k", linestyle=":")),
+# }
+
+# --- Reference model (optional) ----------------------------------------------
+#: Resistivity block file on the SAME mesh, drawn as iso-resistivity lines when
+#: MOD_REF_SLICES is True. None = no reference.
+MOD_REF_FILE = "templates/referencemodel.dat"     # e.g. "referencemodel.dat"
+MOD_REF_SLICES = False
+#: Contour levels, log10(Ohm.m); None = the integer decades inside MOD_CLIM.
+MOD_REF_LEVELS = None
+MOD_REF_STYLE = dict(colors="k", linewidths=0.8)
+MOD_REF_LABEL = "reference model"
+
+# --- Limits ------------------------------------------------------------------
+MOD_XLIM = None   # [xmin, xmax] model-local km; None = auto
+MOD_YLIM = None   # [ymin, ymax] model-local km; None = auto
+MOD_ZLIM = None    # [zmin, zmax] km, positive down; None = auto
+
+#: True: x / y limits from the site bounding box of each run + MOD_ROI_PAD_XY,
+#: z limits from MOD_ROI_ZLIM (None = keep MOD_ZLIM). Without sites the limits
+#: above are used.
+MOD_ROI_AUTO = True
+MOD_ROI_PAD_XY = 2.0       # km
+MOD_ROI_ZLIM = [-1.0, 6.0]        # e.g. [-1.0, 6.0]
+
+# --- Colours ------------------------------------------------------------------
+MOD_DPI = 400
+MOD_CMAP = "jet_r"
+MOD_CLIM = [0.0, 4.0]      # [log10_min, log10_max] Ohm.m; None = auto
+MOD_OCEAN_COLOR = "lightgrey"   # None = colormap
+MOD_AIR_COLOR = "whitesmoke"    # None = blank
+MOD_AIR_BGCOLOR = None          # axes facecolor for air
+
+# --- Convergence annotation ---------------------------------------------------
+#: Box with nRMS and alpha of the plotted iteration (from the run's own
+#: convergence file; no box if it has no row for that iteration).
+MOD_NRMS_ANNOTATE = True
+#: Panel with the box (0-based). None = first panel; with MOD_SINGLE_PANELS
+#: None = every figure.
+MOD_NRMS_PANEL = None
+
+# --- Blanking / fading by a second block file (optional) ----------------------
+#: Block file with the same mesh and region structure whose region values are
+#: log10 weights (e.g. a sensitivity); None = off.
+MOD_ALPHA_FILE = None      # e.g. "sensitivity_log10.dat"
+MOD_ALPHA_MODE = "fade"    # "fade" | "blank"
+MOD_ALPHA_BLANK_THRESH = 0.0
+
+# --- Figure layout -------------------------------------------------------------
+#: False = one figure per model with a panel per MOD_SLICES entry;
+#: True  = one figure per model AND slice (..._slices_01_<kind>.<fmt>).
+#: MOD_NROWS / MOD_NCOLS are then not used; MOD_FIGSIZE applies to each figure.
+MOD_SINGLE_PANELS = False
+MOD_EQUAL_ASPECT = True
+#: Vertical exaggeration of the section panels; None = as MOD_EQUAL_ASPECT.
+MOD_VERT_EXAG = None
+MOD_DEPTH_KM = True
+MOD_HORIZ_KM = True
+MOD_NROWS = 3           # None = auto (1 row)
+MOD_NCOLS = 3           # None = auto (len(MOD_SLICES) columns)
+MOD_PANEL_HEIGHT = 20.0    # cm
+MOD_PANEL_WIDTH = None     # cm; None = from the aspect ratio
+MOD_FIGSIZE = None         # [w, h] cm; overrides auto sizing
+
+MOD_TICK_FONTSIZE = 16
+MOD_LABEL_FONTSIZE = 16
+MOD_TITLE_FONTSIZE = MOD_LABEL_FONTSIZE + 10  # None = plot_model_slices' default
+
+# --- Titles -------------------------------------------------------------------
+#: Figure title:
+#:   "auto"            block-file name; run, iteration and nRMS
+#:   None, False or "" no title
+#:   a string          used as given; placeholders {label} (= {run} = {key} =
+#:                     {best}: run directory name), {tag}, {iter}, {nrms}
+#:                     ({nrms:.2f} works), {alpha}, {file}, {prefix}
+#:                     (OUT_PREFIX); "?" / "n/a" if unknown
+#:   a dict            one entry per run label, e.g.
+#:                       {"1_L2": "alpha 10", "default": "auto"}
+MOD_TITLE = "auto"
+#: Panel titles: True / False (one panel: title="..." in its MOD_SLICES entry).
+MOD_PANEL_TITLES = True
+
+# --- Colour bar ----------------------------------------------------------------
+#: "panel" = one per panel; "right" / "left" / "top" / "bottom" = one joint bar.
+MOD_CBAR_LOCATION = "bottom"
+MOD_CBAR_SHRINK = 0.7
+MOD_CBAR_THICKNESS = None  # cm
+
+#: Show the figures inline when running under Spyder (files are saved anyway).
+MOD_SHOW_IN_SPYDER = True
 
 # ---------------------------------------------------------------------------
 # Verbose output
 # ---------------------------------------------------------------------------
 OUT = True
 
-# ---------------------------------------------------------------------------
-# Ocean / air handling (must match the inversion setup)
-# ---------------------------------------------------------------------------
-#: None → auto-infer from region 1 heuristic (ρ ≤ 1 Ω·m AND flag==1).
-#: True / False → force ocean-present / ocean-absent.
-OCEAN = None
 
-AIR_RHO   = 1.0e9   # Ω·m  (region 0)
-OCEAN_RHO = 0.25    # Ω·m  (region 1 when treated as ocean)
+# ===========================================================================
+# Helpers
+# ===========================================================================
 
-# ---------------------------------------------------------------------------
-# Geographic / UTM origin of the mesh centre
-# ---------------------------------------------------------------------------
-#: Geographic coordinates (WGS-84) of the FEMTIC mesh origin.
-UTM_ORIGIN_LAT = None   # decimal degrees, positive = North
-UTM_ORIGIN_LON = None   # decimal degrees, positive = East
+class _Number(float):
+    """float whose "{}" shows 3 decimals; "{nrms:.2f}" still works."""
 
-#: UTM coordinates of the mesh origin in metres.
-UTM_ORIGIN_E = None   # easting  [m]
-UTM_ORIGIN_N = None   # northing [m]
-
-#: Override the auto-derived UTM zone number.  None = auto from origin lat/lon.
-UTM_ZONE_OVERRIDE = None
-
-# ---------------------------------------------------------------------------
-# Display coordinate system
-# ---------------------------------------------------------------------------
-#: "model"  — axis ticks in model-local metres (origin = 0, default)
-#: "utm"    — axis ticks in absolute UTM metres
-#: "latlon" — axis ticks in decimal degrees (lon for easting, lat for northing)
-DISPLAY_COORDS = "model"
-
-# ---------------------------------------------------------------------------
-# Site overlay
-# ---------------------------------------------------------------------------
-#: Primary source: site names to overlay from SITE_DAT.
-#: May be a single string or a list of strings matching the "name" column.
-#: Set to None to overlay all sites in the file.
-SITE_NAMES = None   # e.g. ["MT01", "MT05", "MT12"]  or None = all sites
-
-#: Fallback source (used when SITE_DAT is None): site number(s) to
-#: extract from observe.dat (integer, 1-based).
-#: May be a single int or a list of ints.  Set to None to skip site overlay.
-SITE_NUMBER = [5, 6, 7]
-
-#: Show site markers on horizontal map panels.
-PLOT_SITES_MAPS = False
-#: Show site markers on vertical curtain (ns/ew) and plane panels.
-PLOT_SITES_SLICES = False
-
-#: Maximum distance [m] from a vertical slice plane for a site to be plotted
-#: on that panel.  None = plot all sites on every panel regardless of distance.
-PROJECTION_DIST = 1000.   # e.g. 5000.0  (5 km)
-
-#: Marker style for map panels (inverted triangle = MT convention).
-SITE_MARKER = dict(marker="v", color="black", ms=4, zorder=10,
-                   label=None)   # label filled in automatically
-
-#: Marker style for curtain and plane panels.
-SITE_MARKER_SLICES = dict(marker="v", color="black", ms=4, zorder=10,
-                           label=None)
-
-# ---------------------------------------------------------------------------
-# Additional map markers
-# ---------------------------------------------------------------------------
-#: Arbitrary point markers overlaid on map panels only.
-#: Each entry is a dict with:
-#:   "latlon"  : [lat_deg, lon_deg]  — position in geographic coordinates
-#:   "marker"  : Matplotlib marker string  (e.g. "P", "+", "x", "*", "^")
-#:   "color"   : colour string
-#:   "ms"      : marker size in points
-#:   "name"    : label string (shown in legend); None = no legend entry
-#: Any additional Matplotlib plot kwargs (mew, mfc, zorder, …) are accepted.
-
-# Ubinas
-MAP_MARKERS = [
-    # dict(latlon=[-16.3169, -70.9673], marker="x", color="red", ms=8,
-    #      name="test point, 4457m"),
-    dict(latlon=[-16.3450, -70.8972], marker="*", color="red", ms=8,
-         name="ubinas crater"),
-    # dict(latlon=[-16.363436, -70.868025], marker="+", color="blue", ms=8,
-    #      name="mesh origin, borehole1"),
-    # dict(latlon=[-16.351, -70.9016], marker="^", color="magenta", ms=6,
-    #      name="max elev"),
-]
-
-## Misti
-# MAP_MARKERS = [
-#     dict(latlon=[-16.2991, -71.4056], marker="*", color="red", ms=12,
-#          name="misti crater"),
-#     dict(latlon=[-16.248170, -71.506431], marker="+", color="blue", ms=12,
-#          name="mesh origin, borehole1"),
-#     # dict(latlon=[-16.351, -70.9016], marker="^", color="magenta", ms=6,
-#     #      name="max elev"),
-# ]
-
-# ---------------------------------------------------------------------------
-# Model-centre marker
-# ---------------------------------------------------------------------------
-#: Mark the model origin (model-local x=0, y=0) on every "map" panel
-#: whenever DISPLAY_COORDS is "utm" or "latlon", so the mesh centre stays
-#: identifiable once the axes are relabelled in UTM / lat-lon.  No effect
-#: for DISPLAY_COORDS="model" (the origin is trivially the (0, 0) point
-#: there already).  Default style: black "+", ms=10.  To override the
-#: style, add a dict with "is_model_centre": True to MAP_MARKERS, e.g.
-#:   dict(is_model_centre=True, marker="+", color="blue", ms=12)
-#: Set False to force the marker off even in UTM/latlon display.
-SHOW_MODEL_CENTRE = True
-
-# ---------------------------------------------------------------------------
-# Plotting — requires femtic_viz and Matplotlib
-# ---------------------------------------------------------------------------
-
-#: Figure DPI for saved file.
-PLOT_DPI = 600
-#: Matplotlib colormap name.
-PLOT_CMAP = "turbo_r"
-#: Colour limits [log10(ρ_min), log10(ρ_max)] — None = auto.
-PLOT_CLIM = [-0., 3.0]      # log10(Ω·m)
-#: Flat colour for ocean / lake cells.  None → use colormap.
-PLOT_OCEAN_COLOR = "lightgrey"
-#: Flat colour for air polygons on slice panels.  None → blank gaps.
-PLOT_AIR_COLOR = "whitesmoke"
-#: Axes facecolor for air / background.  None = figure default.
-PLOT_AIR_BGCOLOR = None
-#: Font size for axis tick labels (main panels and colourbar ticks).
-TICK_FONTSIZE = 12
-#: Font size for axis labels, panel titles, and colourbar label.
-LABEL_FONTSIZE = 14
-
-# ---------------------------------------------------------------------------
-# Convergence annotation  (reads femtic.cnv)
-# ---------------------------------------------------------------------------
-#: Figure title (above all panels).
-#:   ""  or False      no title (default).
-#:   "auto", None, True the automatic title: the block-file name (batch: see
-#:                     BATCH_TITLE).  None keeps its old meaning in this script.
-#:   a string          used as given.  Placeholders, filled in per model:
-#:                     {label} run directory name, {tag} "iterN", {iter} the
-#:                     iteration ("?" if unknown), {nrms} nRMS (3 decimals; a
-#:                     number, so {nrms:.2f} works; "n/a" if unknown), {alpha},
-#:                     {file} block-file name, {key} = {label}.  Text with
-#:                     other braces is used as it stands.
-#:   a dict            one entry per model, keyed by its label, e.g.
-#:                       {"run1": "Reference", "default": "auto"}
-#:                     values as above; "default" (else "auto") covers the rest.
-#: Several models (batch): BATCH_TITLE, when set, is used instead.
-FIGURE_TITLE = ""
-#: Panel titles ("Map  z = 1.0 km", "N-S  easting = 0.0 km", ...): True = as
-#: before, False = none.  One panel is titled by adding title="text" to its
-#: PLOT_SLICES entry (title="" leaves just that panel untitled).
-PANEL_TITLES = True
-
-# ---------------------------------------------------------------------------
-# Colour bar
-# ---------------------------------------------------------------------------
-#: "panel"  one colour bar next to every panel (as before);
-#: "right", "bottom", "top", "left"
-#:          ONE colour bar for all panels of a figure (they share one colour
-#:          scale), at that side of the whole panel grid.
-CBAR_LOCATION = "panel"
-#: Joint colour bar only: its length as a fraction of the side of the panel
-#: grid it runs along (0 < value <= 1), and its thickness in cm (None =
-#: 1.5 x LABEL_FONTSIZE points).
-CBAR_SHRINK = 0.7
-CBAR_THICKNESS = None  # cm
-#: Panel index (0-based) on which to place the nRMS annotation.
-#: None → first panel.
-CNV_PANEL = None
-
-# ---------------------------------------------------------------------------
-# Alpha / blanking by second block file  (optional)
-# ---------------------------------------------------------------------------
-#: Path to a second resistivity_block_iterX.dat with the SAME mesh and
-#: region structure as MODEL_FILE.  Its region_rho values are interpreted
-#: as log10 weights.  Cells with weight < ALPHA_BLANK_THRESH are suppressed.
-#: Set to None to disable.
-ALPHA_FILE = None   # e.g. WORK_DIR + "sensitivity_log10.dat"
-
-#: How alpha weights drive visibility:
-#:   "fade"  — proportional transparency between ALPHA_BLANK_THRESH (=0) and 0
-#:   "blank" — hard cutoff: below ALPHA_BLANK_THRESH the polygon is omitted
-ALPHA_MODE = "fade"
-
-#: Log10 threshold at or below which polygons are blanked / fully faded.
-ALPHA_BLANK_THRESH = 0.0
-
-# ---------------------------------------------------------------------------
-# Slice specification
-# ---------------------------------------------------------------------------
-#: List of slice dicts — one per panel (left to right).
-#:
-#: Slices use exact tetrahedron-plane intersection (no selection slab).
-#: Each dict must contain:
-#:   kind   : "map"     — horizontal slice at z = z0
-#:            "ns"      — N-S vertical section at x = x0   (y vs depth)
-#:            "ew"      — E-W vertical section at y = y0   (x vs depth)
-#:            "plane"   — arbitrary plane by strike / dip / point
-#:            "profile" — fence section defined by two endpoints (vertical,
-#:                        or dipping with ``dip``: a fault from two surface
-#:                        points); strike is computed from the p1->p2 azimuth
-#:   z0     : (map     only)  depth in metres
-#:   x0     : (ns      only)  easting — plain float = model-local metres;
-#:            or (value, "utm") / (value, "latlon") for CRS tagging
-#:   y0     : (ew      only)  northing — plain float / CRS tuple
-#:   point  : (plane   only)  [x, y, z] any point on the plane
-#:            or ([lon, lat, z], "latlon") / ([E, N, z], "utm")
-#:   p1, p2 : (profile only)  endpoint position specs; each accepts:
-#:              [x, y]                  model-local metres (bare list)
-#:              ([x, y], "model")       explicit model-local
-#:              ([E, N], "utm")         UTM easting / northing [m]
-#:              ([lon, lat], "latlon")  decimal degrees
-#:            A 3-element [x, y, z] variant is also accepted (z ignored).
-#:   z_top  : (profile only)  shallowest depth of fence panel [m, z-down]
-#:            default 0.0; for dip != 90 also the depth at which the plane
-#:            contains the trace p1-p2 (-elevation for a trace above sea level)
-#:   z_bot  : (profile only)  deepest depth of fence panel [m, z-down]
-#:            default 20 000 m
-#:   dip    : (profile only)  0 < dip < 180, default 90 (vertical). The plane
-#:            dips to the RIGHT of p1 -> p2; dip = 180 - d dips d degrees to the
-#:            left (same as swapping p1 and p2)
-#:   overlay: (any kind)  True or Line2D keywords (+ label): also draw this
-#:            slice as a line on every other panel (fault trace on maps,
-#:            dipping line on sections)
-#:   panel  : (any kind)  False = not a panel: the entry only supplies its
-#:            overlay line (fault trace in all the slices, no fault panel).
-#:            Default True. At least one entry must stay a panel.
-#:   strike : (plane   only)  azimuth of the strike line, degrees clockwise
-#:            from North (every dip)
-#:   dip    : (plane   only)  degrees below the horizontal, 0..180; the plane
-#:            dips towards strike + 90 (90 = vertical section)
-#:   xlim   : [xmin, xmax] : easting axis limit; for a plane: along-strike
-#:            range [m] relative to ``point``
-#:   ylim   : [ymin, ymax] : northing axis limit; for a plane with dip != 90:
-#:            down-dip range [m] relative to ``point``
-#:   zlim   : [zmin, zmax] — depth axis limit (ns/ew/profile panels)
-#:   invert_x : True → flip the horizontal axis left-to-right after rendering
-#:   title  : optional string override
-#:
-#: Per-panel xlim/ylim/zlim override PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
-##: MISTI
-# PLOT_SLICES = [
-#     dict(kind="ns",  x0=(-71.536322, "latlon")),
-#     dict(kind="ew",  y0=(-16.196900, "latlon")),
-#     dict(kind="map", z0=-4000.0),
-#     dict(kind="map", z0= 10000.0),
-#     # Two-point vertical profile example (uncomment to use):
-#     # dict(kind="profile",
-#     #      p1=([-71.536, -16.197], "latlon"),
-#     #      p2=([-71.406, -16.299], "latlon"),
-#     #      z_top=0.0, z_bot=25000.0,
-#     #      title="NW-SE profile"),
-# ]
-
-##: UBINAS [-16.3450, -70.8972]
-PLOT_SLICES = [
-    # dict(kind="ns",  x0=(-70.8972, "latlon")),
-    dict(kind="ew",  y0=(-16.3450, "latlon"), title="Ubinas crater"),
-    # dict(kind="map", z0=-4000.0),
-    # dict(kind="map", z0= 5000.0),
-    # Fault from two surface points + dip, drawn as a panel (the model on the
-    # plane) and, with overlay, as a line on every other panel (uncomment to
-    # use). With panel=False there is no fault panel, only its trace in all
-    # the other slices:
-    # dict(kind="profile",
-    #      p1=([-71.536, -16.197], "latlon"),
-    #      p2=([-71.406, -16.299], "latlon"),
-    #      dip=70.0, z_top=0.0, z_bot=25000.0,
-    #      overlay=dict(color="k", linewidth=1.5), title="fault",
-    #      panel=False),
-    # Two-point vertical profile example (uncomment to use):
-    # dict(kind="profile",
-    #      p1=([-71.536, -16.197], "latlon"),
-    #      p2=([-71.406, -16.299], "latlon"),
-    #      z_top=0.0, z_bot=25000.0,
-    #      title="NW-SE profile"),
-]
+    def __format__(self, spec):
+        return float.__format__(self, spec or ".3f")
 
 
-#: Global axis limits in model-local metres.  None → auto.
-PLOT_XLIM = [-15000., 15000.]   # [xmin, xmax] metres — easting
-PLOT_YLIM = [-15000., 15000.]   # [ymin, ymax] metres — northing
-PLOT_ZLIM = [-6000.,  15000.]   # [zmin, zmax] metres — depth (z positive-down)
+def _formats():
+    """MOD_PLOT_FORMAT as a list of extensions without dot."""
+    raw = ([MOD_PLOT_FORMAT] if isinstance(MOD_PLOT_FORMAT, str)
+           else list(MOD_PLOT_FORMAT))
+    fmts = [str(f).lstrip(".").lower() for f in raw]
+    if not fmts:
+        raise ValueError("MOD_PLOT_FORMAT is empty.")
+    return fmts
 
-#: Polylines drawn on the slice panels (optional): faults, profiles, borehole
-#: traces, licence boundaries, ... A dict {name: entry}; {} = none. An entry
-#: is the point list itself or a dict with the keys
-#:   points    [[x, y], ...] or [[x, y, z], ...], at least 2 rows, model-local
-#:             metres; z = depth positive down (missing z = 0). CRS-tagged
-#:             like the `point` of a plane: (pts, "model" | "utm" | "latlon")
-#:             with "utm" = [E, N(, z)] UTM metres, "latlon" = [lon, lat(, z)]
-#:             degrees (longitude first); z is metres in every case
-#:   style     matplotlib Line2D keywords, e.g. dict(color="k", linestyle="--",
-#:             linewidth=1.5); default 1.5 pt solid, colour cycled per entry
-#:   label     legend text (lower right of the panel); default = the key,
-#:             None = no legend entry
-#:   kinds     where to draw it: "map", "ns", "ew", "plane" (also the
-#:             "profile" panels), "vertical" (= ns + ew + plane) or a list of
-#:             them; default = everywhere
-#:   max_dist  metres; vertical sections only: the parts of the polyline
-#:             within max_dist of the section plane are projected into it.
-#:             Default PROJECTION_DIST (the whole polyline if that is None);
-#:             0 = only parts lying in the section plane
-#:   z_range   [zmin, zmax] metres; maps only: draw only on maps whose z0 lies
-#:             in the range (default: plan view on every map)
-#: Maps always show the whole polyline in plan view. The axis limits are
-#: never changed by the polylines.
-#: Intersection line of two slices (model-local metres; ready-made entries for
-#: many pairs: fviz.slice_intersection_polylines):
-#:   _p = fviz.slice_intersection_polyline(
-#:       dict(kind="map", z0=5000.0), dict(kind="ns", x0=0.0),
-#:       xlim=PLOT_XLIM, ylim=PLOT_YLIM, zlim=PLOT_ZLIM)
-#:   PLOT_POLYLINES["map 5 km x ns 0"] = dict(
-#:       points=_p, max_dist=0.0, z_range=[5000.0, 5000.0])
-PLOT_POLYLINES = {}
-# PLOT_POLYLINES = {
-#     "fault F1": dict(
-#         points=[[-4000., -3000., 500.], [0., 0., 2500.], [4000., 3000., 4500.]],
-#         style=dict(color="white", linewidth=2.0), max_dist=1500.),
-#     "profile": dict(points=([[-70.95, -16.40], [-70.85, -16.30]], "latlon"),
-#                     kinds="map", style=dict(color="k", linestyle=":")),
-# }
 
-#: Equal aspect ratio for map and curtain panels.
-PLOT_EQUAL_ASPECT = True
+def _figure_title(model):
+    """Figure title of one model, see MOD_TITLE ("" = none)."""
+    nrms, alpha, it = model.get("nrms"), model.get("alpha"), model.get("iter")
+    block = os.path.basename(model["file"])
+    info = [model["label"]]
+    if it is not None:
+        info.append(f"iter {it}")
+    if nrms is not None:
+        info.append(f"nRMS {nrms:.4f}")
+    label = model["label"]
+    return fviz.resolve_title(
+        MOD_TITLE, label, f"{block}\n{'  '.join(info)}", name="MOD_TITLE",
+        label=label, run=label, best=label, tag=model["tag"],
+        iter="?" if it is None else it,
+        nrms="n/a" if nrms is None else _Number(nrms),
+        alpha="n/a" if alpha is None else alpha,
+        file=block, prefix=OUT_PREFIX or "",
+    )
 
-#: Display depth axis in km instead of metres on curtain / plane panels.
-DEPTH_KM = True
 
-#: Display horizontal axes in km when DISPLAY_COORDS is "model".
-HORIZ_KM = True
+def _crs_tags_used():
+    """CRS tags needing the mesh-centre origin: {"utm", "latlon"} or less."""
+    values = [spec.get(key) for spec in MOD_SLICES
+              for key in ("x0", "y0", "point", "p1", "p2")]
+    values += [entry.get("points") if isinstance(entry, dict) else entry
+               for entry in (MOD_POLYLINES or {}).values()]
+    tags = {
+        v[1].lower() for v in values
+        if isinstance(v, (list, tuple)) and len(v) == 2
+        and isinstance(v[1], str)
+    }
+    tags.add(str(MOD_DISPLAY_COORDS).lower())
+    return tags & {"utm", "latlon"}
 
-# ---------------------------------------------------------------------------
-# Figure layout
-# ---------------------------------------------------------------------------
-#: Number of subplot rows and columns.  None → auto (1 row, len(PLOT_SLICES) cols).
-PLOT_NROWS = 1 #None
-PLOT_NCOLS = 1 #None
 
-#: Panel height in cm.
-PLOT_PANEL_HEIGHT = 16.0   # cm
+def _optional_file(name, setting, run_dir, work_dir):
+    """Per-run path of an optional file; a set but missing one is reported."""
+    path = fem.find_run_file(setting, run_dir, work_dir)
+    if setting and path is None:
+        print(f"  {name} = {setting!r} not found in {run_dir} or {work_dir}.")
+    return path
 
-#: Fixed panel width in cm.  None → auto from aspect ratio.
-PLOT_PANEL_WIDTH = None
 
-#: Full figure size [width, height] in cm.  Overrides auto-sizing when set.
-PLOT_FIGSIZE = None   # e.g. [40., 25.]
+def _plot_model(model, work_dir, *, stem=None, catalog=None, show=False):
+    """All figures of one model (an entry of fem.resolve_model_files()).
 
-# ---------------------------------------------------------------------------
-# Mesh-centre estimation from site.dat UTM coordinates  (optional)
-# ---------------------------------------------------------------------------
-#: Method used to estimate UTM_ORIGIN_E / UTM_ORIGIN_N from SITE_DAT:
-#:   None      — use the hard-coded values above
-#:   "box"     — midpoint of the UTM bounding box of all sites in SITE_DAT
-#:   "average" — arithmetic mean of all site UTM coordinates in SITE_DAT
-ORIGIN_METHOD = "box"   # None | "box" | "average"
+    stem : output path without extension (None = the naming scheme);
+    catalog : open PdfPages or None; show : display the first format.
+    Returns the number of catalog pages written.
+    """
+    run_dir = model["dir"]
+
+    # --- per-run files -----------------------------------------------------
+    mesh_file = fem.find_run_file(MOD_MESH, run_dir, work_dir)
+    if mesh_file is None:
+        raise FileNotFoundError(
+            f"mesh MOD_MESH = {MOD_MESH!r} not found in {run_dir} or "
+            f"{work_dir}.")
+    site_dat = _optional_file("MOD_SITE_DAT", MOD_SITE_DAT, run_dir, work_dir)
+    observe = fem.find_run_file(MOD_OBSERVE_FILE, run_dir, work_dir)
+    alpha_file = None
+    if MOD_ALPHA_FILE:
+        alpha_file = fem.find_run_file(MOD_ALPHA_FILE, run_dir, work_dir)
+        if alpha_file is None:
+            raise FileNotFoundError(
+                f"MOD_ALPHA_FILE = {MOD_ALPHA_FILE!r} not found in {run_dir} "
+                f"or {work_dir}.")
+
+    # --- mesh-centre origin and sites ---------------------------------------
+    want_sites = MOD_PLOT_SITES_MAPS or MOD_PLOT_SITES_SLICES or MOD_ROI_AUTO
+    if (want_sites and site_dat and MOD_ORIGIN_METHOD is None
+            and (MOD_UTM_ORIGIN_E is None or MOD_UTM_ORIGIN_N is None)):
+        print("  sites: no UTM origin (MOD_ORIGIN_METHOD = None, no "
+              "MOD_UTM_ORIGIN_E / _N) - sites not used.")
+        want_sites = False
+    origin_e, origin_n = fem.utm_km_to_m(
+        MOD_UTM_ORIGIN_E, MOD_UTM_ORIGIN_N, name="MOD_UTM_ORIGIN_E / _N")
+    (utm_e, utm_n, utm_lat, utm_lon, utm_zone, utm_north, site_xys,
+     obs_coords_only) = fem.resolve_origin_and_sites(
+        site_dat=site_dat,
+        site_names=MOD_SITE_NAMES,
+        site_number=MOD_SITE_NUMBER,
+        observe_file=observe,
+        origin_e=origin_e,
+        origin_n=origin_n,
+        origin_lat=MOD_UTM_ORIGIN_LAT,
+        origin_lon=MOD_UTM_ORIGIN_LON,
+        zone_override=MOD_UTM_ZONE_OVERRIDE,
+        origin_method=MOD_ORIGIN_METHOD,
+        plot_sites=want_sites,
+    )
+    have_utm = utm_e is not None and utm_n is not None
+    have_geo = have_utm and utm_zone is not None and utm_lat is not None
+    tags = _crs_tags_used()
+    if (tags and not have_utm) or ("latlon" in tags and not have_geo):
+        raise ValueError(
+            f"{' / '.join(sorted(tags))} coordinates in MOD_SLICES, "
+            "MOD_POLYLINES or MOD_DISPLAY_COORDS need the mesh-centre origin: "
+            "give MOD_SITE_DAT (with MOD_ORIGIN_METHOD) or "
+            "MOD_UTM_ORIGIN_E / _N / _LAT / _LON.")
+    if OUT and have_utm:
+        zone_txt = (f", zone {utm_zone}{'N' if utm_north else 'S'}"
+                    if have_geo else "")
+        print(f"  mesh centre: E {utm_e / 1000.0:.4f} km, "
+              f"N {utm_n / 1000.0:.4f} km{zone_txt}")
+
+    # --- region of interest --------------------------------------------------
+    xlim, ylim, zlim = MOD_XLIM, MOD_YLIM, MOD_ZLIM
+    if MOD_ROI_AUTO and site_xys:
+        sx = np.array([s[1] for s in site_xys], dtype=float) / 1000.0
+        sy = np.array([s[2] for s in site_xys], dtype=float) / 1000.0
+        xlim = [float(sx.min()) - MOD_ROI_PAD_XY,
+                float(sx.max()) + MOD_ROI_PAD_XY]
+        ylim = [float(sy.min()) - MOD_ROI_PAD_XY,
+                float(sy.max()) + MOD_ROI_PAD_XY]
+        if MOD_ROI_ZLIM is not None:
+            zlim = MOD_ROI_ZLIM
+        if OUT:
+            print(f"  ROI: x {xlim[0]:.2f} ... {xlim[1]:.2f} km, "
+                  f"y {ylim[0]:.2f} ... {ylim[1]:.2f} km")
+    elif MOD_ROI_AUTO:
+        print("  ROI: no sites available - MOD_XLIM / YLIM / ZLIM used.")
+
+    # --- slice geometry (km -> m, positions -> model-local) ------------------
+    # "plane" entries are converted here; all other kinds go through
+    # fem.resolve_slice_positions. The order of MOD_SLICES is kept.
+    others = [sp for sp in MOD_SLICES if sp.get("kind") != "plane"]
+    others_res = iter(
+        fem.resolve_slice_positions(
+            fem.slices_km_to_m(others), utm_zone, utm_north, utm_e, utm_n,
+            utm_lat, utm_lon, verbose=OUT)
+        if others else []
+    )
+    slices = [
+        fem.plane_spec_km_to_m(
+            sp, xlim, ylim, zone=utm_zone, northern=utm_north,
+            origin_E=utm_e, origin_N=utm_n)
+        if sp.get("kind") == "plane" else next(others_res)
+        for sp in MOD_SLICES
+    ]
+
+    # --- reference model, annotation -----------------------------------------
+    ref_kw = {}
+    if MOD_REF_SLICES and MOD_REF_FILE:
+        ref_path = (fem.find_run_file(MOD_REF_FILE, run_dir, work_dir)
+                    or fem.anchor_path(MOD_REF_FILE, run_dir))
+        ref = fem.ReferenceModel(ref_path, ocean=MOD_OCEAN,
+                                 ocean_rho=MOD_OCEAN_RHO)
+        ref_kw = ref.slice_kwargs(
+            model["file"], levels=MOD_REF_LEVELS, clim=MOD_CLIM,
+            style=MOD_REF_STYLE, label=MOD_REF_LABEL)
+
+    annotation = None
+    if MOD_NRMS_ANNOTATE:
+        if model["nrms"] is None:
+            print("  no nRMS of this iteration in the convergence file - "
+                  "annotation skipped.")
+        else:
+            annotation = dict(nrms=model["nrms"], alpha=model["alpha"],
+                              panel=MOD_NRMS_PANEL)
+
+    # --- figures ---------------------------------------------------------------
+    if stem is None:
+        stem = fem.model_output_stem(
+            model, "slices", out_dir=OUT_DIR, prefix=OUT_PREFIX,
+            prefix_dir=OUT_PREFIX_DIR, base_dir=work_dir)
+    os.makedirs(os.path.dirname(os.path.abspath(stem)), exist_ok=True)
+    title = _figure_title(model)
+
+    kwargs = dict(
+        model_file=model["file"],
+        mesh_file=mesh_file,
+        slices=slices,
+        cmap=MOD_CMAP,
+        clim=MOD_CLIM,
+        xlim=fem.lim_km_to_m(xlim, name="MOD_XLIM"),
+        ylim=fem.lim_km_to_m(ylim, name="MOD_YLIM"),
+        zlim=fem.lim_km_to_m(zlim, name="MOD_ZLIM"),
+        ocean_color=MOD_OCEAN_COLOR,
+        ocean_value=MOD_OCEAN_RHO,
+        air_color=MOD_AIR_COLOR,
+        air_bgcolor=MOD_AIR_BGCOLOR,
+        site_xys=site_xys,
+        obs_coords_only=obs_coords_only,
+        sites_in_maps=MOD_PLOT_SITES_MAPS,
+        sites_in_slices=MOD_PLOT_SITES_SLICES,
+        site_marker=MOD_SITE_MARKER,
+        site_marker_slices=MOD_SITE_MARKER_SLICES,
+        map_markers=fem.markers_km_to_m(MOD_MAP_MARKERS),
+        show_model_centre=MOD_SHOW_MODEL_CENTRE,
+        polylines=fem.polylines_km_to_m(MOD_POLYLINES),
+        projection_dist=fem.km_to_m(
+            MOD_PROJECTION_DIST, name="MOD_PROJECTION_DIST"),
+        display_coords=MOD_DISPLAY_COORDS,
+        # without an origin only model-local coordinates are in use (checked
+        # above); lat/lon markers are then skipped by the plot function
+        utm_origin_e=utm_e if have_utm else 0.0,
+        utm_origin_n=utm_n if have_utm else 0.0,
+        utm_zone=utm_zone if have_geo else 1,
+        utm_northern=utm_north if have_geo else True,
+        utm_to_latlon_fn=utl.utm_to_latlon_zn if have_geo else None,
+        latlon_to_model_fn=fem.latlon_to_model if have_geo else None,
+        depth_km=MOD_DEPTH_KM,
+        horiz_km=MOD_HORIZ_KM,
+        equal_aspect=MOD_EQUAL_ASPECT,
+        vert_exag=MOD_VERT_EXAG,
+        panel_height=MOD_PANEL_HEIGHT / 2.54,
+        panel_width=(MOD_PANEL_WIDTH / 2.54
+                     if MOD_PANEL_WIDTH is not None else None),
+        figsize=([v / 2.54 for v in MOD_FIGSIZE]
+                 if MOD_FIGSIZE is not None else None),
+        nrows=MOD_NROWS,
+        ncols=MOD_NCOLS,
+        tick_fontsize=MOD_TICK_FONTSIZE,
+        label_fontsize=MOD_LABEL_FONTSIZE,
+        figure_title=title,
+        figure_title_fontsize=MOD_TITLE_FONTSIZE,
+        panel_titles=bool(MOD_PANEL_TITLES),
+        cbar_location=MOD_CBAR_LOCATION,
+        cbar_shrink=MOD_CBAR_SHRINK,
+        cbar_thickness=(MOD_CBAR_THICKNESS / 2.54
+                        if MOD_CBAR_THICKNESS is not None else None),
+        tick_decimals=MOD_TICK_DECIMALS,
+        alpha_file=alpha_file,
+        alpha_mode=MOD_ALPHA_MODE,
+        alpha_blank_thresh=MOD_ALPHA_BLANK_THRESH,
+        nrms_annotation=annotation,
+        **ref_kw,
+        dpi=MOD_DPI,
+    )
+    if MOD_SINGLE_PANELS:
+        jobs = fviz.single_panel_jobs(
+            slices, polylines=kwargs["polylines"], nrms_annotation=annotation)
+    else:
+        jobs = [dict(suffix="", label="", kwargs={})]
+    pages = 0
+    for job in jobs:
+        for i, fmt in enumerate(_formats()):
+            figure = fviz.plot_model_slices_robust(
+                f"{stem}{job['suffix']}.{fmt}", out=OUT,
+                show=show and i == 0, **{**kwargs, **job["kwargs"]})
+            if fmt == "pdf" and catalog is not None:
+                name = f"{model['label']} {job['label']}".strip()
+                pages += bool(fviz.append_catalog_page(catalog, figure, name))
+            del figure
+    return pages
+
+
+def _catalog_path(models, work_dir):
+    """File of the multi-page PDF (MOD_CATALOG), None = no catalog."""
+    if not MOD_CATALOG:
+        return None
+    if "pdf" not in _formats():
+        print('  catalog: "pdf" is not in MOD_PLOT_FORMAT - skipped.')
+        return None
+    if str(MOD_CATALOG).strip().lower() != "auto":
+        return fem.anchor_path(MOD_CATALOG, work_dir)
+    directory = (fem.anchor_path(OUT_DIR, work_dir)
+                 or os.path.commonpath(
+                     [os.path.abspath(m["dir"]) for m in models]))
+    name = "catalog_slices.pdf"
+    if OUT_PREFIX:
+        name = f"{OUT_PREFIX}_{name}"
+    return os.path.join(directory, name)
 
 
 # ===========================================================================
 # Main
 # ===========================================================================
 
-# --- (0) Resolve the model(s) to plot --------------------------------------
-MODELS = fem.resolve_model_files(
-    MODEL_FILE, MODEL_ITER,
-    cnv_name=CNV_FILE if CNV_FILE else fem.CNV_DEFAULT_NAMES,
-    out=OUT)
-if not MODELS:
-    sys.exit(f"No model found for MODEL_FILE = {MODEL_FILE!r} "
-             f"(MODEL_ITER = {MODEL_ITER!r}).")
-BATCH = len(MODELS) > 1
-print(f"{len(MODELS)} model(s) to plot"
-      + (": one figure per model (batch)" if BATCH else ""))
-print()
+def main(argv=None) -> int:
+    """Plot all runs; 0 = done, 1 = something failed, 2 = bad WORK_DIR."""
+    parser = argparse.ArgumentParser(
+        description="Slice figures of single FEMTIC models.")
+    parser.add_argument(
+        "runs", nargs="*",
+        help="run directories, block files, results files or globs "
+             "(default: RUN_PATHS)")
+    parser.add_argument(
+        "-w", "--work-dir", default=None,
+        help="base directory of relative paths (default: WORK_DIR)")
+    args = parser.parse_args(sys.argv[1:] if argv is None else list(argv))
 
-# --- (1) Optionally estimate UTM origin from site.dat ----------------------
-if ORIGIN_METHOD is not None:
-    if SITE_DAT is None or not os.path.isfile(SITE_DAT):
-        print(f"  WARNING: ORIGIN_METHOD={ORIGIN_METHOD!r} requested but "
-              f"SITE_DAT is not available — using hard-coded origin.")
-    else:
-        _sdat = fem.read_site_dat(SITE_DAT)
-        if not _sdat:
-            print(f"  WARNING: SITE_DAT is empty — using hard-coded origin.")
+    wd_set = args.work_dir if args.work_dir is not None else WORK_DIR
+    work_dir = os.path.abspath(os.path.expanduser(str(wd_set or ".")))
+    if not os.path.isdir(work_dir):
+        print(f"WORK_DIR does not exist: {work_dir} (set WORK_DIR or use -w)")
+        return 2
+    run_paths = list(args.runs) or RUN_PATHS
+
+    if MOD_MESH_SWAP_XY is not None:
+        fem.MESH_SWAP_XY = bool(MOD_MESH_SWAP_XY)
+
+    models = fem.resolve_model_files(
+        run_paths, ITERATION, cnv_name=CNV_FILE or None, base_dir=work_dir,
+        out=True)  # skipped entries are always reported
+    if not models:
+        print(f"No model found for {run_paths!r} (ITERATION = {ITERATION!r}, "
+              f"WORK_DIR = {work_dir}).")
+        return 1
+    print(f"\n{len(models)} model(s) to plot\n")
+
+    stem = None
+    if MOD_QC_FILE:
+        if len(models) == 1:
+            stem = fem.anchor_path(MOD_QC_FILE, work_dir)
+            base, ext = os.path.splitext(stem)
+            if ext.lstrip(".").lower() in _formats():
+                stem = base
         else:
-            _Es = np.array([d["easting"]  for d in _sdat])
-            _Ns = np.array([d["northing"] for d in _sdat])
-            if ORIGIN_METHOD == "box":
-                UTM_ORIGIN_E = 0.5 * (_Es.min() + _Es.max())
-                UTM_ORIGIN_N = 0.5 * (_Ns.min() + _Ns.max())
-            elif ORIGIN_METHOD == "average":
-                UTM_ORIGIN_E = float(_Es.mean())
-                UTM_ORIGIN_N = float(_Ns.mean())
-            else:
-                sys.exit(f"Unknown ORIGIN_METHOD {ORIGIN_METHOD!r}; "
-                         f"use None, 'box', or 'average'.")
-            _lats = np.array([d["lat"] for d in _sdat])
-            _lons = np.array([d["lon"] for d in _sdat])
-            UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
-                float(_lats.mean()), float(_lons.mean()),
-                override=UTM_ZONE_OVERRIDE)
-            UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
-                UTM_ORIGIN_E, UTM_ORIGIN_N, UTM_ZONE, UTM_NORTHERN)
-            if OUT:
-                print(f"Origin estimated ({ORIGIN_METHOD}, {len(_sdat)} sites):")
-                print(f"  UTM_ORIGIN_E   = {UTM_ORIGIN_E:.1f} m")
-                print(f"  UTM_ORIGIN_N   = {UTM_ORIGIN_N:.1f} m")
-                print(f"  UTM_ORIGIN_LAT = {UTM_ORIGIN_LAT:.6f}°")
-                print(f"  UTM_ORIGIN_LON = {UTM_ORIGIN_LON:.6f}°")
-                print(f"  UTM_ZONE       = {UTM_ZONE}{'N' if UTM_NORTHERN else 'S'}")
-                print()
+            print("MOD_QC_FILE is only used for a single model - ignored.")
 
-# --- (2) Derive UTM zone from finalised mesh-origin coordinates ------------
-UTM_ZONE, UTM_NORTHERN = utl.utm_zone_from_latlon(
-    UTM_ORIGIN_LAT, UTM_ORIGIN_LON, override=UTM_ZONE_OVERRIDE)
-hemi = "N" if UTM_NORTHERN else "S"
-print(f"UTM zone: {UTM_ZONE}{hemi}  "
-      f"(origin lat={UTM_ORIGIN_LAT:.4f}°, lon={UTM_ORIGIN_LON:.4f}°)")
-print()
+    show = bool(MOD_SHOW_IN_SPYDER) and utl.runtime_env() == "spyder"
+    catalog_path = _catalog_path(models, work_dir)
+    catalog = None
+    if catalog_path:
+        from matplotlib.backends.backend_pdf import PdfPages
 
-# --- (3) Resolve slice positions to model-local metres ---------------------
-slices_resolved = fem.resolve_slice_positions(
-    PLOT_SLICES, UTM_ZONE, UTM_NORTHERN,
-    UTM_ORIGIN_E, UTM_ORIGIN_N,
-    UTM_ORIGIN_LAT, UTM_ORIGIN_LON,
-    verbose=OUT,
-)
-if OUT:
-    print()
+        os.makedirs(os.path.dirname(catalog_path), exist_ok=True)
+        catalog = PdfPages(catalog_path)
 
-# --- (4) Optionally read site position(s) ----------------------------------
-site_xys = []
-_sites_from_obs = False
-_need_sites = PLOT_SITES_MAPS or PLOT_SITES_SLICES
-if _need_sites and SITE_DAT is not None:
-    print(f"Reading site positions from site.dat: {SITE_DAT}")
-    _rows = fem.read_site_dat(SITE_DAT, site_names=SITE_NAMES)
-    for row in _rows:
-        sx_m, sy_m = fem.utm_to_model(row["easting"], row["northing"],
-                                      UTM_ORIGIN_E, UTM_ORIGIN_N)
-        site_xys.append((row["name"], sx_m, sy_m, float(row.get("elev", 0.0))))
-        print(f"  {row['name']}: model-local x = {sx_m / 1000:.3f} km,"
-              f"  y = {sy_m / 1000:.3f} km")
-        if DISPLAY_COORDS in ("utm", "latlon"):
-            print(f"           UTM         E = {sx_m + UTM_ORIGIN_E:.1f} m,"
-                  f"  N = {sy_m + UTM_ORIGIN_N:.1f} m")
-    if not site_xys:
-        print("  (no matching sites found in site.dat)")
-    print()
-elif _need_sites and SITE_NUMBER is not None:
-    _site_nums = (SITE_NUMBER if isinstance(SITE_NUMBER, (list, tuple))
-                  else [SITE_NUMBER])
-    print(f"Reading site positions from observe.dat: {OBSERVE_FILE}")
-    print(f"  Note: observe.dat provides model-local coordinates only.")
-    for _sn in _site_nums:
-        sx_m, sy_m = fem.read_site_position(OBSERVE_FILE, _sn)
-        site_xys.append((_sn, sx_m, sy_m, 0.0))
-        print(f"  site {_sn}: model-local x = {sx_m / 1000:.3f} km,"
-              f"  y = {sy_m / 1000:.3f} km")
-    _sites_from_obs = True
-    print()
-
-# --- (5) Plot 2-D slice panels --------------------------------------------
-if fviz is None:
-    sys.exit("femtic_viz not available — cannot plot.  Check your installation.")
-
-# Options shared by every figure of this run.
-_common = dict(
-    mesh_file=MESH_FILE,
-    slices=slices_resolved,
-    cmap=PLOT_CMAP,
-    clim=PLOT_CLIM,
-    xlim=PLOT_XLIM,
-    ylim=PLOT_YLIM,
-    zlim=PLOT_ZLIM,
-    ocean_color=PLOT_OCEAN_COLOR,
-    ocean_value=OCEAN_RHO,
-    air_color=PLOT_AIR_COLOR,
-    air_bgcolor=PLOT_AIR_BGCOLOR,
-    site_xys=site_xys,
-    obs_coords_only=_sites_from_obs,
-    projection_dist=PROJECTION_DIST,
-    sites_in_maps=PLOT_SITES_MAPS,
-    sites_in_slices=PLOT_SITES_SLICES,
-    site_marker=SITE_MARKER,
-    site_marker_slices=SITE_MARKER_SLICES,
-    map_markers=MAP_MARKERS,
-    show_model_centre=SHOW_MODEL_CENTRE,
-    polylines=PLOT_POLYLINES,
-    display_coords=DISPLAY_COORDS,
-    utm_origin_e=UTM_ORIGIN_E,
-    utm_origin_n=UTM_ORIGIN_N,
-    utm_zone=UTM_ZONE,
-    utm_northern=UTM_NORTHERN,
-    utm_to_latlon_fn=utl.utm_to_latlon_zn,
-    latlon_to_model_fn=fem.latlon_to_model,
-    dpi=PLOT_DPI,
-    equal_aspect=PLOT_EQUAL_ASPECT,
-    depth_km=DEPTH_KM,
-    horiz_km=HORIZ_KM,
-    nrows=PLOT_NROWS,
-    ncols=PLOT_NCOLS,
-    panel_height=PLOT_PANEL_HEIGHT / 2.54,
-    panel_width=PLOT_PANEL_WIDTH / 2.54 if PLOT_PANEL_WIDTH is not None else None,
-    figsize=[v / 2.54 for v in PLOT_FIGSIZE] if PLOT_FIGSIZE is not None else None,
-    alpha_file=ALPHA_FILE,
-    alpha_mode=ALPHA_MODE,
-    alpha_blank_thresh=ALPHA_BLANK_THRESH,
-    tick_fontsize=TICK_FONTSIZE,
-    label_fontsize=LABEL_FONTSIZE,
-    panel_titles=bool(PANEL_TITLES),
-    cbar_location=CBAR_LOCATION,
-    cbar_shrink=CBAR_SHRINK,
-    cbar_thickness=CBAR_THICKNESS / 2.54 if CBAR_THICKNESS is not None else None,
-    out=OUT,
-)
-
-
-class _Number(float):
-    """float whose plain str() / "{}" has 3 decimals ({nrms:.2f} still works)."""
-    def __str__(self):
-        return f"{float(self):.3f}"
-
-
-def _figure_title(m, template, nrms=None, alpha=None):
-    """Figure title of the model `m` (an entry of MODELS) from `template`
-    (BATCH_TITLE or FIGURE_TITLE): see FIGURE_TITLE. Returns the argument
-    `figure_title` of plot_model_slices (None = block-file name)."""
-    spec = "auto" if template is None else template
-    nrms = m.get("nrms") if nrms is None else nrms
-    alpha = m.get("alpha") if alpha is None else alpha
-    return fviz.resolve_title(
-        spec, m["label"], None, name="FIGURE_TITLE",
-        label=m["label"], tag=m["tag"],
-        iter="?" if m.get("iter") is None else m["iter"],
-        nrms="n/a" if nrms is None else _Number(nrms),
-        alpha="n/a" if alpha is None else alpha,
-        file=os.path.basename(str(m["file"])))
-
-if not BATCH:
-    # --- one model: PLOT_FILE; nRMS and alpha from the last row of the
-    # convergence file (first of CNV_FILE found in the directory of the model
-    # file, else in WORK_DIR); columns are taken by name from its header row.
-    _nrms_annotation = None
-    _cnv_path = None
-    for _cdir in (os.path.dirname(os.path.abspath(str(MODELS[0]["file"]))),
-                  WORK_DIR):
-        _cnv_path = fem.find_cnv_file(_cdir, CNV_FILE)
-        if _cnv_path is not None:
-            break
-    if _cnv_path is None:
-        print(f"  cnv: none of {', '.join(fem.cnv_names(CNV_FILE))} found "
-              f"-- nRMS annotation skipped.")
-    else:
-        _last = fem.read_cnv_last(_cnv_path)
-        if _last is None:
-            print(f"  Warning: could not read {_cnv_path} "
-                  f"-- nRMS annotation skipped.")
-        else:
-            _nrms_val  = float(_last["RMS"])
-            _alpha_val = float(_last["Alpha"])
-            _nrms_annotation = dict(nrms=_nrms_val, alpha=_alpha_val,
-                                    panel=CNV_PANEL)
-            print(f"  cnv: {os.path.basename(str(_cnv_path))}: "
-                  f"alpha={_alpha_val}, nRMS={_nrms_val:.4f}")
-
-    print(f"Plotting model: {MODELS[0]['file']}")
-    fviz.plot_model_slices_robust(
-        PLOT_FILE,
-        model_file=MODELS[0]["file"],
-        nrms_annotation=_nrms_annotation,
-        figure_title=_figure_title(
-            MODELS[0], FIGURE_TITLE,
-            nrms=_nrms_annotation["nrms"] if _nrms_annotation else None,
-            alpha=_nrms_annotation["alpha"] if _nrms_annotation else None),
-        **_common,
-    )
-    print("Slice plot done.")
-
-else:
-    # --- several models: one figure per model (+ optional catalog) ---------
-    import matplotlib.pyplot as plt
-    from matplotlib.backends.backend_pdf import PdfPages
-
-    _fmts = BATCH_FORMATS if BATCH_FORMATS is not None else (
-        os.path.splitext(PLOT_FILE)[1].lstrip(".") or "pdf",)
-    _fmts = [str(_f).lstrip(".") for _f in
-             ((_fmts,) if isinstance(_fmts, str) else _fmts)]
-
-    _cat_path = None
-    if BATCH_CATALOG:
-        if "pdf" not in _fmts:
-            print("  catalog: \"pdf\" is not among the formats - skipped.")
-        elif BATCH_CATALOG == "auto":
-            _cat_path = os.path.join(
-                BATCH_OUT_DIR or os.path.commonpath([_m["dir"] for _m in MODELS]),
-                "catalog_slices.pdf")
-        else:
-            _cat_path = str(BATCH_CATALOG)
-    if BATCH_OUT_DIR:
-        os.makedirs(BATCH_OUT_DIR, exist_ok=True)
-    _pdf = None
-    if _cat_path:
-        os.makedirs(os.path.dirname(os.path.abspath(_cat_path)), exist_ok=True)
-        _pdf = PdfPages(_cat_path)
-    _n_pages = 0
+    done, pages = 0, 0
     try:
-        for _i, _m in enumerate(MODELS, 1):
-            _title = _figure_title(_m, BATCH_TITLE if BATCH_TITLE
-                                   else FIGURE_TITLE)
-            _ann = (dict(nrms=_m["nrms"], alpha=_m["alpha"], panel=CNV_PANEL)
-                    if _m["nrms"] is not None else None)
-            _stem = os.path.join(BATCH_OUT_DIR or _m["dir"],
-                                 f"{_m['label']}_{_m['tag']}_slices")
-            print(f"[{_i}/{len(MODELS)}] {_m['label']} / {_m['tag']}")
-            for _fmt in _fmts:
-                _fig = fviz.plot_model_slices_robust(
-                    f"{_stem}.{_fmt}",
-                    model_file=_m["file"],
-                    nrms_annotation=_ann,
-                    figure_title=_title,
-                    **_common,
-                )
-                if _fmt == "pdf" and _pdf is not None:
-                    _n_pages += bool(fviz.append_catalog_page(
-                        _pdf, _fig, _m["label"]))
-                del _fig
-            gc.collect()   # Matplotlib figures hold reference cycles
+        for i, model in enumerate(models, 1):
+            print(f"[{i}/{len(models)}] {model['label']} / {model['tag']}: "
+                  f"{model['file']}")
+            try:
+                pages += _plot_model(model, work_dir, stem=stem,
+                                     catalog=catalog, show=show)
+                done += 1
+            except Exception as exc:  # one bad run must not stop the others
+                print(f"  FAILED: {type(exc).__name__}: {exc}")
+                import matplotlib.pyplot as plt
+
+                plt.close("all")
+            gc.collect()  # Matplotlib figures hold reference cycles
     finally:
-        if _pdf is not None:
-            _info = _pdf.infodict()
-            _info["Title"] = "femtic_mod_plot_slice catalog"
-            _info["Author"] = "femtic_mod_plot_slice.py"
-            _pdf.close()
-    print(f"Slice plots done: {len(MODELS)} model(s)")
-    if _cat_path:
-        print(f"  catalog: {_n_pages} page(s) -> {_cat_path}")
+        if catalog is not None:
+            info = catalog.infodict()
+            info["Title"] = "femtic_mod_plot_slice catalog"
+            info["Author"] = "femtic_mod_plot_slice.py"
+            catalog.close()
+
+    print(f"\nSlice plots: {done} of {len(models)} model(s) done")
+    if catalog_path:
+        print(f"  catalog: {pages} page(s) -> {catalog_path}")
+
+    utl.write_param_summary(
+        __file__,
+        namespace=dict(globals(), WORK_DIR=work_dir, RUN_PATHS=run_paths),
+        out_dir=work_dir)
+
+    # entries of run_paths without any model were reported by the resolver
+    return 0 if done == len(models) else 1
 
 
-
-# ---------------------------------------------------------------------------
-# Parameter summary
-# ---------------------------------------------------------------------------
-utl.write_param_summary(fname, out_dir=WORK_DIR)
+if __name__ == "__main__":
+    _rc = main(sys.argv[1:])
+    if _rc:  # no SystemExit on success (keeps Spyder sessions quiet)
+        sys.exit(_rc)

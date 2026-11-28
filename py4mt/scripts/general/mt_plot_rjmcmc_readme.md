@@ -67,3 +67,10 @@ a PDF catalogue can also be produced.
 ## Changes 2026-11-11 (titles)
 
 `FIGURE_TITLE` (table above). The position of the colour bar cannot be chosen in `plotrjmcmc` (hand-placed axes); see `plotrjmcmc_readme.md`. Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before. Only compile-checked and tested at the level of the title logic (`util.resolve_title`, `test_util_titles.py`); the script was not run end to end.
+
+## Changes 2026-11-27 (figure size in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.  New setting
+`PLOT_SIZE = (27.94, 20.32)` [cm] (width, height of the station figures; before:
+`"11x8"` inch, fixed in the code).  Checked only as far as the value that is
+passed to `plotrjmcmc`; the script was not run on rjmcmc results.

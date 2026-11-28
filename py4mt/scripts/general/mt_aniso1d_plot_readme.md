@@ -75,3 +75,9 @@ Depends on the parameterisation used by the sampler:
 ## Changes 2026-11-11 (titles)
 
 `FIGURE_TITLE` (table above), via `util.resolve_title` (needs the `util.py` of the same date). The figure has no panel titles of its own, so there is no `PANEL_TITLES`. Claude Sonnet 5.5 (Anthropic): AI-generated; review before use. Defaults give the figures of before. Only compile-checked and tested at the level of the title logic (`util.resolve_title`, `test_util_titles.py`); the script was not run end to end.
+
+## Changes 2026-11-27 (figure size in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.  New setting
+`FIG_SIZE = (20.32, 20.32)` [cm] (width, height of the station figures; before:
+8 x 8 inch, fixed in the code).

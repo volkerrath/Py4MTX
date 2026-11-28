@@ -202,7 +202,7 @@ art that is processed further.
 | `MARK_BEST` | `True` | Triangle for the best-nRMS member in the per-site figures. |
 | `PLOT_MEMBERS` | `None` | Members shown in the figures, see "Plotting only some members". |
 | `PRINT_BEST` | `True` | Print the distortion matrices of the best-fit member, see above. |
-| `FIGSIZE_PANEL` | `(3.6, 2.9)` | One panel's size in inches; the figure is made from it, title and caption are added to the height and wrapped to the width. Holds font sizes up to 12; make it larger for larger fonts (matplotlib warns "Tight layout not applied" if it is too small). |
+| `FIGSIZE_PANEL` | `(9.144, 7.366)` | Width, height of one panel in **cm**; the figure is made from it, title and caption are added to the height and wrapped to the width. Holds font sizes up to 12; make it larger for larger fonts (matplotlib warns "Tight layout not applied" if it is too small). |
 | `DPI` | `400` | Resolution of the raster formats. |
 | `TICK_FONTSIZE`, `LABEL_FONTSIZE_AXES`, colours | `12`, `12`, see script | Font sizes and the colours of bars, text, lines, grid and background. |
 | `TITLE` | `""` (no title) | `"auto"`; `None` / `False` / `""` = none; text with `{n_members}`, `{n_sites}`, `{site}`, `{id}`; or a dict `{"pooled": ..., "site": ..., "default": ...}`. |
@@ -317,5 +317,6 @@ passing (pytest or `python test_femtic_distort_stat.py`):
 | 2026-11-13b | Claude Sonnet 5.5 (Anthropic) | `OUTPUT_FORMATS` accepts a list or one string and any format matplotlib writes (png, pdf, jpg, svg, eps, tif, ...); names are normalised and checked at the start; new `JPEG_QUALITY`; text stays text in pdf / eps / ps. Title and caption are wrapped to the figure width (the caption was clipped with font size 12); count axes have whole-number ticks. Built on the user's version of the script (`BINS = 20`, `DPI = 400`, font sizes 12, `TITLE = ""` kept). AI-generated; review before production use. |
 | 2026-11-13c | Claude Sonnet 5.5 (Anthropic) | New `PRINT_BEST`: table of the distortion matrices (elements of `C` or `C'`, `cond(C)`, `det(C)`) of the best-fit member for every site. AI-generated; review before production use. |
 | 2026-11-14 | Claude Sonnet 5.5 (Anthropic) | New `PLOT_MEMBERS`: figures for one member or a short list of members (`"best"`, directory names, patterns, numbers); figure file names carry the members' names; `PER_SITE` needs two or more members; statistics and best-fit table still cover all members. AI-generated; review before production use. |
+| 2026-11-27 | Claude Sonnet 5.5 (Anthropic) | `FIGSIZE_PANEL` is in cm (before: inch); the default `(9.144, 7.366)` is the former `(3.6, 2.9)`. Multiply personal values by 2.54. AI-generated; review before use. |
 
 Author: Volker Rath (DIAS)

@@ -126,8 +126,10 @@ ModEM-specific assumptions -- **please check against your files**:
 
 ## Fit measures
 
-Unchanged from `femtic_data_misfit.py`, via `inverse.py` (`nrms`, `r_mae`,
-`r_med`, `q95`) plus the mean of the error-normalized residuals r (bias):
+From `modules/misfit_measures.py`: `nrms`, `r_mae`, `r_med`, `q95` (routines of
+`inverse.py`), the mean of the error-normalized residuals r (bias) and its
+higher moments. The tables of this script list the first five, as before; all
+eight can be chosen for the figures.
 
 | Measure | Definition | Expected for r ~ N(0,1) |
 |---------|------------|-------------------------|
@@ -136,12 +138,72 @@ Unchanged from `femtic_data_misfit.py`, via `inverse.py` (`nrms`, `r_mae`,
 | `r_med` | median(abs(r)) / 0.6745 | 1 |
 | `q95`   | 95th percentile of abs(r) | 1.96 |
 | `mean`  | mean(r) | 0 |
+| `std`   | sqrt(mean((r - mean(r))^2)) | 1 |
+| `skew`  | m3 / m2^1.5 (skewness) | 0 |
+| `kurt`  | m4 / m2^2 - 3 (excess kurtosis) | 0 |
 
 Each is given for both normalizations: `err` (observed error only,
 conventional, Baba's RMS1) and `err+syn` (observed plus synthesized error,
 RMS2; only with `SHOW_RMS2 = True` and M > 1). Output files: `<prefix>_fit_measures.txt`,
 `<prefix>_crossplot_stats.txt`, `<prefix>_hist_stats.txt` -- same naming and
 layout as `femtic_data_misfit.py`.
+
+### Choosing the plotted measures
+
+Which measures the figures show is chosen with the settings below; the defaults
+give the figures of before. The text tables list what they listed before (only
+the per-site files follow `SITE_MEASURES`, see below).
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `PANEL_MEASURES` | `None` | Text box of every crossplot, histogram and Q-Q panel. `None` = as before: crossplot `n`, `nrms`; histogram `n`, `nrms`, `n_out`; Q-Q `n`, `slope`, `icpt`. A list is used for all three kinds of figure; a dict `{"crossplot": list, "histogram": list, "qq": list, "default": list}` sets them one by one; `False` or `()` = no box |
+| `PANEL_MEASURES_FONTSIZE` | `8.0` | Font size of that box [pt] |
+| `HIST_SCALE_MEASURE` | `"nrms"` | Scale s of the red curve N(0, s^2) and of the blue dashed lines at +/- s in the histograms: `"nrms"`, `"r_mae"`, `"r_med"` or `"q95"` (s = q95 / 1.96); `None` = neither is drawn |
+| `SITE_MEASURES` | `"nrms"` | Per-site value(s): a name or a list of names, see below |
+
+Entries of `PANEL_MEASURES`:
+
+- the measures `nrms`, `r_mae`, `r_med`, `q95`, `mean`, `std`, `skew`, `kurt`
+  (also accepted: `rms`, `rmae`, `rmed`, `bias`);
+- `n` (number of values), `slope` and `icpt` (quartile line of the normal Q-Q
+  plot; also `intercept`);
+- `n_out` (histogram and Q-Q only: values outside +/- `HIST_LIMIT` / `QQ_LIMIT`,
+  written only if > 0) and `out_pct` (Q-Q only: dots outside the envelope).
+
+In a list for all figures an entry that does not apply to a kind of figure is
+left out there; in the list of that one kind it is an error. With RMS2 shown
+(`SHOW_RMS2`), the measures and `slope` are written twice (suffix 1 / 2), while
+`icpt` and `n_out` refer to the plotted variant. An unknown name stops the run
+with a message. Long lists need a smaller `PANEL_MEASURES_FONTSIZE` or larger
+panels.
+
+```python
+PANEL_MEASURES = {"crossplot": ["n", "nrms", "r_med"],
+                  "histogram": ["n", "nrms", "r_mae", "r_med", "skew", "n_out"],
+                  "qq": ["slope", "icpt", "out_pct"]}
+HIST_SCALE_MEASURE = "r_med"
+SITE_MEASURES = ["r_med", "nrms"]
+```
+
+`SITE_MEASURES`:
+
+- method `"curves"`: all entries appear in the figure title and in
+  `<prefix>_site_nrms.txt` (one column per further entry); the FIRST entry orders
+  `CURVES_SITE_ORDER = "worst"` / `"best"`;
+- `mean`, `skew` and `kurt` can be negative: worst / best go by the absolute
+  value;
+- this script has no site map and no outlier method.
+
+A site value is computed from the residuals of that site only. With few values,
+`std`, `skew` and `kurt` in particular scatter strongly (`skew` needs n >= 3,
+`kurt` n >= 4; otherwise the value is `nan`).
+
+Title fields of "curves" (`FIGURE_TITLE`): `{fit}` (all entries of
+`SITE_MEASURES`, e.g. `rMED = 1.12, nRMS = 1.35`) and one field per measure
+(`{nrms}`, `{r_med}`, ...; `n/a` for observed-only).
+
+The routines are in `modules/misfit_measures.py` (see
+`misfit_measures_readme.md`).
 
 ## Run resolution (the ModEM-specific part)
 
@@ -234,8 +296,8 @@ the calculated files (or `OUT_DIR`). Rows are matched across members
 (`KEY_ROUND`); RMS1 and, with `SHOW_RMS2 = True`, RMS2 (Baba 2023) are reported, RMS2 needs M > 1.
 Quote glob patterns so the shell does not expand them.
 
-`modem.py` and `inverse.py` (fit measures; it imports `aniso`) must be
-importable; if `PY4MTX_ROOT` is set, `$PY4MTX_ROOT/py4mt/modules` and
+`modem.py`, `misfit_measures.py` and `inverse.py` (fit measures; it imports
+`aniso`) must be importable; if `PY4MTX_ROOT` is set, `$PY4MTX_ROOT/py4mt/modules` and
 `.../scripts` are added to `sys.path`.
 
 Output location: `OUT_DIR = None` (default) writes into the run directory
@@ -262,7 +324,7 @@ for several singles), exactly as in `femtic_data_misfit.py`.
 | `CURVES_BAND_PCT`, `CURVES_DENSITY_NX/NY/GAMMA`, `CURVES_SEED` | (5,25), 200/60/0.5, 0 | Bands and density |
 | `CURVES_OBSERVED_ONLY` | False | Draw only the observed data |
 | `CURVES_OBS_ERRORS`, `CURVES_OBS_MARKERSIZE`, `CURVES_LINEWIDTH` | `"bar"`, 3.5, 1.2 | Observed errors (`"bar"`/`"shade"`/`"none"`), sizes |
-| `CURVES_INVERT_X`, `CURVES_PERIOD_LIM`, `CURVES_YLIM`, `CURVES_PANEL_SIZE`, `CURVES_LEGEND_LOC`, `CURVES_MULTIPAGE` | see script | Axes and layout (`"best"` legend is slow with density) |
+| `CURVES_INVERT_X`, `CURVES_PERIOD_LIM`, `CURVES_YLIM`, `CURVES_PANEL_SIZE`, `CURVES_LEGEND_LOC`, `CURVES_MULTIPAGE` | see script | Axes and layout (`"best"` legend is slow with density); `CURVES_PANEL_SIZE` = width, height of one panel [cm], default (10.668, 8.636) |
 | `CURVES_Z_UNITS`, `CURVES_Z_CONJ`, `CURVES_RHOPHS_LOG10`, `CURVES_APPRES_PHASE_DEG` | `"ohm"`, False, False, True | ModEM data conventions (see above) |
 | `CURVES_PHASE_WRAP_MODE`, `CURVES_PHASE_WRAP_STYLE`, `CURVES_PHASE_WRAP_RANGE` | `"direct"`, `None`, `(-180.0, 180.0)` | Phase curves that leave the +-180 deg window (jump of more than half the window between two periods): the line is interrupted and the two points joined by a separate line (`"direct"` straight, `"short"` through the window edge, `"off"` as before); style = dict of Matplotlib line properties over the dotted default (`False` = gap only); bands are cut and the density skips the jump; range `(-3.14159, 3.14159)` for radians |
 | `ENSEMBLE_OBS` | `"mean"` | Observed data across members: `"mean"` or `"first"` |
@@ -273,25 +335,26 @@ for several singles), exactly as in `femtic_data_misfit.py`.
 | `PLOT_FORMATS`, `PLOT_DPI` | `(".pdf",)`, 300 | Figure output; must be a tuple (comma!) |
 | `PLOT_DIR` | `"plots"` | Directory for all figures: `None` = with the tables; relative name = sub-directory of the output directory (per run); absolute path = one directory for all figures |
 | `DATATYPES`, `COMPONENTS` | `None` | Restrict selection, e.g. `["Full_Impedance"]`, `["ZXY","ZYX"]` |
-| `NCOLS`, `PANEL_SIZE`, `EQUAL_ASPECT` | 4, 3.3, True | Crossplot layout |
+| `NCOLS`, `PANEL_SIZE`, `EQUAL_ASPECT` | 4, 8.382, True | Crossplot layout; `PANEL_SIZE` = side of one panel [cm] |
 | `CMAP`, `COLOR_RANGE` | `"turbo"`, `"global"` | log10 f colouring |
 | `MARKER_SIZE`, `ALPHA`, `LOG_RHO`, `SHOW_ERRORBARS` | | Crossplot appearance |
-| `FIGURE_TITLE` | `"auto"` | Figure titles. `"auto"` = the titles of before; `None`, `False`, `""` = none; a string, used as given, with `{key}` and the fields below filled in (`str.format`; text that cannot be filled in is used as it stands, with a note); a dict `{"crossplot": spec, "histogram": spec, "qq": spec, "curves": spec, "default": spec}` per kind of figure. Fields: all `{title}` (the run title); crossplot `{datatype}`; histogram and Q-Q `{group}`, `{axis}`, `{per_decade}`; curves `{site}`, `{sid}`, `{nrms}` (text, already formatted, `n/a` for observed-only) |
+| `FIGURE_TITLE` | `"auto"` | Figure titles. `"auto"` = the titles of before; `None`, `False`, `""` = none; a string, used as given, with `{key}` and the fields below filled in (`str.format`; text that cannot be filled in is used as it stands, with a note); a dict `{"crossplot": spec, "histogram": spec, "qq": spec, "curves": spec, "default": spec}` per kind of figure. Fields: all `{title}` (the run title); crossplot `{datatype}`; histogram and Q-Q `{group}`, `{axis}`, `{per_decade}`; curves `{site}`, `{sid}`, `{fit}`, `{nrms}` and the other measure names (text, already formatted, `n/a` for observed-only) |
 | `PANEL_TITLES` | `True` | `False` = no titles of the crossplot, histogram and Q-Q panels |
+| `PANEL_MEASURES`, `PANEL_MEASURES_FONTSIZE`, `HIST_SCALE_MEASURE`, `SITE_MEASURES` | `None`, `8.0`, `"nrms"`, `"nrms"` | Which measures of data fit are plotted; see "Choosing the plotted measures" |
 | `CROSSPLOT_CBAR_LOCATION`, `CROSSPLOT_CBAR_SHRINK` | `None; 0.85` | Colour bar of the crossplots (log10 frequency): `None` = at the right as before; `"right"`, `"left"`, `"top"`, `"bottom"`; length as a fraction of the side of the panel grid. These figures use `constrained_layout`, so the thickness is not offered |
 | `HIST_BAND_AXIS` | `"frequency"` | `"frequency"` or `"period"` bands |
 | `HIST_BANDS_PER_DECADE` | 2 | Band density |
 | `HIST_BY_COMPONENT` | False | Per component instead of per data type |
 | `HIST_LIMIT`, `HIST_BIN_WIDTH` | 10.0, 0.5 | Histogram range and bins |
 | `HIST_MIN_N` | 5 | Minimum values per band |
-| `HIST_NCOLS`, `HIST_PANEL_SIZE` | 4, 3.0 | Histogram layout |
+| `HIST_NCOLS`, `HIST_PANEL_SIZE` | 4, 7.62 | Histogram layout; side of one panel [cm] |
 | `QQ_BAND_AXIS`, `QQ_BANDS_PER_DECADE` | `"frequency"`, 2 | Q-Q band definition |
 | `QQ_BY_COMPONENT` | False | Per component instead of per data type |
 | `QQ_LIMIT` | 10.0 | Max absolute sample quantile shown |
 | `QQ_EQUAL_AXES` | False | Same range on both axes, square panels |
 | `QQ_CONFIDENCE` | 0.95 | Envelope level (`None` = no envelope) |
 | `QQ_MIN_N` | 10 | Minimum values per band |
-| `QQ_NCOLS`, `QQ_PANEL_SIZE` | 4, 3.0 | Q-Q layout |
+| `QQ_NCOLS`, `QQ_PANEL_SIZE` | 4, 7.62 | Q-Q layout; side of one panel [cm] |
 | `WRITE_STATS`, `SHOW` | True, False | Text tables / interactive display |
 | `FIT_MEASURES` | True | Overall fit-measure table |
 
@@ -478,3 +541,13 @@ stay distinct through the prefix). New helper `resolve_plot_dir()`.
   the density skips the interval member by member. New settings `CURVES_PHASE_WRAP_MODE`, `CURVES_PHASE_WRAP_STYLE`,
   `CURVES_PHASE_WRAP_RANGE`; `draw_density` / `draw_bands` got `wrap_range`. Needs the `data_viz.py` of the same date.
 - Tests: `scripts/general/test_phase_wrap_plotters.py`.
+
+### Changelog (2026-11-27) --- choice of the fit measures, sizes in cm (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use)
+- The measures of data fit that are plotted can be chosen: `PANEL_MEASURES`, `PANEL_MEASURES_FONTSIZE`,
+  `HIST_SCALE_MEASURE`, `SITE_MEASURES`; see "Choosing the plotted measures". The defaults give the output
+  of before (compared on synthetic data).
+- The measure routines come from the new module `misfit_measures.py` (needed in `modules/`);
+  `fit_measures()` now also returns `std`, `skew`, `kurt`.
+- `PANEL_SIZE`, `HIST_PANEL_SIZE`, `QQ_PANEL_SIZE` and `CURVES_PANEL_SIZE` are in **cm** (before: inch);
+  the new defaults are the former ones converted. Multiply personal values by 2.54.
+- Tests: `scripts/modem/test_modem_data_misfit_measures.py` (synthetic data); not run on real ModEM files.

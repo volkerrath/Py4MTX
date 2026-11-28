@@ -337,16 +337,16 @@ The rules in short:
 ### Fault from two surface points
 
 A `kind="profile"` entry with `dip` is the plane through the two surface
-points `p1`, `p2`. The keys are degrees / metres even in this km script (`p1`,
-`p2` = `([lon, lat], "latlon")`, `([E, N], "utm")` or `[x, y]` model-local
-metres; `z_top`, `z_bot`, `xlim`, `ylim` in m), except `limit_km` and
-`fade_km`, which are in km as their names say.
+points `p1`, `p2`. All lengths are km, as everywhere in the script settings
+(since 2026-11-26): `p1`, `p2` = `([lon, lat], "latlon")` (degrees),
+`([E, N], "utm")` (UTM km) or `[x, y]` model-local km; `z_top`, `z_bot`,
+`xlim`, `ylim`, `limit_km` and `fade_km` in km.
 
 ```python
 dict(kind="profile",
      p1=([6.030869, 45.962166], "latlon"),
      p2=([6.115936, 45.910655], "latlon"),
-     dip=110.0, z_top=0.0, z_bot=20000.0,
+     dip=110.0, z_top=0.0, z_bot=20.0,
      overlay=dict(color="magenta", linestyle=":", linewidth=15.0, alpha=0.9),
      title="Vuache fault",
      limit_km=0.0, alpha_outside=0.25, fade_km=2.0,
@@ -435,7 +435,7 @@ for dipping planes (a plane through `(x, y)` at depth `z`):
 |---|---|
 | `[x, y]` / `[x, y, z]` | model-local km (plain list, as before) |
 | `([x, y, z], "model")` | model-local km |
-| `([E, N, z], "utm")` | absolute UTM easting / northing in **metres**, `z` in km |
+| `([E, N, z], "utm")` | absolute UTM easting / northing in **km**, `z` in km |
 | `([lon, lat, z], "latlon")` | decimal degrees, **longitude first**, `z` in km |
 
 UTM and latlon points are converted with the UTM zone and model origin the
@@ -488,7 +488,7 @@ MOD_POLYLINES = {
 
 | Key of an entry | Default | Description |
 |---|---|---|
-| `points` | required | `[[x, y], ...]` or `[[x, y, z], ...]`, at least 2 rows, model-local km; z = depth, positive down (missing z = 0). Or CRS-tagged `(pts, "model" \| "utm" \| "latlon")`: `"utm"` = `[E, N(, z)]` in UTM **metres**, `"latlon"` = `[lon, lat(, z)]` in degrees (longitude first); z is km in every case. A bare point list instead of the entry dict is shorthand. |
+| `points` | required | `[[x, y], ...]` or `[[x, y, z], ...]`, at least 2 rows, model-local km; z = depth, positive down (missing z = 0). Or CRS-tagged `(pts, "model" \| "utm" \| "latlon")`: `"utm"` = `[E, N(, z)]` in UTM **km**, `"latlon"` = `[lon, lat(, z)]` in degrees (longitude first); z is km in every case. A bare point list instead of the entry dict is shorthand. |
 | `style` | 1.5 pt solid, colour cycled | matplotlib `Line2D` keywords (`color`, `linewidth`, `linestyle`, `marker`, `alpha`, `zorder`, ...). |
 | `label` | the dict key | Legend text (lower right of each panel, with the reference-model label); `None` = no entry. |
 | `kinds` | all panels | `"map"`, `"ns"`, `"ew"`, `"plane"`, `"vertical"` (= ns + ew + plane) or a list of these. |
@@ -501,7 +501,8 @@ limits; parts outside the panel are clipped by the axes.
 
 **Intersection line of two slices.** `fviz.slice_intersection_polyline(a, b,
 xlim=..., ylim=..., zlim=...)` returns the line in which two slices meet
-(clipped to the box and to the extents of the slices), in model-local metres;
+(clipped to the box and to the extents of the slices), in model-local metres
+(a library function: its arguments and result are metres, not km);
 `fviz.slice_intersection_polylines(slices, ...)` makes ready entries for many
 pairs. Because the helpers work in metres, give the slices and limits in metres
 and divide the result by 1000 for this km dict, e.g.
@@ -539,17 +540,18 @@ MOD_SLICES = [
     dict(kind="profile",
          p1=([6.030869, 45.962166], "latlon"),     # [lon, lat]
          p2=([6.115936, 45.910655], "latlon"),
-         dip=70.0, z_top=0.0, z_bot=20000.0,       # metres
+         dip=70.0, z_top=0.0, z_bot=20.0,          # km
          overlay=dict(color="k", linewidth=1.5), title="fault",
          panel=False),                 # trace only; remove for a fault panel too
 ]
 ```
 
-The profile keys (`p1`, `p2`, `z_top`, `z_bot`, `xlim`, `ylim`) are degrees /
-UTM metres / model-local **metres** even in this km script. `z_top` is also
-the depth at which the plane contains the trace (use `-elevation` for a trace
-above sea level; an error `dz` shifts the plane horizontally by `dz / tan(dip)`).
-`xlim=[-L/2, L/2]` (m along strike, relative to the midpoint of p1-p2) limits
+The profile keys (`p1`, `p2`, `z_top`, `z_bot`, `xlim`, `ylim`) are degrees
+(`"latlon"`) or km (UTM km, model-local km), like all other settings. `z_top`
+is also the depth at which the plane contains the trace (use `-elevation`, in
+km, for a trace above sea level;
+an error `dz` shifts the plane horizontally by `dz / tan(dip)`).
+`xlim=[-L/2, L/2]` (km along strike, relative to the midpoint of p1-p2) limits
 the fault to the segment of length `L`. Details: `femtic_viz_readme.md`, "Fault
 planes: a panel and an overlay". Needs `femtic.py` and `femtic_viz.py` of
 2026-11-12.
@@ -609,9 +611,8 @@ MOD_MAP_MARKERS = [
   removes it everywhere.
 - `MOD_MAP_MARKERS = []` = no markers; the figures are then unchanged. Entries
   of earlier versions (no `depth`) are drawn on the maps only, as before.
-- `femtic_gst_prep.py` and `femtic_ens_plot.py` have their own marker settings
-  and are not changed by this entry; their lists reach the same
-  `plot_model_slices`, where the new keys are metres (no km conversion there).
+- `femtic_gst_prep.py`, `femtic_rto_prep.py` and `femtic_nss.py` have their own
+  `MOD_MAP_MARKERS`; they use the same keys in km (`fem.markers_km_to_m`).
 - Needs `femtic.py` (`markers_km_to_m`) and `femtic_viz.py` of 2026-11-15
   (point markers).
 
@@ -623,7 +624,7 @@ MOD_MAP_MARKERS = [
 | `MOD_SITE_NAMES` | `None` = all sites; list of strings = subset. |
 | `MOD_SITE_NUMBER` | Fallback site number(s) from `observe.dat` (int or list of ints), used only when `MOD_SITE_DAT` is unavailable. |
 | `MOD_PLOT_SITES_MAPS / SLICES` | Toggle site markers on map / curtain panels. |
-| `MOD_PROJECTION_DIST` | Maximum projection distance (m) for curtain panels; `None` = show all sites on every panel. |
+| `MOD_PROJECTION_DIST` | Maximum projection distance (km) for curtain panels; `None` = show all sites on every panel. |
 | `MOD_SITE_MARKER / MARKER_SLICES` | Marker style dicts for map / curtain overlays. |
 | `MOD_MAP_MARKERS` | Point markers (epicentres, wells, ...), a list of dicts; the default holds the example of the Epagny 1996 epicentre and the model centre, see "Point markers" below. On every map; on a section (`ns`, `ew`, `plane`, `profile` panel) those with a `depth` within `max_dist` of it. Lengths in km (`fem.markers_km_to_m`). `[]` = none. An entry with `"is_model_centre": True` (instead of `"latlon"`) sets the style, panels and depth of the model-centre marker. |
 | `MOD_SHOW_MODEL_CENTRE` | `True` (default): marks the model origin on `"map"` panels whenever `MOD_DISPLAY_COORDS` is `"utm"`/`"latlon"` (no-op for `"model"`). Default style (since 2026-09-26): yellow star with a black edge, `ms=14`, at `zorder=15`; no legend entry. The `is_model_centre` entry of `MOD_MAP_MARKERS` overrides style, panels (`kinds`), depth and legend `name` (the script's default entry: black cross on the maps and the sections); `False` = no centre marker at all. |
@@ -633,7 +634,7 @@ MOD_MAP_MARKERS = [
 | Parameter | Description |
 |---|---|
 | `MOD_ORIGIN_METHOD` | `"box"` (bounding-box midpoint) / `"average"` / `None` (use literal values). |
-| `MOD_UTM_ORIGIN_LAT/LON/E/N` | Manual override; ignored when `MOD_ORIGIN_METHOD` estimates from `MOD_SITE_DAT`. |
+| `MOD_UTM_ORIGIN_LAT/LON/E/N` | Manual override (LAT / LON in degrees, E / N in UTM **km**); ignored when `MOD_ORIGIN_METHOD` estimates from `MOD_SITE_DAT`. |
 | `MOD_UTM_ZONE_OVERRIDE` | Force a specific UTM zone string; `None` = auto-detect. |
 | `MOD_DISPLAY_COORDS` | `"model"` / `"utm"` / `"latlon"`. |
 
@@ -711,3 +712,4 @@ the file.
 | 2026-11-15 (h) | Claude Sonnet 5.5 (Anthropic) | **Difference to the prior model.** `MOD_STATS_WHAT` accepts `"diff_prior"` (signed log10 difference model(ens) - model(prior), written by `femtic_ens_post.py` (d)) and `"abs_diff_prior"` (its absolute value); `MOD_STATS_STYLE` has entries for both (diverging `"RdBu"`, `clim=[-1, 1]`; `"viridis"`, `clim=[0, 1]`); either can be the name in `MOD_ALPHA_SOURCE`. Neither is in the default list. No code change in the script body. Needs the `femtic.py` of the same date and a results file from the post script of the same date. Tested on synthetic results (stubbed and real drawing, Agg); not on your data. AI-generated; review before production use. |
 | 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | **Spread at iter0 and the ratio iterX / iter0.** `MOD_STATS_WHAT` accepts `"qdiff0_<lo>_<hi>"` (spread of the iter0 / perturbed models) and `"qratio_<lo>_<hi>"` (= `qdiff / qdiff0`, written by `femtic_ens_post.py` of the same date); `MOD_STATS_STYLE` has entries for both (`qdiff0`: as `qdiff`; `qratio`: `"coolwarm"`, `clim=[0, 2]`); neither is in the default list (commented lines show them); either can be the name in `MOD_ALPHA_SOURCE`. A file without the keys skips the panel with a printed message. No code change in the script body; needs the `femtic.py` of the same date. Tested on synthetic results (reader, stat map, style entries); not on your data. AI-generated; review before production use. |
 | 2026-11-22 (b) | Claude Sonnet 5.5 (Anthropic) | **Contents of the results `.npz`.** The list of the arrays of `ENSEMBLE_RESULTS` (key, shape, type, meaning) is printed after reading (if `OUT`) and appended to `femtic_ens_plot_slices_summary.md` (`fem.print_results_contents()`, `fem.append_results_contents()`; the `femtic.py` of the same date). Nothing else changes. Tested on synthetic results files; not on your data. AI-generated; review before production use. |
+| 2026-11-26d | Claude Sonnet 5.5 (Anthropic) | All user settings are km, UTM coordinates too: `MOD_UTM_ORIGIN_E / _N`, `(value, "utm")` positions of `MOD_SLICES` and of plane points, profile `p1` / `p2` / `z_top` / `z_bot` / `xlim` / `ylim`, per-panel limits and `"utm"` polyline points (before: metres). Personal settings in metres must be converted; a value that looks like metres stops the run (`fem.KmUnitError`: lengths above 1000 km, axis limits above 5000 km, UTM easting / northing above 2000 / 20000 km). Smaller values given in metres cannot be recognised and are read as km. Coordinates read from files (`site.dat`) stay in metres. Needs `femtic.py` of the same date. Tested on synthetic data only: figures as before for the same positions. AI-generated; review before production use. |

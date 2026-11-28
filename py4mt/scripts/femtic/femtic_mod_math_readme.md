@@ -81,8 +81,8 @@ The median model is smoothed using the same three kernel modes as
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `SMOOTH_MODE` | str | `"physical"` | `"physical"` — global Gaussian, σ = `SMOOTH_SIGMA` m.<br>`"knn_uniform"` — flat average over K nearest neighbours.<br>`"knn_gauss"` — per-region Gaussian, σᵢ = `SMOOTH_KNN_SIGMA_FRAC` × d_{i,K}. |
-| `SMOOTH_SIGMA` | float | `3000.0` | Gaussian σ in metres (`"physical"` mode only). |
+| `SMOOTH_MODE` | str | `"physical"` | `"physical"` — global Gaussian, σ = `SMOOTH_SIGMA` (km).<br>`"knn_uniform"` — flat average over K nearest neighbours.<br>`"knn_gauss"` — per-region Gaussian, σᵢ = `SMOOTH_KNN_SIGMA_FRAC` × d_{i,K}. |
+| `SMOOTH_SIGMA` | float | `3.0` | Gaussian σ in km (`"physical"` mode only). |
 | `SMOOTH_K` | int | `100` | Number of nearest neighbours (all modes). |
 | `SMOOTH_KNN_SIGMA_FRAC` | float | `0.5` | Per-region σ fraction (`"knn_gauss"` only): σᵢ = frac × d_{i,K}. |
 | `SMOOTH_MAX_GB` | float | `4.0` | Max RAM in GiB for chunked dense fallback (`"physical"`, no SciPy). |
@@ -110,12 +110,13 @@ Controlled by the same config block used in `femtic_mod_edit.py` and
 | `PLOT_CMAP` | Matplotlib colormap name. |
 | `PLOT_CLIM` | `[log10(ρ_min), log10(ρ_max)]`; `None` = auto. |
 | `PLOT_OCEAN_COLOR` | Flat colour for ocean/lake cells. |
-| `PLOT_SLICES` | List of slice dicts (`kind`, `z0`/`x0`/`y0`). |
-| `PLOT_XLIM / YLIM / ZLIM` | Global axis limits (model-local metres). |
+| `PLOT_SLICES` | List of slice dicts (`kind`, `z0`/`x0`/`y0`), lengths in km; `(value, "utm")` in UTM km. |
+| `PLOT_XLIM / YLIM / ZLIM` | Global axis limits (model-local km). |
 | `DEPTH_KM / HORIZ_KM` | Axis units. |
 | `PLOT_EQUAL_ASPECT` | Equal aspect ratio on map/curtain panels. |
 | `PLOT_PANEL_HEIGHT` | Panel height in cm. |
 | `PLOT_NROWS / NCOLS` | Grid layout; `None` = 1 row × N columns. |
+| `PLOT_SINGLE_PANELS` | `False` (default) = all slices in one figure; `True` = one figure per slice (`math_avg_01_<kind>.pdf`, ...), grid settings not used, same colour scale. |
 
 ### Site overlay
 
@@ -124,7 +125,8 @@ Controlled by the same config block used in `femtic_mod_edit.py` and
 | `SITE_DAT` | Path to `site.dat` CSV; `None` to disable. |
 | `SITE_NAMES` | `None` = all sites; list of strings = subset. |
 | `PLOT_SITES_MAPS / SLICES` | Toggle site markers on map / curtain panels. |
-| `PROJECTION_DIST` | Maximum projection distance (m) for curtain panels. |
+| `PROJECTION_DIST` | Maximum projection distance (km) for curtain panels. |
+| `MAP_MARKERS` | Additional markers; `depth`, `depth_err`, `max_dist` in km. |
 | `SITE_MARKER` | Marker style dict for map overlays. |
 
 ### Geographic / UTM origin
@@ -132,7 +134,7 @@ Controlled by the same config block used in `femtic_mod_edit.py` and
 | Parameter | Description |
 |---|---|
 | `ORIGIN_METHOD` | `None` / `"box"` / `"average"` — how to estimate UTM origin from `SITE_DAT`. |
-| `UTM_ORIGIN_LAT/LON/E/N` | Manual override; ignored when `ORIGIN_METHOD` estimates from sites. |
+| `UTM_ORIGIN_LAT/LON/E/N` | Manual override (LAT / LON in degrees, E / N in UTM **km**); ignored when `ORIGIN_METHOD` estimates from sites. |
 | `UTM_ZONE_OVERRIDE` | Force a specific UTM zone string; `None` = auto. |
 | `DISPLAY_COORDS` | `"model"` / `"utm"` / `"latlon"`. |
 
@@ -176,6 +178,7 @@ BLOCK_FILES = [
   resistivity_block_smooth_median.dat # median → smoothed
   math_avg.pdf                        # slice figure (PLOT=True)
   math_smooth_median.pdf              # slice figure (PLOT=True)
+  math_avg_01_map.pdf, ...            # instead, with PLOT_SINGLE_PANELS=True
 ```
 
 Both `.dat` files are valid FEMTIC resistivity block files and can be used
@@ -236,3 +239,5 @@ pass restores spatial continuity while preserving the robustness advantage.
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_mod_math_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time. |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_mod_math_summary.md` is now written to `ENSEMBLE_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=ENSEMBLE_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | New `CNV_FILE` (one name or a list of candidate names; default `["femtic.cnv", "FEMTIC-DABIC.cnv"]`). The file is found with `fem.find_cnv_file()` and its last row is read by column name (`fem.read_cnv_last()`) instead of the fixed positions 0 and 8, which fitted only the layout with distortion columns. Needs the `femtic.py` of the same date. AI-generated; review before production use. |
+| 2026-11-26 | Claude Sonnet 5.5 (Anthropic) | Optional single-panel output (`PLOT_SINGLE_PANELS`, default `False`): one figure per slice. Needs `femtic_viz.py` of the same date. Tested on synthetic files only. AI-generated; review before production use. |
+| 2026-11-26b | Claude Sonnet 5.5 (Anthropic) | All user settings are km, UTM coordinates too: `SMOOTH_SIGMA` (3.0), `PLOT_SLICES`, `PLOT_XLIM / YLIM / ZLIM`, `PROJECTION_DIST`, `UTM_ORIGIN_E / _N`, `MAP_MARKERS` (before: metres; the defaults are the same lengths written in km). Personal settings in metres must be converted; a value that looks like metres stops with an error (`fem.KmUnitError`), smaller values given in metres are read as km. Needs `femtic.py` of the same date. Tested on synthetic files only: same model files and figures as before. AI-generated; review before production use. |

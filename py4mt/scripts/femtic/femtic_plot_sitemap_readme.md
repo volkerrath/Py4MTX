@@ -2,7 +2,8 @@
 
 Site map of a FEMTIC run, or of a whole ensemble, on a DEM background. Every
 site is an icon coloured by its normalized RMS misfit (nRMS), for frequency bands
-and data components. For an ensemble (`WORK_DIR` = the ensemble root with the
+and data components, or by other measures of data fit or the strength of its
+galvanic distortion (see "Measures and distortion strength"). For an ensemble (`WORK_DIR` = the ensemble root with the
 member directories and `templates/`) the colour is a statistic of the member
 nRMS at the site (median by default; mean, min, max, a percentile or the std).
 The DEM is the Copernicus DEM GLO-30 by default (GeoTIFF tiles that are
@@ -13,10 +14,14 @@ or polygons (faults, coast lines, caldera rims, ...) can be drawn on the maps.
 
 Same layout as the other FEMTIC scripts: a CONFIG block of UPPERCASE settings
 at the top of the script, `WORK_DIR` as the base of all relative paths,
-`-w` / `-i` / `--dem` / `--runs` / `--stat` / `--profile` / `--line` on the command line, `settings()` /
+`-w` / `-i` / `--dem` / `--runs` / `--stat` / `--measures` / `--profile` / `--line` on the command line, `settings()` /
 `run()` for use from other code. For a plot of the one nRMS per site (all bands, all components) see
 also `femtic_plot_nrms.py`; this script adds the bands x components selections,
 the tables and the DEM sources.
+
+Needs in `modules/`: `femtic_misfit.py` (with the modules it imports),
+`misfit_measures.py`, `dem.py` (the DEM routines, see `dem_readme.md`),
+`util.py` and `version.py`.
 
 ---
 
@@ -37,7 +42,7 @@ the tables and the DEM sources.
    - `SITE_MATCH = "coords"`: by position, with `femtic_misfit.match_sites_by_coords`.
      The results file holds x (north), y (east) in metres relative to the model
      origin, `site.dat` the UTM easting / northing; the shift between the two is
-     found from the data (`SITE_MATCH_TOL` = largest distance of a match, in m).
+     found from the data (`SITE_MATCH_TOL` = largest distance of a match, in km).
    - `SITE_MATCH = "id"`: `site_id = sitenum + SITE_ID_OFFSET`.
    - `"auto"` (default): by position if the results file has positions, else by id.
    - All data types of one site (MT, VTF, ...) count for the site. HTF and NMT
@@ -83,6 +88,10 @@ python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --dem copernicus30  
 python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --dem copernicus90   # GLO-90, for large maps
 python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --dem skadi  # AWS Terrain Tiles, no rasterio needed
 python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 -i last
+
+# other measures of fit, and the distortion strength
+python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --measures nrms r_mae mean
+python femtic_plot_sitemap.py -w /data/krafla/krafla_rto_26 --measures distortion
 
 # a whole ensemble: WORK_DIR = the root with krafla_rto_NN/ and templates/
 python femtic_plot_sitemap.py -w /data/krafla --dem none                  # median of all members
@@ -176,9 +185,112 @@ have no effect then.
 
 ---
 
+## Measures and distortion strength
+
+`SITE_MEASURES` (command line `--measures`) is one name or a list; every entry
+gets its own maps, tables and a section of the summary. Default: `"nrms"`.
+
+```python
+SITE_MEASURES = ["nrms", "r_mae", "distortion"]
+MEASURE_SCALES = {"distortion": dict(vmax=0.5), "r_mae": dict(vmax=2.5)}
+```
+
+### Fit measures
+
+Computed per site and for the whole data set from the error-normalized residuals
+`r = (obs - cal) / err` of the rows of a selection (band x components), real and
+imaginary parts together (the same values that enter the nRMS;
+`modules/misfit_measures.py`, as in the misfit scripts). "Expected" = value for
+Gaussian errors of the stated size.
+
+| Name (alias) | Definition | Expected | Default colour scale |
+|---|---|---|---|
+| `"nrms"` (`rms`) | `sqrt(mean(r^2))` | 1 | `CMAP_NRMS` about `NRMS_REFERENCE`, `NRMS_VMIN` / `NRMS_VMAX` |
+| `"r_mae"` (`rmae`) | `sqrt(pi/2) mean(\|r\|)` | 1 | as nrms |
+| `"r_med"` (`rmed`) | `median(\|r\|) / 0.67449` | 1 | as nrms |
+| `"std"` | standard deviation of `r` (1/n) | 1 | as nrms |
+| `"q95"` | 95th percentile of `\|r\|` | 1.96 | `CMAP_NRMS` about 1.96, limits from the data |
+| `"mean"` (`bias`) | `mean(r)` | 0 | `"RdBu_r"` about 0, symmetric |
+| `"skew"` | skewness | 0 | `"RdBu_r"` about 0, symmetric |
+| `"kurt"` | excess kurtosis | 0 | `"RdBu_r"` about 0, symmetric |
+
+- With few values per site (narrow bands, `"T"`) `q95`, `skew` and `kurt` are very
+  uncertain; `skew` needs 3 values, `kurt` 4 (else the icon is open).
+- For the signed measures the largest absolute values are drawn on top, and the
+  panel title has 3 decimals.
+- `MEASURE_SCALES = {measure: dict(cmap=, reference=, vmin=, vmax=)}` replaces any
+  of the four (`reference = None` = linear scale; `vmin` / `vmax` `None` = from
+  the data). An entry for `"nrms"` changes the nRMS map only.
+- `ENS_STAT = "std"` (spread over the members): all measures use `CMAP_SPREAD`,
+  linear from 0, and `MEASURE_SCALES` is not used. nRMS behaves as before:
+  `NRMS_VMIN` / `NRMS_VMAX` apply to the spread too, so set both to `None` for
+  such maps (limits meant for the nRMS itself make a small spread one flat colour).
+
+### Distortion strength
+
+`"distortion"` maps one number per site (no bands or components):
+
+```
+|C - I| = sqrt(C'xx^2 + C'xy^2 + C'yx^2 + C'yy^2),   C' = C - I
+```
+
+C is the galvanic distortion matrix (`Z_obs = C Z_model`); FEMTIC with the type
+`ESTIMATE_DISTORTION_MATRIX_DIFFERENCE` estimates C'. 0 means no distortion was
+estimated at the site.
+
+How to read it:
+
+- The Frobenius norm is a summary chosen here (`femtic_distcorr.py` ranks sites by
+  the same norm). It does not separate gain, twist and shear; the elements of C'
+  of a single run are in `_distortion.csv`.
+- The estimate depends on how strongly the inversion penalizes the distortion
+  (the trade-off parameter of the distortion term; see the reference below), so
+  compare runs with the same settings only.
+
+Where C' comes from, in this order:
+
+1. the `/distortion` group of the results file (needs `h5py`); its type is checked:
+   type "no distortion" and the gain / rotation types give a warning and no map;
+2. without a readable group, the text file `DISTORTION_FILE`
+   (`"distortion_iter{iter}.dat"`) next to the results file. **Its type cannot be
+   checked** (the gain / rotation types use the same columns with another
+   meaning): for such runs set `DISTORTION_FILE = None`. The console and the
+   summary say which source was used.
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `SITE_MEASURES` | `"nrms"` | names of the table above and / or `"distortion"` (`"dist"`) |
+| `DISTORTION_FILE` | `"distortion_iter{iter}.dat"` | text file next to the results file; `None` = `/distortion` group only |
+| `MEASURE_SCALES` | `{}` | colour scales per measure |
+
+- The rows are matched to the sites by their site ids (those of the data rows; also
+  when `DATATYPES` leaves out MT). Ids without a site are named in a warning;
+  several ids of one site give the mean of their strengths. Only sites with data
+  in the selected data types are mapped.
+- A matrix held fixed in the inversion is included with its value (`fixed` /
+  `n_fixed` in the table).
+- Panel title: single run, the median of the sites; ensemble, the statistic
+  `ENS_STAT` over the members of the site median of each member. The value of a
+  site is `ENS_STAT` over the members that have distortion for it.
+- If no member has distortion, the other measures are still mapped; with
+  `SITE_MEASURES = "distortion"` alone the return code is 1.
+- The auto title keeps the nRMS of the run; `TITLE` may contain `{measure}`.
+
+Reference: Usui, Y., Ogawa, Y., Aizawa, K., Kanda, W., Hashimoto, T., Koyama, T.,
+Yamaya, Y., Kagiyama, T. (2017): Three-dimensional resistivity structure of Asama
+Volcano revealed by data-space magnetotelluric inversion using unstructured
+tetrahedral elements. Geophysical Journal International 208(3), 1359-1372.
+https://doi.org/10.1093/gji/ggw459 (inversion with distortion matrices, penalized
+with a trade-off parameter; the norm used for the maps is not from this paper).
+
+---
+
 ## Settings
 
-Everything in the CONFIG block; relative paths refer to `WORK_DIR`.
+Everything in the CONFIG block; relative paths refer to `WORK_DIR`. The tables
+list the defaults; the CONFIG block of your copy may hold other run values
+(for example `SITE_LABELS`, `DPI`, `OUTPUT_FORMATS`, the colour map and limits).
+Sizes of figures are in **cm**, sizes of text, lines and symbols in pt.
 
 **Input**
 
@@ -191,7 +303,7 @@ Everything in the CONFIG block; relative paths refer to `WORK_DIR`.
 | `TEMPLATES_DIR` | `"templates"` | directory with `site.dat` |
 | `SITE_DAT` | `"auto"` | `"auto"` (see Data flow) or a path |
 | `SITE_MATCH` | `"auto"` | `"auto"`, `"coords"`, `"id"` |
-| `SITE_MATCH_TOL` | `15.0` | [m] largest distance of a match by position |
+| `SITE_MATCH_TOL` | `0.015` | [km] largest distance of a match by position (0.015 = 15 m); 1 or more is refused |
 | `SITE_ID_OFFSET` | `0` | `site_id = sitenum + SITE_ID_OFFSET` for `"id"` |
 | `DATATYPES` | `None` | see Selections |
 
@@ -233,7 +345,7 @@ Everything in the CONFIG block; relative paths refer to `WORK_DIR`.
 | `SITE_MARKER`, `SITE_SIZE` | `"^"`, `80` | |
 | `SITE_EDGECOLOR`, `SITE_LW` | `"black"`, `0.8` | |
 | `SITE_NODATA_EDGECOLOR` | `"0.35"` | open icons: sites without data in the selection |
-| `SITE_LABELS`, `LABEL_FONTSIZE` | `False`, `6` | site names |
+| `SITE_LABELS` | `False` | site names (font: `LABEL_FONTSIZE`, see "Fonts") |
 | `CMAP_NRMS` | `"RdBu_r"` | diverging, centred on `NRMS_REFERENCE` |
 | `NRMS_REFERENCE` | `1.0` | the centre colour (and a dashed line on the colour bar); `None` = linear scale |
 | `CMAP_SPREAD` | `"YlOrRd"` | colour map of `ENS_STAT = "std"` (sequential, from 0) |
@@ -247,12 +359,31 @@ components) stretch it, set `NRMS_VMAX` (for the Krafla data 3.0 shows the struc
 | Setting | Default | Meaning |
 |---|---|---|
 | `PAGE_BY` | `"band"` | `"band"` (panels = components), `"component"` (panels = bands) or `"all"` |
-| `PANEL_COLS`, `PANEL_SIZE` | `2`, `(4.8, 4.4)` | panels per row, inch |
+| `PANEL_COLS`, `PANEL_SIZE` | `2`, `(12.2, 11.2)` | panels per row; width, height of one panel in **cm** (until 2026-11-26: inch, `(4.8, 4.4)`); both below 6 cm: a note |
 | `TITLE` | `"auto"` | `"auto"`, `None` / `""` (none) or text with `{iter}`, `{nrms}`, `{M}`, `{stat}` |
 | `CBAR_LOCATION`, `CBAR_SHRINK` | `None` (right), `0.8` | colour bar at `"right"` (default), `"left"`, `"top"`, `"bottom"`; its length as a fraction (0 .. 1] of the panels along it |
 | `CBAR_LENGTH`, `CBAR_WIDTH` | `None`, `None` | size of the colour bar in **cm**. `CBAR_LENGTH` = the whole length with the extension triangles (`extend`; the coloured part is shorter by 5 % per triangle); wins over `CBAR_SHRINK`; `None` = `CBAR_SHRINK` x the panels. `CBAR_WIDTH` = the thickness; `None` = 1/20 of the length (matplotlib's). Either alone is fine. A length that the panels cannot hold is reduced to the length of the panels, with a message. See "Size of the colour bar" |
-| `TICK_FONTSIZE`, `DPI`, `SHOW` | `8`, `200`, `False` | |
+| `DPI`, `SHOW` | `200`, `False` | |
 | `OUTPUT_DIR`, `OUTPUT_BASENAME`, `OUTPUT_FORMATS` | `"sitemap"`, `"femtic_sitemap"`, `["png"]` | |
+
+**Fonts**
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `FONT_FAMILY` | `None` | `None` = matplotlib's; `"serif"`, `"sans-serif"`, `"monospace"`, the name of an installed font, or a list in fall-back order such as `["Arial", "DejaVu Sans"]`. A name that matplotlib does not find gives a warning, and another font is used |
+| `FONT_RC` | `None` | further matplotlib rcParams for the text, e.g. `{"mathtext.fontset": "stix"}` or `{"font.style": "italic"}`; an unknown key or an invalid value is refused |
+| `TICK_FONTSIZE` | `8.0` | tick labels of the maps; base of the sizes that are `None` |
+| `AXIS_LABEL_FONTSIZE` | `None` | axis titles; `None` = `TICK_FONTSIZE` |
+| `TITLE_FONTSIZE`, `TITLE_FONTWEIGHT` | `None`, `"normal"` | figure title; `None` = `TICK_FONTSIZE + 3`. A title wider than the figure is broken into lines |
+| `PANEL_TITLE_FONTSIZE` | `None` | panel titles; `None` = `TICK_FONTSIZE + 1` |
+| `LABEL_FONTSIZE`, `LABEL_FONTWEIGHT` | `6.0`, `"normal"` | site names |
+| `LEGEND_FONTSIZE` | `None` | legend; `None` = `TICK_FONTSIZE - 1` |
+| `CBAR_LABEL_FONTSIZE`, `CBAR_TICK_FONTSIZE` | `None`, `None` | colour bar title and numbers; `None` = matplotlib's |
+| `SCALEBAR_FONTSIZE` | `None` | scale bar; `None` = `TICK_FONTSIZE - 1` |
+| `CREDIT_FONTSIZE` | `5.0` | DEM credit line |
+| `MAP_HALO` | `False` | outline around the site names, the scale bar and the DEM credit (until 2026-11-27 always drawn) |
+| `MAP_HALO_COLOR`, `MAP_HALO_WIDTH` | `"white"`, `1.5` | its colour and width [pt] (scale bar: 1 pt more) |
+| `PROFILE_FONTSIZE`, `PROFILE_TICK_FONTSIZE` | `9.0`, `None` | texts of the profiles, see "Profiles and lines" |
 
 ---
 
@@ -287,8 +418,8 @@ PROFILES = [
     dict(name="B-B'", center=(-16.78, 65.71), azimuth=90.0, length_km=6.0,
          width_km=1.0, ticks_km=1.0, color="tab:red"),
     dict(name="C-C'", file="gis/profile_c.txt", coords="utm", width_km=2.0),
-    dict(name="D-D'", coords="utm", start=(405000, 7291800, "D"), end=(424000, 7287800, "D'"),
-         width_km=4.0, ticks_km=5.0),                      # UTM metres of the site.dat zone
+    dict(name="D-D'", coords="utm", start=(405.0, 7291.8, "D"), end=(424.0, 7287.8, "D'"),
+         width_km=4.0, ticks_km=5.0),                      # UTM km of the site.dat zone
 ]
 LINES = [
     dict(label="Faults", file="gis/faults.txt", color="tab:red", ls="--"),
@@ -313,7 +444,7 @@ LINES = [
 | `tick_labels` | `True` (default): the distance is written at every tick |
 | `labels` | `False` = no end labels at all (also not the ones in `start` / `end`), or two texts `("A", "A'")`. The label of an end is, in this order: the text in `start` / `end`, `labels`, the half of `name` (see above) |
 | `label` | legend text; without it the profile is not in the legend |
-| `color`, `lw`, `ls` | colour, line width, line style; defaults `PROFILE_COLOR`, `PROFILE_LW`, `"-"` |
+| style keys | `color`, `lw`, `ls`, `line_alpha`, `zorder`, `halo`, ... : see "Style" below |
 
 **Line keys** (exactly one of `file`, `points`, `segments`)
 
@@ -325,9 +456,51 @@ LINES = [
 | `segments` | a list of polylines `[[(a, b), ...], ...]` |
 | `coords` | as for the profiles (not for GeoJSON, KML, KMZ) |
 | `closed` | `True` / `False` overrides the closing of all parts; default: a ring in a GeoJSON polygon or a KML `LinearRing`, or a text segment with equal first and last point (4 or more points) |
-| `fill`, `alpha` | colour of the fill of closed parts and its opacity (default 0.25); no fill without `fill` |
-| `color`, `lw`, `ls` | defaults `LINE_COLOR`, `LINE_LW`, `"-"` |
-| `halo` | white outline under the line; default `LINE_HALO` |
+| `fill`, `alpha` | colour of the fill of closed parts and its opacity (default `LINE_FILL_ALPHA`); no fill without `fill` |
+| style keys | `color`, `lw`, `ls`, `line_alpha`, `zorder`, `halo`, ... : see "Style" below |
+
+**Style**
+
+Every entry may set its own style. A key that is not given (or is `None`) takes
+the setting of the CONFIG block, so one change there restyles all entries
+without a key of their own. Aliases: `linewidth` = `lw`, `linestyle` = `ls`,
+`ms` = `markersize`. A value that cannot work (colour, line style, symbol,
+size, opacity, font weight) is refused before anything is read.
+
+| Key (profile and line) | Setting `PROFILE_...` / `LINE_...` | Meaning |
+|---|---|---|
+| `color` | `COLOR` | colour |
+| `lw` | `LW` | line width [pt] |
+| `ls` | `LS` | `"-"`, `"--"`, `"-."`, `":"` or `(offset, (on, off, ...))` |
+| `line_alpha` | `ALPHA` | opacity of the line |
+| `zorder` | `ZORDER` | drawing order; the sites are at 5 |
+| `halo`, `halo_color`, `halo_width` | `HALO`, `HALO_COLOR`, `HALO_WIDTH` | outline under the line (profiles: also under ticks and texts); width = how much wider than the line [pt] |
+| `marker`, `markersize` | `MARKER`, `MARKER_SIZE` | symbol at every vertex; `None` = none |
+
+| Key (profile only) | Setting | Meaning |
+|---|---|---|
+| `end_marker`, `end_marker_size` | `PROFILE_END_MARKER`, `PROFILE_END_MARKER_SIZE` | symbol at the two ends |
+| `fontsize`, `fontweight` | `PROFILE_FONTSIZE`, `PROFILE_FONTWEIGHT` | end labels |
+| `text_color` | `PROFILE_TEXT_COLOR` | end and distance labels; `None` = line colour |
+| `label_offset` | `PROFILE_LABEL_OFFSET` | distance of an end label from the end [pt] |
+| `tick_fontsize` | `PROFILE_TICK_FONTSIZE` | distance labels; `None` = end label size - 2 |
+| `tick_length` | `PROFILE_TICK_LENGTH` | tick length as a fraction of the map width; `None` = 0.012 |
+| `tick_lw` | `PROFILE_TICK_LW` | tick line width; `None` = 0.8 x `lw`, at least 0.8 |
+| `swath_color`, `swath_alpha` | `PROFILE_SWATH_COLOR`, `PROFILE_SWATH_ALPHA` | swath; colour `None` = line colour |
+| `mark_sites` | `PROFILE_MARK_SITES` | rings around the sites in the swath |
+| `ring_size`, `ring_lw` | `PROFILE_RING_SIZE`, `PROFILE_RING_LW` | size of the rings (units of `SITE_SIZE`) and their line width [pt] |
+
+```python
+PROFILES = [
+    dict(name="Vuache fault",
+         start=(6.030869, 45.962166),      # (longitude, latitude)
+         end=(6.115936, 45.910655),
+         coords="lonlat", labels=False, label="Vuache fault",
+         color="magenta", lw=3.0, ls="--", halo_width=2.0, zorder=5.5),   # on top of the sites
+]
+LINES = [dict(label="Faults", file="gis/faults.txt", color="tab:red", lw=2.0,
+              marker="o", markersize=3.0)]
+```
 
 **Coordinates (`coords`)**
 
@@ -335,8 +508,18 @@ LINES = [
 |---|---|
 | `"lonlat"` | longitude, latitude in degrees (default) |
 | `"latlon"` | latitude, longitude in degrees |
-| `"utm"` | easting, northing in m, in the UTM zone of `site.dat`. The zone and the hemisphere are found by comparing the easting / northing of the sites with their lat / lon (median distance of the best zone, at most 25 m; for the 100 Krafla sites 0.05 m). The transform is a Krueger series of 4th order on WGS84 (no `pyproj` needed) |
-| `"model"` | x, y in m of the FEMTIC model, as `site_x`, `site_y` of the results file; needs the sites assigned by position (`SITE_MATCH = "coords"`, or `"auto"` with site coordinates): the shift and the frame found there are used |
+| `"utm"` | easting, northing in the UTM zone of `site.dat`: **km** when typed in the settings (`points`, `start`, `end`, `center`, `segments`), m in a text `file`. The zone and the hemisphere are found by comparing the easting / northing of the sites with their lat / lon (median distance of the best zone, at most 25 m; for the 100 Krafla sites 0.05 m). The transform is a Krueger series of 4th order on WGS84 (no `pyproj` needed) |
+| `"model"` | x, y of the FEMTIC model: **km** when typed in the settings, m in a text `file` (as `site_x`, `site_y` of the results file); needs the sites assigned by position (`SITE_MATCH = "coords"`, or `"auto"` with site coordinates): the shift and the frame found there are used |
+
+Check the order of a pair: `"latlon"` means (latitude, longitude) here. In
+`femtic_ens_plot_slices.py` the tag `"latlon"` stands for [lon, lat], so a point
+list copied from there needs `coords="lonlat"`.
+
+**Units.** All geographic settings are in km, UTM coordinates too; coordinates read from
+files (`site.dat`, the results file, text files of a profile or line) stay in
+metres, as GIS programs and FEMTIC write them. A setting that looks like metres
+(`"utm"`: easting above 2000 or northing above 20000; `"model"`: above 1000) is
+refused; smaller values given in metres cannot be recognised and are read as km.
 
 GeoJSON, KML and KMZ files are always lon, lat (as the formats say); `coords` is
 ignored for them. Coordinates that are not on the globe (lat beyond 90, lon beyond
@@ -411,20 +594,31 @@ the box that is drawn, whatever `MAP_EXTENT_MODE` is.
   out of range, `"utm"` or `"model"` without a zone or frame, fewer than two
   different points): a warning and the profile or line is left out; with
   `OVERLAY_STRICT = True` the script stops with return code 1 before any output.
-- A profile or line that lies outside the map is not drawn; the warning names it.
+- A profile or line that lies outside the map is not drawn; the warning names it
+  and gives its range of longitude and latitude and that of the map. If it would
+  be on the map with the two exchanged, the message says so: check `coords`.
 
 **Settings**
 
 | Setting | Default | Meaning |
 |---|---|---|
 | `PROFILES`, `LINES` | `[]`, `[]` | lists of dicts, see above |
-| `PROFILE_COLOR`, `PROFILE_LW` | `"black"`, `1.8` | |
-| `PROFILE_FONTSIZE` | `9.0` | end labels (the distance labels are 2 pt smaller) |
-| `PROFILE_SWATH_ALPHA` | `0.15` | opacity of the swath (one patch, so the overlap at the bends is not darker) |
-| `PROFILE_MARK_SITES` | `True` | rings around the sites in the swath |
-| `PROFILE_END_MARKER` | `None` | a matplotlib marker (`"o"`, `"s"`, `"D"`, `"^"`, ...) at the two ends of every profile (of the part that is shown), in the colour of the profile; `None` = none |
+| `PROFILE_COLOR`, `PROFILE_LW`, `PROFILE_LS`, `PROFILE_ALPHA` | `"black"`, `1.8`, `"-"`, `1.0` | profile line |
+| `PROFILE_ZORDER` | `4.0` | the sites are at 5 |
+| `PROFILE_HALO`, `PROFILE_HALO_COLOR`, `PROFILE_HALO_WIDTH` | `False`, `"white"`, `1.6` | outline under line, ticks and texts |
+| `PROFILE_MARKER`, `PROFILE_MARKER_SIZE` | `None`, `4.0` | symbol at every vertex |
+| `PROFILE_END_MARKER`, `PROFILE_END_MARKER_SIZE` | `None`, `6.0` | a matplotlib marker (`"o"`, `"s"`, `"D"`, `"^"`, ...) at the two ends of every profile (of the part that is shown); `None` = none |
+| `PROFILE_FONTSIZE`, `PROFILE_FONTWEIGHT` | `9.0`, `"bold"` | end labels |
+| `PROFILE_TEXT_COLOR`, `PROFILE_LABEL_OFFSET` | `None`, `10.0` | colour of the labels; offset of the end labels [pt] |
+| `PROFILE_TICK_FONTSIZE`, `PROFILE_TICK_LENGTH`, `PROFILE_TICK_LW` | `None`, `None`, `None` | distance labels and ticks, see "Style" |
+| `PROFILE_SWATH_COLOR`, `PROFILE_SWATH_ALPHA` | `None`, `0.15` | swath (one patch, so the overlap at the bends is not darker) |
+| `PROFILE_MARK_SITES` | `False` | rings around the sites in the swath |
+| `PROFILE_RING_SIZE`, `PROFILE_RING_LW` | `1.9`, `1.0` | these rings |
+| `LINE_COLOR`, `LINE_LW`, `LINE_LS`, `LINE_ALPHA` | `"tab:green"`, `1.2`, `"-"`, `1.0` | lines |
+| `LINE_ZORDER` | `3.0` | the sites are at 5 |
+| `LINE_HALO`, `LINE_HALO_COLOR`, `LINE_HALO_WIDTH` | `False`, `"white"`, `1.6` | outline under the lines |
+| `LINE_MARKER`, `LINE_MARKER_SIZE`, `LINE_FILL_ALPHA` | `None`, `4.0`, `0.25` | symbol at every vertex; opacity of a fill |
 | `OVERLAY_CUT_MARGIN_KM` | `1.0` | profiles and lines are cut at the map box made smaller by this [km] on every side; `None` = not cut; see "Cut at the map box" |
-| `LINE_COLOR`, `LINE_LW`, `LINE_HALO` | `"tab:green"`, `1.2`, `True` | |
 | `MAP_INCLUDE_PROFILES` | `False` | `MAP_EXTENT_MODE = "sites"`: `False` = the box of the map does not depend on the profiles, they are cut at it (`OVERLAY_CUT_MARGIN_KM`); `True` = the box includes the profiles (with the margin) |
 | `OVERLAY_STRICT` | `False` | `True`: a profile or line that cannot be made stops the script |
 | `LEGEND_LOC` | `"upper left"` | legend (icon "no data" and the labelled profiles and lines) in the first panel of a page: a matplotlib `loc` string, `None` = no legend |
@@ -437,6 +631,10 @@ combined with the two options).
 ---
 
 ## DEM source
+
+The DEM routines (tiles, download and cache, readers, mosaic, shading, credit)
+are in `modules/dem.py` and can be used by other scripts; see
+`modules/dem_readme.md`. The settings below are those of this script.
 
 | `DEM_SOURCE` | Data | Tiles | Needs |
 |---|---|---|---|
@@ -570,6 +768,18 @@ In `OUTPUT_DIR` (default `WORK_DIR/sitemap`):
 | `<OUTPUT_BASENAME>_profiles.csv` | (profiles) one row per profile: `profile`, `vertices`, `length_km`, `width_km`, `n_sites` (in the swath), `lon_start`, `lat_start`, `lon_end`, `lat_end`, `source` (how the profile was given) |
 | `<OUTPUT_BASENAME>_profile_sites.csv` | (profiles with a swath) the sites in the swath, sorted by `along_km` for every profile: `profile`, `site`, `lat`, `lon`, `along_km`, `offset_km`, then the nRMS for every selection |
 
+Further files with other `SITE_MEASURES` (`<m>` = the measure):
+
+| File | Content |
+|---|---|
+| `<OUTPUT_BASENAME>_<m>_<tag>.<fmt>` | maps of the fit measure `<m>` (the nRMS maps have no `<m>` in the name) |
+| `<OUTPUT_BASENAME>_<m>.csv`, `_<m>_ens_stats.csv` | as `_nrms.csv` and `_ens_stats.csv` |
+| `<OUTPUT_BASENAME>_distortion.<fmt>`, `_distortion.csv` | distortion map; table with `site`, `lat`, `lon`, `site_ids`, `distortion` and, single run, `cp_xx`, `cp_xy`, `cp_yx`, `cp_yy`, `fixed`; ensemble, `M`, `mean`, `median`, `std`, `min`, `max`, `n_fixed` |
+
+`_nrms.csv`, `_n.csv` and the nRMS part of the summary are written whatever
+`SITE_MEASURES` is; `_members.csv` lists the nRMS only. `_profile_sites.csv` gets
+extra columns `<m> | band | components` and `distortion`.
+
 Only sites with data are listed; sites of `site.dat` without data in the selection
 are drawn as open icons (legend "no data"). The summary lists the profiles (length,
 vertices, swath and number of sites in it) and the lines (parts, vertices).
@@ -593,6 +803,30 @@ all bands       Zdiag        8608  1.167    100  0.825   1.159  1.565           
 ---
 
 ## Verification performed
+
+**2026-11-28** (halos off, measures, distortion strength): new test file
+`test_femtic_plot_sitemap_measures.py` (90 tests) and the 816 tests of
+`test_femtic_plot_sitemap.py` (two changed for the halo defaults); all pass on a
+copy of the script with the run settings of the CONFIG block set back to their
+defaults, on synthetic data. Every fit measure per site and global was compared
+with a plain loop over the rows and independent formulas (`numpy`,
+`scipy.stats`), the distortion strength with `numpy.linalg.norm`, the ensemble
+statistics with `numpy`. Maps of a made-up ensemble were looked at. **Not
+tested**: a real results file; the reading of a real `/distortion` group (`h5py`
+not installed: stand-in with the documented fields) and a real
+`distortion_iter<N>.dat`.
+
+**2026-11-27** (`dem.py`, fonts, styles, cm sizes): the test file has 36 new tests
+(own styles, fonts and panel size, the hints for overlays outside the map, the
+module `dem.py`). All 816 tests pass on a copy of the script in which the run
+settings of the CONFIG block that the tests depend on were set back to their
+defaults (`WORK_DIR`, `RESULTS_PATH`, `RUN_PATHS`, `COMPONENTS`, `PROFILES`,
+`PROFILE_MARK_SITES = True`, `DEM_STYLE`, `DEM_CREDIT`, `CMAP_NRMS`, `NRMS_VMIN`,
+`NRMS_VMAX`, `CBAR_SHRINK`, `SITE_LABELS = False`, `OUTPUT_FORMATS = ["png"]`);
+with other run values some tests fail. Maps with the Vuache profile, own styles
+and other fonts were drawn from made-up data and looked at. `h5py`, `pyproj` and
+`rasterio` were replaced by test stand-ins (not installed, no network). The
+numbers below are those of the earlier versions.
 
 What was checked, and how. `h5py` and `rasterio` were not available and there was
 no network where the script was written.
@@ -729,6 +963,8 @@ no network where the script was written.
   small area still costs a tile of about 4 - 40 MB the first time.
 - The colour scale is common to all pages and has no robust automatic limit; set
   `NRMS_VMAX` if outliers dominate.
+- Distortion: only the matrix-difference type; the type of a text file is not
+  checked; one scalar per site (no map of the single elements, gain or rotation).
 
 ---
 
@@ -742,5 +978,8 @@ no network where the script was written.
 | 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | DEM: default Copernicus DEM GLO-30 (`DEM_SOURCE` `"copernicus30"`, also `"copernicus90"`, `"tiles"` with own URL or path pattern, GeoTIFF or `.hgt`); GeoTIFF / COG read with `rasterio` (window, averaging to `DEM_MAX_PIXELS`, warping of projected rasters), tiles merged, ocean tiles filled; the AWS Terrain Tiles are now `"skadi"` and `"srtm"` is refused; `DEM_URL_TEMPLATE` default None, `DEM_CACHE_DIR` default `dem_cache`; credit line = the licence notice; example lines for the GLO-30 (cache, colour relief, offline, own tile names, one GeoTIFF, Python). AI-generated; review before use. Checked with 596 tests and about 209 mutations on a `rasterio` stand-in; `rasterio`, the real GeoTIFF reading, the warping and the AWS download were not run. |
 | 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | `CBAR_LENGTH`, `CBAR_WIDTH` [cm]: the size of the colour bar (the figure title is now set before the bar). Profiles and lines are cut at the map box made smaller by `OVERLAY_CUT_MARGIN_KM` (default 1 km): both ends of a cut profile are inside the map, end labels, swath, rings and ticks follow (ticks keep the distances of the whole profile). End labels in `start` / `end`: `start=(x, y, "A")`, `end=(x, y, "A'")`; `PROFILE_END_MARKER`. AI-generated, review before use. Checked with 779 tests and 116 mutations on synthetic data; not run on real results. |
 | 2026-11-22 | Claude Sonnet 5.5 (Anthropic) | `MAP_INCLUDE_PROFILES` now defaults to `False`: the map box (`"sites"`: sites + margin) is not enlarged by profiles that go beyond it; they are cut at that box (`OVERLAY_CUT_MARGIN_KM`). `True` gives the earlier behaviour. This changes the extent of maps with profiles that went beyond the sites. AI-generated, review before use. |
+| 2026-11-26 | Claude Sonnet 5.5 (Anthropic) | All user settings are km: `SITE_MATCH_TOL` (`0.015`; before `15.0` m) and `"utm"` / `"model"` positions of `PROFILES` / `LINES` typed in the settings (before: m; the default profile is the same one written in km). Personal settings in metres must be converted; values that look like metres are refused. Coordinates read from files stay in m. `--profile` (degrees) is unchanged. Tested on synthetic data only. AI-generated; review before production use. |
+| 2026-11-27 | Claude Sonnet 5.5 (Anthropic) | (1) The DEM routines moved to the new module `modules/dem.py`. (2) Fonts are user settings (`FONT_FAMILY`, `FONT_RC`, sizes and weights). (3) Profiles and lines: the "Vuache fault" entry was not drawn because its (longitude, latitude) pairs were read with `coords="latlon"`; it is now `"lonlat"`, with `labels=False` and a legend label. Style settings and per-entry keys for profiles and lines; the warning for an overlay outside the map gives the ranges and a hint on swapped coordinates. (4) `PANEL_SIZE` is in cm (before: inch), default `(12.2, 11.2)`. AI-generated; review before use. Tested on synthetic data only. |
+| 2026-11-28 | Claude Sonnet 5.5 (Anthropic) | Halos off by default (`PROFILE_HALO`, `LINE_HALO` `False`; new `MAP_HALO` `False` for site names, scale bar and DEM credit). New `SITE_MEASURES`, `DISTORTION_FILE`, `MEASURE_SCALES`, `--measures`: maps and tables of the fit measures (`misfit_measures.py`) and of the galvanic distortion strength `\|C - I\|`. With `SHOW = False` every figure is closed once saved. AI-generated, review before use. Checked with synthetic data only (see "Verification performed"). |
 
 Author: Volker Rath (DIAS)

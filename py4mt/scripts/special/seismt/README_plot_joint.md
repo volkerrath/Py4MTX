@@ -177,6 +177,13 @@ The position of the colour bar is the existing `COLORBAR_POSITION` (`"right"`, `
 (`RegularGridInterpolator`, only used for `"joint"`-mode vertical
 sections), plus the local `tomomt.py` helper module.
 
+## Changes 2026-11-27 (sizes in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.
+
+`plot_joint.py`: `COLORBAR_PAD` is in **cm** (before: inch); the default `0.254` is the former
+`0.10`. Multiply a personal value by 2.54.
+
 ---
 Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS).
 AI-assisted development: Claude (Anthropic).

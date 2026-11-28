@@ -177,3 +177,10 @@ numpy, matplotlib, xarray, pandas, scipy
 ```
 
 plus the local `tomomt.py` module (same path as the script).
+
+## Changes 2026-11-27 (sizes in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.
+
+`plot_interp.py`, `plot_interp_tacna.py`: `COLORBAR_PAD` is in **cm** (before: inch); the default `0.254` is the former
+`0.10`. Multiply a personal value by 2.54.

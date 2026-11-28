@@ -80,6 +80,12 @@ docstring for the full list of what moved there and, deliberately, what
 didn't.
 
 Authors: Svetlana Byrdina (SMB), Volker Rath (DIAS)
+
+Changes
+-------
+2026-11-27  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            New settings FIG_SIZE and FIG_SIZE_3D [cm] (before: fixed in
+            the code, in inch; the defaults give the same figures).
 """
 
 from pathlib import Path
@@ -181,6 +187,10 @@ FIG_DPI = 200
 # of paths -- call sites use saved.extend(...), not .append(...).
 PLOT_FORMATS = ["png"]
 
+# Figure sizes [cm] (width, height): pairs (2-D) and triples (3-D)
+FIG_SIZE = (16.51, 15.24)
+FIG_SIZE_3D = (19.05, 16.51)
+
 # Also display each figure on screen. Only actually shown if
 # matplotlib.is_interactive() is also True (Spyder's Qt/inline backends,
 # etc.) -- safe to leave on when running headless on the DIAS HPC cluster
@@ -216,6 +226,11 @@ CBAR_SHRINK_3D = 0.7
 # script's own globals -- same pattern plot_joint.py already uses for
 # plotpy (now tomomt).
 # ===========================================================================
+
+def _figsize(size_cm) -> tuple:
+    """Figure size (width, height) given in cm, in the inches Matplotlib uses."""
+    return tuple(round(float(v) / 2.54, 6) for v in size_cm)
+
 
 def _derive_interp_tag(interp_file):
     return tomomt.derive_interp_tag(interp_file)
@@ -350,7 +365,7 @@ def plot_pair(ds, field_a, field_b, color_by, group_label):
     d = _prepare_pair(ds, field_a, field_b, color_by)
     x, y = d["x"], d["y"]
 
-    fig, ax = plt.subplots(figsize=(6.5, 6))
+    fig, ax = plt.subplots(figsize=_figsize(FIG_SIZE))
 
     if PLOT_KIND_2D == "hexbin":
         hb = ax.hexbin(x, y, gridsize=HEXBIN_GRIDSIZE, cmap=HEXBIN_CMAP,
@@ -433,7 +448,7 @@ def plot_triple(ds, field_a, field_b, field_c, color_by, group_label):
     idx = _subsample(d["n"], MAX_POINTS, RANDOM_SEED)
     xs, ys, zs = (x[idx], y[idx], z[idx]) if idx is not None else (x, y, z)
 
-    fig = plt.figure(figsize=(7.5, 6.5))
+    fig = plt.figure(figsize=_figsize(FIG_SIZE_3D))
     ax = fig.add_subplot(projection="3d")
     ax.view_init(elev=VIEW_ELEV, azim=VIEW_AZIM)
 

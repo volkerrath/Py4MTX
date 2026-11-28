@@ -272,6 +272,16 @@ AI-generated code -- review before production use.
               (fem.print_results_contents(), fem.append_results_contents(),
               femtic.py of the same date). Nothing else changes.
               AI-generated; review before production use.
+
+2026-11-26 (km)  Claude Sonnet 5.5 (Anthropic)
+              User settings are km throughout, UTM coordinates too (before:
+              UTM and some per-entry values in metres). Personal settings in
+              metres must be converted; values that look like metres stop
+              with an error (fem.KmUnitError). Concerns MOD_UTM_ORIGIN_E /
+              _N, (value, 'utm') positions, profile p1 / p2 / z_top / z_bot
+              / xlim / ylim, per-panel limits and polylines. Needs femtic.py
+              of the same date. Tested on synthetic files only.
+              AI-generated; review before production use.
 """
 
 from __future__ import annotations
@@ -519,8 +529,8 @@ SENS_ROI_NORMALIZE = True
 #: Set to None when MOD_ORIGIN_METHOD will estimate the origin from MOD_SITE_DAT.
 MOD_UTM_ORIGIN_LAT = None  # decimal degrees, positive = North
 MOD_UTM_ORIGIN_LON = None  # decimal degrees, positive = East
-MOD_UTM_ORIGIN_E = None  # UTM easting  [m]
-MOD_UTM_ORIGIN_N = None  # UTM northing [m]
+MOD_UTM_ORIGIN_E = None  # UTM easting  [km]
+MOD_UTM_ORIGIN_N = None  # UTM northing [km]
 MOD_UTM_ZONE_OVERRIDE = None  # override auto-derived zone; None = auto
 
 #: "box"     → midpoint of UTM bounding box of all sites in MOD_SITE_DAT.
@@ -529,8 +539,8 @@ MOD_UTM_ZONE_OVERRIDE = None  # override auto-derived zone; None = auto
 MOD_ORIGIN_METHOD = "box"
 
 # --- Display coordinate system ---------------------------------------------
-#: "model"  — axis ticks in model-local metres (default)
-#: "utm"    — axis ticks in absolute UTM metres
+#: "model"  — axis ticks in model-local coordinates (default)
+#: "utm"    — axis ticks in absolute UTM coordinates
 #: "latlon" — axis ticks in decimal degrees
 MOD_DISPLAY_COORDS = "utm"
 #: Decimal digits shown on axis tick labels (depth, map/curtain
@@ -594,9 +604,11 @@ MOD_MAP_MARKERS = [
 MOD_SHOW_MODEL_CENTRE = True
 
 # --- Slice specification ----------------------------------------------------
-#: Slice positions accept plain floats (model-local m) or CRS-tagged tuples:
-#:   (value, "utm") | (value, "latlon")
-#: Depth z0 is always model-local metres (no CRS tagging).
+#: All lengths are km (UTM coordinates too). Slice positions x0 / y0 accept
+#: plain floats (model-local km) or CRS-tagged tuples:
+#:   (value, "utm") [km] | (value, "latlon") [degrees]
+#: z0 is the depth in km, positive down (no CRS tagging). Per-panel xlim /
+#: ylim / zlim are km as well.
 # MOD_SLICES = [
 #     dict(kind="map", z0=0.0),    # km
 #     dict(kind="map", z0=5.0),    # km
@@ -632,7 +644,7 @@ MOD_SLICES = [
     #: be model-local km or CRS-tagged (z = depth in km, positive down):
     #:   point=[x, y, z]                       model-local km
     #:   point=([x, y, z], "model")            model-local km
-    #:   point=([E, N, z], "utm")              UTM metres, z in km
+    #:   point=([E, N, z], "utm")              UTM km, z in km
     #:   point=([lon, lat, z], "latlon")       degrees (longitude first)
     #: Axes = along-strike and down-dip distance from ``point`` (km if
     #: MOD_DEPTH_KM else m, true aspect, see the readme). Default extent = the plane cut
@@ -644,16 +656,16 @@ MOD_SLICES = [
     #: Fault from two surface points + dip (kind="profile"): the plane
     #: through p1 -> p2 that dips to the RIGHT of the direction p1 -> p2
     #: (dip=110 dips the same amount to the left; or swap p1 and p2). p1, p2:
-    #: ([lon, lat], "latlon"), ([E, N], "utm") or [x, y] model-local METRES
-    #: (the profile keys are degrees / metres even in this km script).
+    #: ([lon, lat], "latlon"), ([E, N], "utm") [km] or [x, y] model-local km.
     #: z_top = depth of the plane at the trace (default 0; -elevation for a
-    #: trace above sea level), z_bot = bottom of the panel, both in m.
+    #: trace above sea level), z_bot = bottom of the panel (default 20), both
+    #: in km.
     #: overlay=True (or Line2D keywords, optionally label=...) also draws the
     #: fault on every other panel of every figure of this script: trace on the
     #: maps, dipping line on the sections. panel=False: the entry is NOT a
     #: panel, it only supplies that trace (the fault line in all the other
     #: slices, no fault panel); leave it out to get the fault panel (the
-    #: model on the fault plane) as well. xlim=[a, b] (m along strike,
+    #: model on the fault plane) as well. xlim=[a, b] (km along strike,
     #: relative to the midpoint of p1-p2) limits its length.
     #: Limit to the defining points (femtic_viz.py of 2026-11-15): the part of
     #: the fault between p1 and p2 is drawn as given, the rest -- the
@@ -674,7 +686,7 @@ MOD_SLICES = [
     #      dip=110.0,  # = 70 deg to the NE (p1 -> p2 runs NW -> SE; dip < 90
     #                  # would dip to its right, i.e. SW). Third point of the
     #                  # same plane: (6.079571, 45.941367) at 2 km depth.
-    #      z_top=0.0, z_bot=20000.0,
+    #      z_top=0.0, z_bot=20.0,
     #      overlay=dict(color="k", linewidth=1.5), title="fault",
     #      limit_km=0.0, alpha_outside=0.25, fade_km=2.0,     # see above
     #      panel=False),
@@ -686,15 +698,15 @@ MOD_SLICES = [
     # dict(kind="ew", y0=(45.9383, "latlon")),   # E-W through the epicentre
     # dict(kind="ns", x0=0.0),                   # N-S through the model centre
     # dict(kind="ew", y0=0.0),                   # E-W through the model centre
-    # dict(kind="profile",
-    #  p1=([6.030869, 45.962166], "latlon"),
-    #  p2=([6.115936, 45.910655], "latlon"),
-    #  dip=110.0, z_top=0.0, z_bot=20000.0,
-    #  overlay=dict(color="magenta", linestyle=":", linewidth=10.0, alpha=0.9),
-    #  title="Vuache fault",
-    #  limit_km=0.0, alpha_outside=0.1,   # p1 ... p2 as given, then fading
-    #  fade_km=2.0,                        # ... to 25 % over 2 km (0 = abrupt)
-    #  panel=False)
+    dict(kind="profile",
+     p1=([6.030869, 45.962166], "latlon"),
+     p2=([6.115936, 45.910655], "latlon"),
+     dip=110.0, z_top=0.0, z_bot=20.0,
+     overlay=dict(color="magenta", linestyle=":", linewidth=10.0, alpha=0.9),
+     title="Vuache fault",
+     limit_km=0.0, alpha_outside=0.1,   # p1 ... p2 as given, then fading
+     fade_km=2.0,                        # ... to 25 % over 2 km (0 = abrupt)
+     panel=False)
 ]
 #: Epagny 1996 epicentre (45.9383, 6.0883) and the model centre: MOD_MAP_MARKERS.
 # --- Polylines (optional) -----------------------------------------------------
@@ -704,7 +716,7 @@ MOD_SLICES = [
 #:   points    [[x, y], ...] or [[x, y, z], ...], at least 2 rows, model-local
 #:             km; z = depth positive down (missing z = 0). CRS-tagged like
 #:             the `point` of a plane: (pts, "model" | "utm" | "latlon") with
-#:             "utm" = [E, N(, z)] UTM metres, "latlon" = [lon, lat(, z)]
+#:             "utm" = [E, N(, z)] UTM km, "latlon" = [lon, lat(, z)]
 #:             degrees (longitude first); z is km in every case
 #:   style     matplotlib Line2D keywords, e.g. dict(color="k", linestyle="--",
 #:             linewidth=1.5); default 1.5 pt solid, colour cycled per entry
@@ -720,8 +732,9 @@ MOD_SLICES = [
 #:             the range (default: plan view on every map)
 #: Maps always show the whole polyline in plan view. The axis limits are
 #: never changed by the polylines.
-#: Intersection line of two slices (metres in, metres out; ready-made
-#: entries for many pairs: fviz.slice_intersection_polylines):
+#: Intersection line of two slices. The library function works in METRES
+#: (arguments and result), hence the division by 1000 below; ready-made
+#: entries for many pairs: fviz.slice_intersection_polylines:
 #:   _p = fviz.slice_intersection_polyline(
 #:       dict(kind="map", z0=2000.0), dict(kind="ns", x0=0.0),
 #:       xlim=[-20e3, 20e3], ylim=[-20e3, 20e3], zlim=[-1e3, 10e3])
@@ -893,7 +906,7 @@ MOD_STATS_STYLE["abs_diff_prior"] = dict(
 # MOD_ALPHA_FADE_WIDTH = 0.05
 # MOD_ALPHA_EXCLUDE = ("sens_", "simrc_", "diff_prior", "abs_diff_prior")
 
-MOD_ALPHA_SOURCE = "sens_median_vn > -4."
+MOD_ALPHA_SOURCE = "sens_median_vn > -5."
 #: "blank" -- failing cells are removed (hard cut).
 #: "fade"  -- failing cells fade linearly from opaque at the threshold to
 #:            fully transparent MOD_ALPHA_FADE_WIDTH beyond it (same units
@@ -1139,9 +1152,9 @@ def _plot_slice(
             cmap=_cmap,
             clim=_clim,
             cbar_label=cbar_label,
-            xlim=fem.lim_km_to_m(MOD_XLIM),
-            ylim=fem.lim_km_to_m(MOD_YLIM),
-            zlim=fem.lim_km_to_m(MOD_ZLIM),
+            xlim=fem.lim_km_to_m(MOD_XLIM, name="MOD_XLIM"),
+            ylim=fem.lim_km_to_m(MOD_YLIM, name="MOD_YLIM"),
+            zlim=fem.lim_km_to_m(MOD_ZLIM, name="MOD_ZLIM"),
             ocean_color=MOD_OCEAN_COLOR,
             ocean_value=_ocean_value,
             air_log10_thresh=_air_thresh,
@@ -1156,7 +1169,8 @@ def _plot_slice(
             map_markers=fem.markers_km_to_m(MOD_MAP_MARKERS),
             show_model_centre=MOD_SHOW_MODEL_CENTRE,
             polylines=fem.polylines_km_to_m(MOD_POLYLINES),
-            projection_dist=fem.km_to_m(MOD_PROJECTION_DIST),
+            projection_dist=fem.km_to_m(
+                MOD_PROJECTION_DIST, name="MOD_PROJECTION_DIST"),
             display_coords=MOD_DISPLAY_COORDS,
             utm_origin_e=utm_e,
             utm_origin_n=utm_n,
@@ -1326,6 +1340,8 @@ for _name in MOD_STATS_WHAT:
             )
 
 # --- (2) Resolve UTM origin and sites ----------------------------------------
+_origin_e, _origin_n = fem.utm_km_to_m(
+    MOD_UTM_ORIGIN_E, MOD_UTM_ORIGIN_N, name="MOD_UTM_ORIGIN_E / _N")
 (
     utm_e,
     utm_n,
@@ -1340,8 +1356,8 @@ for _name in MOD_STATS_WHAT:
     site_names=MOD_SITE_NAMES,
     site_number=MOD_SITE_NUMBER,
     observe_file=ENSEMBLE_DIR + "templates/observe.dat",
-    origin_e=MOD_UTM_ORIGIN_E,
-    origin_n=MOD_UTM_ORIGIN_N,
+    origin_e=_origin_e,
+    origin_n=_origin_n,
     origin_lat=MOD_UTM_ORIGIN_LAT,
     origin_lon=MOD_UTM_ORIGIN_LON,
     zone_override=MOD_UTM_ZONE_OVERRIDE,

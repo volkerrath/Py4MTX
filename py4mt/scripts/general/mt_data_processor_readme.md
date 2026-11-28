@@ -328,3 +328,10 @@ and `PHASE_WRAP_STYLE` (plot configuration) are passed to `data_viz.add_phase`; 
 *Diagnostic plots*.  Needs the `data_viz.py` of the same date.  Ran end to end on a
 synthetic survey (plots written); the phase-wrap logic itself is covered by
 `test_data_viz_phase_wrap.py`.
+
+## Changes 2026-11-27 (figure size in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.  New settings of the plot
+block: `FIG_SIZE = (20.32, 35.56)` [cm] (width, height of a figure with three rows
+of panels) and `FIG_ROW_HEIGHT = 10.16` [cm] (added for each further row).
+Before, these were fixed in the code in inch; the defaults give the same figures.

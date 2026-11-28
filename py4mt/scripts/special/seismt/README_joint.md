@@ -279,3 +279,10 @@ Re-run `plot_joint.py` (no need to re-run `interpolate.py`) whenever
 Re-run `interpolate.py` first (see `README_interpolate.md`) whenever the
 interpolated grid itself — or whether gradients were computed at all —
 needs to change.
+
+## Changes 2026-11-27 (sizes in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.
+
+`plot_joint.py`: `COLORBAR_PAD` is in **cm** (before: inch); the default `0.254` is the former
+`0.10`. Multiply a personal value by 2.54.

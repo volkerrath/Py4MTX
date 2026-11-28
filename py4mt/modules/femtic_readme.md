@@ -554,7 +554,8 @@ member directories except where a block file is named.
 
 | Function | Purpose |
 |---|---|
-| `km_to_m`, `lim_km_to_m`, `slices_km_to_m`, `plane_spec_km_to_m`, `plane_point_km_to_m`, `polylines_km_to_m`, `markers_km_to_m` | `MOD_*` settings are in model-local km, `femtic_viz` wants metres; these convert scalars, limit pairs, `MOD_SLICES` lists and `kind="plane"` entries. The plane `point` may be model-local km (plain list or `([x, y, z], "model")`), `([E, N, z], "utm")` (E / N in UTM metres) or `([lon, lat, z], "latlon")` (degrees, longitude first); `z` is always km, depth positive down. The tagged UTM / latlon forms need the keyword arguments `zone`, `northern`, `origin_E`, `origin_N` of `plane_spec_km_to_m` (2026-11-09). `polylines_km_to_m(polylines)` converts the `MOD_POLYLINES` dict `{name: entry}` of `femtic_ens_plot_slices.py` for `fviz.plot_model_slices(polylines=...)`: `points` (model-local km, `z` = depth in km) are multiplied by 1000 (`x`, `y`, `z`), for `(pts, "utm")` only `z` (E / N stay UTM metres) and for `(pts, "latlon")` only `z` (degrees stay, longitude first); `max_dist` and `z_range` are km; `style` / `label` / `kinds` pass through; the input is not modified; `None` / `{}` -> `None`; `ValueError` / `TypeError` for malformed entries (2026-11-11). `markers_km_to_m(markers)` converts the `MOD_MAP_MARKERS` list of `femtic_ens_plot_slices.py` for `fviz.plot_model_slices(map_markers=...)`: `depth`, `depth_err` and `max_dist` of an entry are km (-> m); `latlon`, `marker`, `color`, `ms`, `name`, `kinds`, `is_model_centre` and all other keys pass through; the input is not modified; `None` / `[]` -> `[]`; `TypeError` for a non-list or a non-dict entry (2026-11-15). |
+| `km_to_m`, `lim_km_to_m`, `slices_km_to_m`, `plane_spec_km_to_m`, `plane_point_km_to_m`, `polylines_km_to_m`, `markers_km_to_m` | Script settings are in km, UTM coordinates too (2026-11-26); the library (`femtic_viz`, model code) works in metres; these convert scalars, limit pairs, `MOD_SLICES` lists and `kind="plane"` entries. The plane `point` may be model-local km (plain list or `([x, y, z], "model")`), `([E, N, z], "utm")` (E / N in UTM km) or `([lon, lat, z], "latlon")` (degrees, longitude first); `z` is always km, depth positive down. The tagged UTM / latlon forms need the keyword arguments `zone`, `northern`, `origin_E`, `origin_N` of `plane_spec_km_to_m` (2026-11-09). `polylines_km_to_m(polylines)` converts the `MOD_POLYLINES` dict `{name: entry}` of `femtic_ens_plot_slices.py` for `fviz.plot_model_slices(polylines=...)`: `points` (model-local km, `z` = depth in km) are multiplied by 1000 (`x`, `y`, `z`), for `(pts, "utm")` E / N in UTM km -> m as well as `z` and for `(pts, "latlon")` only `z` (degrees stay, longitude first); `max_dist` and `z_range` are km; `style` / `label` / `kinds` pass through; the input is not modified; `None` / `{}` -> `None`; `ValueError` / `TypeError` for malformed entries (2026-11-11). `markers_km_to_m(markers)` converts the `MOD_MAP_MARKERS` list of `femtic_ens_plot_slices.py` for `fviz.plot_model_slices(map_markers=...)`: `depth`, `depth_err` and `max_dist` of an entry are km (-> m); `latlon`, `marker`, `color`, `ms`, `name`, `kinds`, `is_model_centre` and all other keys pass through; the input is not modified; `None` / `[]` -> `[]`; `TypeError` for a non-list or a non-dict entry (2026-11-15). `slices_km_to_m` converts `x0` / `y0` (also `(value, "utm")`), `z0`, `z_top`, `z_bot`, `point`, `p1`, `p2` and per-panel `xlim` / `ylim` / `zlim`; `limit_km` / `fade_km` stay. |
+| `check_km`, `utm_km_to_m`, `pos_km_to_m`, `KM_LIMIT`, `KM_LIMIT_RANGE`, `UTM_KM_LIMITS`, `KmUnitError` | Guard against settings still given in metres: `check_km(value, name=, limit=)` raises `KmUnitError` (a `ValueError`) above the limit (lengths 1000 km, axis limits and coordinates 5000 km, UTM easting / northing 2000 / 20000 km); `utm_km_to_m(easting, northing)` -> metres; `pos_km_to_m(raw)` converts a plain or CRS-tagged position. Smaller values given in metres cannot be recognised (2026-11-26). |
 | `parse_alpha_source(expr)` | `"sens_median > -3."` -> `(name, op, value)`; regex, never `eval`. |
 | `alpha_from_condition(arr, op, thr, mode, width)` | Per-free-parameter alpha in [0, 1] (`"blank"` hard cut, `"fade"` linear over `width`). |
 | `write_alpha_block(alpha, template, path, ocean=None, out=True)` | Block file whose raw values are the alpha values (read by `plot_model_slices(alpha_mode="direct")`). |
@@ -565,7 +566,7 @@ member directories except where a block file is named.
 
 | Function / class | Purpose |
 |---|---|
-| `resolve_origin_and_sites(*, site_dat, site_names, site_number, observe_file, origin_*, zone_override, origin_method, plot_sites)` | UTM origin of the model and the site list in model-local coordinates; same logic as `femtic_gst_prep.py` / `femtic_rto_prep.py` (incl. the `observe.dat` fallback). Returns `utm_e, utm_n, utm_lat, utm_lon, utm_zone, utm_northern, site_xys, obs_coords_only`. |
+| `resolve_origin_and_sites(*, site_dat, site_names, site_number, observe_file, origin_*, zone_override, origin_method, plot_sites)` | UTM origin of the model and the site list in model-local coordinates (arguments and results in **metres**: scripts convert `MOD_UTM_ORIGIN_E` / `_N` with `utm_km_to_m`); same logic as `femtic_gst_prep.py` / `femtic_rto_prep.py` (incl. the `observe.dat` fallback). Returns `utm_e, utm_n, utm_lat, utm_lon, utm_zone, utm_northern, site_xys, obs_coords_only`. |
 | `ReferenceModel(path, ocean=None, ocean_rho=...)` | Optional reference model on the ensemble's mesh. `active()`, `disable(why)`, `levels(clim, levels)`, `slice_kwargs(block_file, ...)` (iso-resistivity lines for `plot_model_slices`), `element_log10(n_elem)` (values per element for borehole lines). A missing file or another element count switches it off with a message. |
 | `roi_free_mask(block_file, n_free, mesh_file, *, xlim_km, ylim_km, zlim_km, ocean=None)` | Mask of free parameters whose centroid lies in the ROI box (for the sensitivity ROI diagnostic / normalisation). `None` with a warning if the geometry cannot be read. |
 
@@ -577,16 +578,21 @@ drawing is `femtic_viz.plan_borehole_figures()` / `draw_borehole_figures()`.
 | Function / class | Purpose |
 |---|---|
 | `BoreholeMesh(...)` | Mesh arrays for the point search, read once. `column(x, y)`, `locate(x, y, depths, cand=None)` (barycentric point-in-tet search, once per borehole), `surface_m(...)`. |
-| `expand_site_templates(specs, site_dat, utm_e, *, out=True)` | Expand `MOD_BH` entries with `sites=` (all / named / `n_random` with `seed`) to one entry per site. |
+| `expand_site_templates(specs, site_dat, utm_e, *, out=True)` | Expand `MOD_BH` entries with `sites=` (all / named / `n_random` with `seed`) to one entry per site; the new positions are `(value, "utm")` in UTM km. |
 | `sample_boreholes(specs, *, mesh, struct, ens, stat_map, value_keys, best_i, percentiles, utm, cs, pert=None, ref_el=None, ...)` | Profiles of all statistics, members, best member, reference and heat maps along the boreholes (and of `pert` the same way). Returns `dict(profiles, npz, hdr, npz_pert, hdr_pert)`. |
-| `borehole_resolve_xy`, `borehole_pos_str`, `borehole_expand_what`, `borehole_values`, `borehole_global_xlim`, `borehole_edges`, `borehole_heatmap`, `borehole_stat_vec`, `borehole_second_source`, `borehole_npz_entry`, `BOREHOLE_SIGMA_Q` | Building blocks of `sample_boreholes()`. |
+| `borehole_resolve_xy`, `borehole_pos_str`, `borehole_expand_what`, `borehole_values`, `borehole_global_xlim`, `borehole_edges`, `borehole_heatmap`, `borehole_stat_vec`, `borehole_second_source`, `borehole_npz_entry`, `BOREHOLE_SIGMA_Q` | Building blocks of `sample_boreholes()`. `borehole_resolve_xy` takes `(value, "utm")` in UTM km and returns metres. |
 | `heat_scale_defaults`, `heat_scale_check`, `heat_scale_read`, `heat_scale_write`, `heat_scale_init` | Heat-map colour-scale settings, and saving / reusing them as a JSON file across runs (same format as `femtic_ens_plot.py`). |
 
 ### Models of a single-model script
 
 | Function | Purpose |
 |---|---|
-| `resolve_model_files(spec, iteration="last", *, cnv_name=None, block_name="resistivity_block_iter{n}.dat", out=True)` | `spec` = a block file, a run directory, a glob, or a list of them; for run directories `iteration` is `"last"` (last row of the convergence file), `"best"` (lowest nRMS), an integer / `"iterN"` (0 = starting model), or a list of those. Returns one dict per model: `file`, `dir`, `label` (unique), `tag` (`"iter21"`), `iter`, `nrms`, `alpha` (from the `.cnv` row of that iteration, or `None`), `selector`. Entries without a block file are skipped with a message. Used by `femtic_mod_plot_slice.py` and `femtic_mod_plot_bh.py`. |
+| `resolve_model_files(spec, iteration="last", *, cnv_name=None, block_name="resistivity_block_iter{n}.dat", base_dir=None, out=True)` | `spec` = a block file, a `results_iterN.h5` file (= the block file of that iteration in the same directory), a run directory, a glob, or a list of them; relative entries start at `base_dir`; for run directories `iteration` is `"last"` (last row of the convergence file), `"best"` (lowest nRMS), an integer / `"iterN"` (0 = starting model), or a list of those. Returns one dict per model: `file`, `dir`, `label` (unique), `tag` (`"iter21"`), `iter`, `nrms`, `alpha` (from the `.cnv` row of that iteration, or `None`), `selector`. Entries without a block file are skipped with a message. A block file reached twice is listed once. Used by `femtic_mod_plot_slice.py`, `femtic_mod_plot_bh.py` and `femtic_mod_plot_3d.py`. |
+| `anchor_path(path, base_dir=None)` | Expand `~` and make a relative path start at `base_dir`; `None` / `""` gives `None`. |
+| `find_run_file(spec, run_dir, base_dir=None)` | A file belonging to a run (mesh, site list, ...): absolute `spec` as given, else `run_dir/spec`, else `base_dir/spec`; `None` if not found. |
+| `model_output_stem(model, kind, *, out_dir=None, prefix=None, prefix_dir=True, base_dir=None)` | Output path without extension, `<dir>/[<prefix>_]<label>_<tag>_<kind>`; `<dir>` = `out_dir`, else `<run dir>/<prefix>` (if `prefix_dir`), else the run directory. |
+| `sample_model_boreholes(specs, *, mesh, struct, utm, ref_el=None, ref_default=True, ocean_rho=0.25, zlim_km=None, display_coords="model", out=True)` | One model along the `MOD_BH` boreholes (through `sample_boreholes()`, the model as a one-member ensemble). `what` is reduced to `"model"` (+ `"ref"`). Returns `dict(profiles, npz, hdr)`; the model line has the draw key `"best"`; NPZ arrays `depth_<name>`, `model_<name>`, `ref_<name>`. |
+| `model_style_keys(style)` | `MOD_BH_STYLE` of one model (`"model"`, `"ref"`) in the draw keys of `plot_boreholes` (`"model"` -> `"best"`; `c`, `linestyle`, `linewidth` -> `color`, `ls`, `lw`). |
 
 ### Directory scan report
 
@@ -662,7 +668,7 @@ Optional for visualisation and export:
 | `femtic_viz.py`       | Matplotlib and PyVista visualisation.                                |
 | `femtic_ens_post.py`  | Ensemble statistics, sensitivity, covariance; writes the results `.npz` read by `read_ensemble_results()`. |
 | `femtic_ens_plot_slices.py`, `femtic_ens_plot_bh.py`, `femtic_data_misfit.py` (method `"nrms"`) | Slice, borehole and nRMS-histogram figures from that `.npz`; use Section 6c and the new `femtic_viz.py` functions. |
-| `femtic_mod_plot_slice.py`, `femtic_mod_plot_bh.py` | Single-model figures; with a list / glob / run directories, one figure per model (`resolve_model_files()`). |
+| `femtic_mod_plot_slice.py`, `femtic_mod_plot_bh.py`, `femtic_mod_plot_3d.py` | Single-model figures (slices, borehole logs, 3-D); one per run or model (`resolve_model_files()`). |
 | `femtic_mod_plot.py`  | Read and plot slice panels of a FEMTIC model; calls `fem.*` helpers. |
 | `snippets.py`         | Optional code blocks for `femtic_mod_plot.py` (e.g. ensemble plot).  |
 | `util.py`             | General-purpose helpers.                                             |
@@ -676,7 +682,35 @@ Optional for visualisation and export:
 
 ## Version / provenance
 
-Updated: 2026-11-22
+Updated: 2026-11-26
+
+### Changelog (2026-11-26, b) --- script settings in km
+- All user settings of the scripts are km, UTM coordinates too; the library API
+  stays in metres. New `check_km()`, `utm_km_to_m()`, `pos_km_to_m()`,
+  `KM_LIMIT`, `KM_LIMIT_RANGE`, `UTM_KM_LIMITS`, `KmUnitError`.
+- Changed: `km_to_m()` / `lim_km_to_m()` refuse values that look like metres;
+  `slices_km_to_m()` also converts UTM positions, `point` / `p1` / `p2`,
+  `z_top` / `z_bot` and per-panel limits; `plane_point_km_to_m()` /
+  `plane_spec_km_to_m()`, `polylines_km_to_m()` and `borehole_resolve_xy()`
+  take UTM in km; `expand_site_templates()` returns UTM km;
+  `sample_boreholes()` raises for a borehole given in metres instead of
+  skipping it.
+- **Own code that calls these functions with UTM metres must pass km.** Needs
+  the scripts of the same date.
+- Tested on synthetic files only. AI-generated (Claude Sonnet 5.5, Anthropic);
+  review before production use.
+
+### Changelog (2026-11-26) --- several runs in the single-model plot scripts
+- For the rewritten `femtic_mod_plot_slice.py`, `femtic_mod_plot_bh.py` and
+  `femtic_mod_plot_3d.py`.
+- `resolve_model_files()`: new `base_dir`; `results_iterN.h5` entries; the run label is
+  taken from the absolute directory (a run given as `"."` was labelled `"."`); a block
+  file reached twice is listed once; a label is no longer given to two runs.
+- New `anchor_path()`, `find_run_file()`, `model_output_stem()`,
+  `sample_model_boreholes()`, `model_style_keys()` (section "Models of a single-model
+  script"). No other function changed.
+- Tested on synthetic files only. AI-generated (Claude Sonnet 5.5, Anthropic); review
+  before production use.
 
 ### Changelog (2026-11-22, b) --- contents of a results file
 - New `RESULTS_KEY_DOC`, `results_key_doc()`, `npz_inventory()`, `results_contents_md()`,

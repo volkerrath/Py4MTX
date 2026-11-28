@@ -213,3 +213,10 @@ Re-run whenever the FEMTIC inversion result (`BLOCK_FILE`) or mesh
 itself changes, or whenever `DEPTH_SLICES_KM`/`VSLICES`/any plotting
 setting changes — there's no separate precompute step to re-run first,
 unlike the ModEM/seismic scripts.
+
+## Changes 2026-11-27 (sizes in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.
+
+`plot_femtic_mesh.py`: `COLORBAR_PAD` is in **cm** (before: inch); the default `0.254` is the former
+`0.10`. Multiply a personal value by 2.54.

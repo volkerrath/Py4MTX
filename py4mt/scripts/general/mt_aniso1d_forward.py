@@ -21,6 +21,9 @@ text files, and generates diagnostic plots.
             dotted line (new PHASE_WRAP_MODE / PHASE_WRAP_STYLE, passed to
             viz.plot_rhophas; needs the viz.py and data_viz.py of the same
             date); Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
+@modified:  2026-11-27 -- figure sizes are settings in cm: FIG_SIZE and FIG_SIZE_PT (before: fixed
+            in the code, in inch; the defaults give the same figures);
+            Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 import os
@@ -52,6 +55,11 @@ fname = inspect.getfile(inspect.currentframe())
 
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
+
+def _figsize(size_cm) -> tuple:
+    """Figure size (width, height) given in cm, in the inches Matplotlib uses."""
+    return tuple(round(float(v) / 2.54, 6) for v in size_cm)
+
 
 # =============================================================================
 #  Configuration
@@ -96,11 +104,15 @@ PANEL_TITLES = True     # False = no titles of the panels
 PHASE_WRAP_MODE = "direct"
 PHASE_WRAP_STYLE = None
 
+# --- figure sizes [cm] (width, height) ---
+FIG_SIZE = (40.64, 40.64)      # impedance and rho/phase figures (2 x 2 panels)
+FIG_SIZE_PT = (40.64, 20.32)   # phase tensor figure (1 x 2 panels)
+
 if RHO_PLT or IMP_PLT or PHT_PLT:
     PLOT_FORMAT = [".png"]
     PLOT_FILE = WORK_DIR + "AnisoTest"
     PLTARGS = {
-        "pltsize": [16., 16.],
+        "pltsize": _figsize(FIG_SIZE),
         "fontsizes": [18, 20, 24, 18],
         "m_size": 10,
         "c_obs": ["b", "r"],
@@ -205,7 +217,7 @@ if IMP_OUT:
 
 if IMP_PLT:
     Imp = interlaced
-    PLTARGS["pltsize"] = [16., 16.]
+    PLTARGS["pltsize"] = _figsize(FIG_SIZE)
     fig, ax = plt.subplots(2, 2, figsize=PLTARGS["pltsize"])
     _sup = utl.resolve_title(FIGURE_TITLE, "imped", PLTARGS["suptitle"],
                              name="FIGURE_TITLE", title=PLTARGS["suptitle"])
@@ -250,7 +262,7 @@ if RHO_OUT:
             f.write(f"{periods[iper]:14.5f} {rhoa_phas}\n")
 
 if RHO_PLT:
-    PLTARGS["pltsize"] = [16., 16.]
+    PLTARGS["pltsize"] = _figsize(FIG_SIZE)
     fig, ax = plt.subplots(2, 2, figsize=PLTARGS["pltsize"])
     _sup = utl.resolve_title(FIGURE_TITLE, "rhophas", PLTARGS["suptitle"],
                              name="FIGURE_TITLE", title=PLTARGS["suptitle"])
@@ -318,7 +330,7 @@ if PHT_OUT:
             f.write(f"{periods[iper]:14.5f} {phstens}\n")
 
 if PHT_PLT:
-    PLTARGS["pltsize"] = [16., 8.]
+    PLTARGS["pltsize"] = _figsize(FIG_SIZE_PT)
     fig, ax = plt.subplots(1, 2, figsize=PLTARGS["pltsize"])
     _sup = utl.resolve_title(FIGURE_TITLE, "phstens", PLTARGS["suptitle"],
                              name="FIGURE_TITLE", title=PLTARGS["suptitle"])

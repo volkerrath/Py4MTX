@@ -72,7 +72,8 @@ Plotting
     PLOT_FILE_INPUT (auto-derived from PLOT_FILE with an "_input" suffix
     when left as None).  When OPERATION == "null" no output file is ever
     written, so PLOT_OUTPUT is forced to False — use PLOT_INPUT to inspect
-    the unmodified model.
+    the unmodified model.  With PLOT_SINGLE_PANELS = True every slice is a
+    figure of its own (suffix _01_<kind>, ... on the two figure names).
 
 Provenance
 ----------
@@ -180,6 +181,25 @@ Provenance
                 utl.write_param_summary(fname, out_dir=WORK_DIR). Needs
                 the util.py of the same date (new out_dir argument).
                 AI-generated; review before production use.
+    2026-11-26  Claude Sonnet 5.5 (Anthropic)
+                Optional single-panel output: new PLOT_SINGLE_PANELS (default
+                False) draws one figure per slice, the suffix
+                _01_<kind>, ... added to PLOT_FILE / PLOT_FILE_INPUT
+                (fviz.single_panel_jobs). Needs femtic_viz.py of the same
+                date. Tested on synthetic files only. AI-generated; review
+                before production use.
+
+2026-11-26 (km)  Claude Sonnet 5.5 (Anthropic)
+              User settings are km throughout, UTM coordinates too (before:
+              UTM and some per-entry values in metres). Personal settings in
+              metres must be converted; values that look like metres stop
+              with an error (fem.KmUnitError). Concerns UTM_ORIGIN_E / _N
+              and MAP_MARKERS depth / depth_err / max_dist. The settings are
+              no longer overwritten with metre values (the parameter summary
+              shows km); slices accept (value, 'utm' / 'latlon'); PLOT_XLIM
+              / YLIM / ZLIM = None works. Needs femtic.py of the same date.
+              Tested on synthetic files only. AI-generated; review before
+              production use.
 
 @author: vrath
 """
@@ -347,7 +367,7 @@ OP_SMOOTH_MAX_GB  = 4.0     # GiB
 #:   boundary_smooth : optional dict — smooth the body boundary after insertion
 #:     sigma  : Gaussian length scale in km (blend width per pass)
 #:     passes : number of smoothing passes (transition zone depth ≈ passes × σ)
-#: All lengths are converted to metres for internal use below.
+#: All lengths are km (converted to metres for internal use below).
 OP_ELLIPSOID_BODIES = [
     # dict(mode="replace", value=0.0,
     #      center=[0.0, 0.0, 5.0],
@@ -368,7 +388,7 @@ OP_ELLIPSOID_BODIES = [
 #: Same keys as ellipsoid bodies; axes = [a, b, c] are half-extents in km.
 #: The box test in the rotated local frame is |x'| ≤ a, |y'| ≤ b, |z'| ≤ c.
 #: Optional boundary_smooth key: dict(sigma=…, passes=…) — see ellipsoid docs.
-#: All lengths are converted to metres for internal use below.
+#: All lengths are km (converted to metres for internal use below).
 OP_BRICK_BODIES = [
     dict(mode="replace", value=0.0,
          center=[0.0, 0.0, 5.0],
@@ -437,8 +457,9 @@ PLOT_AIR_BGCOLOR = None
 #:            "ew"    — E-W vertical section at y = y0   (x vs depth)
 #:            "plane" — arbitrary plane by strike / dip / point
 #:   z0     : (map   only)  depth in km
-#:   x0     : (ns    only)  easting — plain float = model-local km
-#:   y0     : (ew    only)  northing — plain float = model-local km
+#:   x0     : (ns    only)  easting — plain float = model-local km, or
+#:                           (value, "utm") in UTM km / (value, "latlon")
+#:   y0     : (ew    only)  northing — as x0
 #:   point  : (plane only)  [x, y, z] any point on the plane (km)
 #:   strike : (plane only)  clockwise from North, degrees (0=N, 90=E)
 #:   dip    : (plane only)  downward inclination from horizontal, degrees
@@ -448,7 +469,9 @@ PLOT_AIR_BGCOLOR = None
 #:   title  : optional string override
 #:
 #: Per-panel xlim/ylim/zlim override the global PLOT_XLIM/PLOT_YLIM/PLOT_ZLIM.
-#: All lengths above are converted to metres for internal use below.
+#: All lengths above are km (converted to metres for internal use below);
+#: ``point`` may also be ([E, N, z], "utm") with E, N, z in km, or
+#: ([lon, lat, z], "latlon") with z in km.
 PLOT_SLICES = [
     dict(kind="map",   z0=5.0),
     dict(kind="map",   z0=15.0),
@@ -459,7 +482,6 @@ PLOT_SLICES = [
 
 #: Global axis limits in model-local km — used for panels that do not
 #: specify their own.  None → auto (inferred from data extent).
-#: Converted to metres for internal use below.
 PLOT_XLIM = [-20., 20.]   # [xmin, xmax] km — easting
 PLOT_YLIM = [-20., 20.]   # [ymin, ymax] km — northing
 PLOT_ZLIM = [ -6., 15.]   # [zmin, zmax] km — depth (z positive-down)
@@ -480,11 +502,17 @@ PLOT_PANEL_HEIGHT = 16.0   # cm
 PLOT_NROWS = None
 PLOT_NCOLS = None
 
+#: False = one figure per model with a panel per PLOT_SLICES entry;
+#: True  = one figure per model AND slice (<PLOT_FILE>_01_<kind>.<ext>, ...);
+#: PLOT_NROWS / PLOT_NCOLS are then not used.
+PLOT_SINGLE_PANELS = False
+
 # ---------------------------------------------------------------------------
 # Geographic / UTM origin of the mesh centre
 # ---------------------------------------------------------------------------
-#: Fallback values.  When ORIGIN_METHOD is "box" or "average" these are
-#: overwritten at runtime from site.dat and may be left as None.
+#: Fallback values.  When ORIGIN_METHOD is "box" or "average" the origin is
+#: taken from site.dat instead and these may be left as None.
+#: UTM_ORIGIN_E / _N are given in UTM km.
 UTM_ORIGIN_LAT = None
 UTM_ORIGIN_LON = None
 UTM_ORIGIN_E   = None
@@ -508,7 +536,7 @@ SITE_NAMES  = None                    # None = all sites
 
 PLOT_SITES_MAPS   = True
 PLOT_SITES_SLICES = False
-PROJECTION_DIST   = 5.0   # km — converted to metres for internal use below
+PROJECTION_DIST   = 5.0   # km
 
 SITE_MARKER        = dict(marker="v", color="black", ms=8, zorder=10, label=None)
 SITE_MARKER_SLICES = None
@@ -523,35 +551,41 @@ SHOW_MODEL_CENTRE = True
 
 
 # ---------------------------------------------------------------------------
-# Unit conversion: OP_*/PLOT_*/PROJECTION_DIST length parameters above are
-# entered in km for convenience; convert to metres here for internal use,
-# since femtic.py / femtic_viz.py and the model-local coordinate system
-# work in metres throughout.
+# Unit conversion: every length and UTM coordinate above is given in km;
+# femtic.py / femtic_viz.py and the model-local coordinate system work in
+# metres. The settings stay as entered (parameter summary); the metre values
+# used below are the lower-case names defined here.
 # ---------------------------------------------------------------------------
-_KM_TO_M = 1000.0
 
-OP_SMOOTH_SIGMA *= _KM_TO_M
-PROJECTION_DIST *= _KM_TO_M
-PLOT_XLIM = [v * _KM_TO_M for v in PLOT_XLIM]
-PLOT_YLIM = [v * _KM_TO_M for v in PLOT_YLIM]
-PLOT_ZLIM = [v * _KM_TO_M for v in PLOT_ZLIM]
 
-for _body in OP_ELLIPSOID_BODIES + OP_BRICK_BODIES:
-    _body["center"] = [v * _KM_TO_M for v in _body["center"]]
-    _body["axes"]   = [v * _KM_TO_M for v in _body["axes"]]
-    if _body.get("boundary_smooth"):
-        _body["boundary_smooth"]["sigma"] *= _KM_TO_M
+def _bodies_km_to_m(bodies):
+    """Copy of a body list with center / axes / smoothing sigma in metres."""
+    out = []
+    for body in bodies:
+        body = dict(body)
+        for key in ("center", "axes"):
+            body[key] = fem.lim_km_to_m(body[key], name=f"body {key!r}")
+        if body.get("boundary_smooth"):
+            smooth = dict(body["boundary_smooth"])
+            smooth["sigma"] = fem.km_to_m(
+                smooth["sigma"], name="boundary_smooth 'sigma'")
+            body["boundary_smooth"] = smooth
+        out.append(body)
+    return out
 
-for _slc in PLOT_SLICES:
-    for _key in ("z0", "x0", "y0"):
-        if _key in _slc:
-            _slc[_key] *= _KM_TO_M
-    if "point" in _slc:
-        _slc["point"] = [v * _KM_TO_M for v in _slc["point"]]
-    for _key in ("xlim", "ylim", "zlim"):
-        if _key in _slc:
-            _slc[_key] = [v * _KM_TO_M for v in _slc[_key]]
 
+_smooth_sigma_m = fem.km_to_m(OP_SMOOTH_SIGMA, name="OP_SMOOTH_SIGMA")
+_ellipsoid_bodies_m = _bodies_km_to_m(OP_ELLIPSOID_BODIES)
+_brick_bodies_m = _bodies_km_to_m(OP_BRICK_BODIES)
+_plot_slices_m = fem.slices_km_to_m(PLOT_SLICES)
+_plot_xlim_m = fem.lim_km_to_m(PLOT_XLIM, name="PLOT_XLIM")
+_plot_ylim_m = fem.lim_km_to_m(PLOT_YLIM, name="PLOT_YLIM")
+_plot_zlim_m = fem.lim_km_to_m(PLOT_ZLIM, name="PLOT_ZLIM")
+_projection_dist_m = fem.km_to_m(PROJECTION_DIST, name="PROJECTION_DIST")
+_map_markers_m = fem.markers_km_to_m(MAP_MARKERS)
+#: UTM origin in metres; replaced below when ORIGIN_METHOD reads site.dat.
+_utm_e, _utm_n = fem.utm_km_to_m(
+    UTM_ORIGIN_E, UTM_ORIGIN_N, name="UTM_ORIGIN_E / _N")
 
 
 # ===========================================================================
@@ -940,6 +974,9 @@ def _apply_bodies(m: np.ndarray, centroids: np.ndarray,
     Bodies are applied in order; later entries overwrite earlier ones where
     masks overlap — allowing layered construction of complex structures.
 
+    All lengths are in metres here (the script converts the km settings
+    OP_ELLIPSOID_BODIES / OP_BRICK_BODIES before calling).
+
     Optional per-body boundary smoothing is controlled by the key
     ``boundary_smooth``, a dict with:
         sigma  : Gaussian length scale in metres (blend width per pass)
@@ -1141,11 +1178,11 @@ if (not PLOT_ONLY) and OPERATION in _NEEDS_MESH:
 
     if OPERATION == "smooth":
         _smooth_ctx["centroids"] = region_ctr
-        _smooth_ctx["sigma"]     = float(OP_SMOOTH_SIGMA)
+        _smooth_ctx["sigma"]     = float(_smooth_sigma_m)
         _n_mem_mb = int(len(free_idx) * min(int(OP_SMOOTH_K), len(free_idx)) * 8 / 1024**2)
         _mode_str = str(OP_SMOOTH_MODE).strip().lower()
         if _mode_str == "physical":
-            _mode_info = f"σ={OP_SMOOTH_SIGMA:.0f} m"
+            _mode_info = f"σ={OP_SMOOTH_SIGMA:g} km"
         elif _mode_str == "knn_uniform":
             _mode_info = "uniform weights"
         else:  # knn_gauss
@@ -1155,12 +1192,12 @@ if (not PLOT_ONLY) and OPERATION in _NEEDS_MESH:
 
     if OPERATION == "ellipsoid":
         _ellipsoid_ctx["centroids"] = region_ctr
-        _ellipsoid_ctx["bodies"]    = list(OP_ELLIPSOID_BODIES)
+        _ellipsoid_ctx["bodies"]    = _ellipsoid_bodies_m
         print(f"  ellipsoid context ready: {len(OP_ELLIPSOID_BODIES)} body/bodies.")
 
     if OPERATION == "brick":
         _brick_ctx["centroids"] = region_ctr
-        _brick_ctx["bodies"]    = list(OP_BRICK_BODIES)
+        _brick_ctx["bodies"]    = _brick_bodies_m
         print(f"  brick context ready: {len(OP_BRICK_BODIES)} body/bodies.")
     print()
 
@@ -1250,17 +1287,17 @@ if PLOT_INPUT or PLOT_OUTPUT:
             _Es = _np.array([d["easting"]  for d in _sdat])
             _Ns = _np.array([d["northing"] for d in _sdat])
             if ORIGIN_METHOD == "box":
-                UTM_ORIGIN_E = 0.5 * (_Es.min() + _Es.max())
-                UTM_ORIGIN_N = 0.5 * (_Ns.min() + _Ns.max())
+                _utm_e = 0.5 * (_Es.min() + _Es.max())      # metres
+                _utm_n = 0.5 * (_Ns.min() + _Ns.max())
             else:
-                UTM_ORIGIN_E = float(_Es.mean())
-                UTM_ORIGIN_N = float(_Ns.mean())
+                _utm_e = float(_Es.mean())
+                _utm_n = float(_Ns.mean())
             _lats = _np.array([d["lat"] for d in _sdat])
             _lons = _np.array([d["lon"] for d in _sdat])
             _z0, _n0 = utl.utm_zone_from_latlon(
                 float(_lats.mean()), float(_lons.mean()), override=UTM_ZONE_OVERRIDE)
             UTM_ORIGIN_LAT, UTM_ORIGIN_LON = utl.utm_to_latlon_zn(
-                UTM_ORIGIN_E, UTM_ORIGIN_N, _z0, _n0)
+                _utm_e, _utm_n, _z0, _n0)
 
     # Final guard: if LAT/LON are still None the plot cannot proceed.
     if UTM_ORIGIN_LAT is None or UTM_ORIGIN_LON is None:
@@ -1278,7 +1315,7 @@ if PLOT_INPUT or PLOT_OUTPUT:
     if SITE_DAT is not None and os.path.isfile(SITE_DAT):
         for row in fem.read_site_dat(SITE_DAT, site_names=SITE_NAMES):
             sx_m, sy_m = fem.utm_to_model(row["easting"], row["northing"],
-                                          UTM_ORIGIN_E, UTM_ORIGIN_N)
+                                          _utm_e, _utm_n)
             site_xys.append((row["name"], sx_m, sy_m, float(row.get("elev", 0.0))))
 
 # --- (4) Plot slices of input and/or output model ---------------------------
@@ -1287,8 +1324,8 @@ if PLOT_INPUT or PLOT_OUTPUT:
         print("  PLOT: femtic_viz not available — skipping slice plot(s).")
     else:
         _slices_resolved = fem.resolve_slice_positions(
-            PLOT_SLICES, UTM_ZONE, UTM_NORTHERN,
-            UTM_ORIGIN_E, UTM_ORIGIN_N,
+            _plot_slices_m, UTM_ZONE, UTM_NORTHERN,
+            _utm_e, _utm_n,
             UTM_ORIGIN_LAT, UTM_ORIGIN_LON,
             verbose=OUT,
         )
@@ -1300,17 +1337,22 @@ if PLOT_INPUT or PLOT_OUTPUT:
         if PLOT_OUTPUT:
             _plot_jobs.append(("output model", MODEL_OUT, PLOT_FILE))
 
+        if PLOT_SINGLE_PANELS:
+            _panel_jobs = fviz.single_panel_jobs(_slices_resolved)
+        else:
+            _panel_jobs = [dict(suffix="", kwargs={})]
+
         for _label, _model_file, _plot_file in _plot_jobs:
             print(f"  Plotting {_label}: {_model_file}")
-            fviz.plot_model_slices(
+            _kw = dict(
                 model_file         = _model_file,
                 mesh_file          = MESH_FILE,
                 slices             = _slices_resolved,
                 cmap               = PLOT_CMAP,
                 clim               = PLOT_CLIM,
-                xlim               = PLOT_XLIM,
-                ylim               = PLOT_YLIM,
-                zlim               = PLOT_ZLIM,
+                xlim               = _plot_xlim_m,
+                ylim               = _plot_ylim_m,
+                zlim               = _plot_zlim_m,
                 ocean_color        = PLOT_OCEAN_COLOR,
                 ocean_value        = OCEAN_RHO,
                 air_bgcolor        = PLOT_AIR_BGCOLOR,
@@ -1320,12 +1362,12 @@ if PLOT_INPUT or PLOT_OUTPUT:
                 sites_in_slices    = PLOT_SITES_SLICES,
                 site_marker        = SITE_MARKER,
                 site_marker_slices = SITE_MARKER_SLICES,
-                map_markers        = MAP_MARKERS,
+                map_markers        = _map_markers_m,
                 show_model_centre  = SHOW_MODEL_CENTRE,
-                projection_dist    = PROJECTION_DIST,
+                projection_dist    = _projection_dist_m,
                 display_coords     = DISPLAY_COORDS,
-                utm_origin_e       = UTM_ORIGIN_E,
-                utm_origin_n       = UTM_ORIGIN_N,
+                utm_origin_e       = _utm_e,
+                utm_origin_n       = _utm_n,
                 utm_zone           = UTM_ZONE,
                 utm_northern       = UTM_NORTHERN,
                 utm_to_latlon_fn   = utl.utm_to_latlon_zn,
@@ -1336,10 +1378,16 @@ if PLOT_INPUT or PLOT_OUTPUT:
                 panel_height       = PLOT_PANEL_HEIGHT / 2.54,
                 nrows              = PLOT_NROWS,
                 ncols              = PLOT_NCOLS,
-                plot_file          = _plot_file,
                 dpi                = PLOT_DPI,
                 out                = OUT,
             )
+            for _job in _panel_jobs:
+                _file = _plot_file
+                if _file is not None:
+                    _root, _ext = os.path.splitext(_file)
+                    _file = f"{_root}{_job['suffix']}{_ext}"
+                fviz.plot_model_slices(
+                    plot_file=_file, **{**_kw, **_job["kwargs"]})
 
 
 # ---------------------------------------------------------------------------

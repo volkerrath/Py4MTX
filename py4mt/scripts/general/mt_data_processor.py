@@ -23,6 +23,9 @@ A collection NPZ file with all stations is saved at the end.
 @modified:  2026-11-20 (c) -- INTERPOLATE: new interp_pars key n_freq = exactly N frequencies, log-spaced between the limits of freq_range ('survey', 'common' or (fmin, fmax)) with both limits as grid points (data_proc.make_freq_grid_n); freq_per_dec and n_freq are alternatives (exactly one must be set); n_freq is popped before interpolate_data. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 @modified:  2026-11-20 (c) -- observe.dat: OBS_INVALID = "drop" | "mark" (and OBS_INVALID_SE) chooses how invalid data are written: the frequency is left out ("drop", as before) or only the bad component is written with a negative error, which FEMTIC does not use ("mark"); the per-station counts are printed. Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 @modified:  2026-11-20 (d) -- phase panels: where a phase curve leaves the +-180 deg window the solid line is interrupted and the jump is drawn as a dotted connection; PHASE_WRAP_MODE ('direct', 'short', 'off') and PHASE_WRAP_STYLE (dict of Line2D keywords, False = no connection) in the plot configuration, passed to data_viz.add_phase; Claude Sonnet 5.5 (Anthropic); AI-generated, review before use
+@modified:  2026-11-27 -- new plot settings FIG_SIZE and FIG_ROW_HEIGHT [cm] (before: fixed in the
+            code, in inch; the defaults give the same figures);
+            Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 """
 
 import os
@@ -60,6 +63,11 @@ version, _ = versionstrg()
 fname = inspect.getfile(inspect.currentframe())
 titstrng = utl.print_title(version=version, fname=fname, out=False)
 print(titstrng + "\n\n")
+
+def _figsize(size_cm) -> tuple:
+    """Figure size (width, height) given in cm, in the inches Matplotlib uses."""
+    return tuple(round(float(v) / 2.54, 6) for v in size_cm)
+
 
 # =============================================================================
 #  Configuration
@@ -246,6 +254,10 @@ if PLOT:
     # {name_str} (other braces are used as they stand); or a dict
     # {"<station>": spec, "default": spec}
     FIGURE_TITLE = "auto"
+    # Figure size [cm]: (width, height) for three rows of panels, and the
+    # height added for each further row (the D+ panel, DPLUS = True)
+    FIG_SIZE = (20.32, 35.56)
+    FIG_ROW_HEIGHT = 10.16
     PLTARGS = {
         "show_errors": True,
         "xlim": None,       # period limits (s), e.g. (1e-3, 1e3); None = auto
@@ -504,8 +516,9 @@ for edi, data_dict in loaded:
 
     if PLOT:
         nrows = 3 + (1 if DPLUS else 0)
-        fig, axs = plt.subplots(nrows, 2, figsize=(
-            8, 14 + 4 * (nrows - 3)), sharex=True)
+        fig, axs = plt.subplots(nrows, 2, figsize=_figsize(
+            (FIG_SIZE[0], FIG_SIZE[1] + FIG_ROW_HEIGHT * (nrows - 3))),
+            sharex=True)
 
         _sup = utl.resolve_title(
             FIGURE_TITLE, statname, statname + NAME_STR.replace("_", " | "),

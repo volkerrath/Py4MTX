@@ -383,6 +383,28 @@ Modified: 2026-11-22 by Claude Sonnet 5.5 (Anthropic) -- the spread of the
     perturbed models alone are drawn. res["qdiff"] is unchanged (only the
     converged "qdiff_*" keys). Nothing else changed. Tested on synthetic
     results only. AI-generated code -- review before production use.
+Modified: 2026-11-26 by Claude Sonnet 5.5 (Anthropic) -- for the several-runs
+    form of the femtic_mod_plot_*.py scripts: resolve_model_files() takes
+    base_dir (start of relative entries) and results_iterN.h5 files (they
+    stand for resistivity_block_iterN.dat of the same directory), takes the
+    run label from the absolute directory (a run given as "." was labelled
+    "."), lists a block file reached twice only once and no longer repeats a
+    label that another run already has. New anchor_path(), find_run_file()
+    and model_output_stem(). For femtic_mod_plot_bh.py: new
+    sample_model_boreholes() (one model through sample_boreholes()) and
+    model_style_keys(). No other function changed. Tested on synthetic
+    files only. AI-generated code -- review before production use.
+Modified: 2026-11-26 (b) by Claude Sonnet 5.5 (Anthropic) -- Script settings
+    in km, the library API stays in metres: new KM_LIMIT, KM_LIMIT_RANGE,
+    UTM_KM_LIMITS, class KmUnitError, check_km(), utm_km_to_m(),
+    pos_km_to_m(). km_to_m() / lim_km_to_m() refuse values that look like
+    metres; slices_km_to_m() now converts UTM positions, point / p1 / p2,
+    z_top / z_bot and per-panel xlim / ylim / zlim; plane_point_km_to_m() /
+    plane_spec_km_to_m(), polylines_km_to_m() and borehole_resolve_xy() take
+    UTM in km; expand_site_templates() returns UTM km; sample_boreholes()
+    does not skip a borehole given in metres but raises. Needs the scripts
+    of the same date. Tested on synthetic files only. AI-generated; review
+    before production use.
 """
 from __future__ import annotations
 
@@ -8881,39 +8903,161 @@ _ALPHA_EXPR_RE = re.compile(
 DEFAULT_PERCENTILES = (2.3, 15.9, 50.0, 84.1, 97.7)
 
 
-def km_to_m(val):
+#: Largest magnitude (km) accepted for a model-local length or a depth in a
+#: user setting; anything larger is taken to be a value in metres.
+KM_LIMIT = 1000.0
+
+#: The same for [min, max] plot limits, which may span a whole mesh.
+KM_LIMIT_RANGE = 5000.0
+
+#: Largest UTM easting / northing (km) accepted in a user setting.
+UTM_KM_LIMITS = (2000.0, 20000.0)
+
+
+class KmUnitError(ValueError):
+    """A length setting that looks like metres where km are expected."""
+
+
+def check_km(value, *, name="length", limit=KM_LIMIT):
+    """Return ``value`` unless it is too large to be a length in km.
+
+    Raises :class:`KmUnitError` (a ``ValueError``) if ``abs(value) > limit``:
+    settings that used to be in metres would otherwise be read 1000 times too
+    large without notice.
+    None and non-finite values (``inf`` = "no limit", ``nan``) pass through.
+    """
+    if (value is not None and np.isfinite(float(value))
+            and abs(float(value)) > limit):
+        raise KmUnitError(
+            f"{name} = {float(value):.10g}: lengths are given in km, "
+            f"this looks like metres (largest accepted value {limit:g} km).")
+    return value
+
+
+def utm_km_to_m(easting=None, northing=None, *, name="UTM position"):
+    """UTM easting / northing in km -> metres; returns ``(E_m, N_m)``.
+
+    A component given as None stays None. Values beyond
+    :data:`UTM_KM_LIMITS` are refused (``ValueError``): they look like metres.
+    """
+    out = []
+    for val, what, limit in zip((easting, northing), ("easting", "northing"),
+                                UTM_KM_LIMITS):
+        check_km(val, name=f"{name}, {what}", limit=limit)
+        out.append(None if val is None else float(val) * 1000.0)
+    return out[0], out[1]
+
+
+def _is_number(v):
+    """True for plain int / float / numpy scalars, False for bool and others."""
+    return (isinstance(v, (int, float, np.integer, np.floating))
+            and not isinstance(v, (bool, np.bool_)))
+
+
+def _is_crs_tagged(raw):
+    """True for ``(value, "crs")`` pairs."""
+    return (isinstance(raw, (list, tuple)) and len(raw) == 2
+            and isinstance(raw[1], str))
+
+
+def pos_km_to_m(raw, *, name="position"):
+    """Position ``[x, y]`` / ``[x, y, z]`` of a slice entry, km -> metres.
+
+    ``[x, y(, z)]`` / ``(pt, "model")``   model-local km
+    ``([E, N(, z)], "utm")``              UTM km, z in km
+    ``([lon, lat(, z)], "latlon")``       degrees, z in km
+
+    Returns the same form (tagged or plain) with lengths in metres, as
+    :func:`resolve_pos_point` expects them. None passes through.
+    """
+    if raw is None:
+        return None
+    tagged = _is_crs_tagged(raw)
+    pt, crs = raw if tagged else (raw, "model")
+    pt = list(pt)
+    if crs == "model":
+        out = [km_to_m(v, name=name) for v in pt]
+    elif crs == "utm":
+        out = list(utm_km_to_m(pt[0], pt[1], name=name))
+        out += [km_to_m(v, name=name) for v in pt[2:]]
+    elif crs == "latlon":
+        out = pt[:2] + [km_to_m(v, name=name) for v in pt[2:]]
+    else:
+        raise ValueError(
+            f"{name} {raw!r}: unknown crs {crs!r}; choose 'model', 'utm' or "
+            "'latlon'.")
+    return (out, crs) if tagged else out
+
+
+def km_to_m(val, *, name="length", limit=KM_LIMIT):
     """Convert a scalar distance in km to metres; None passes through.
 
-    The plotting configuration of the ensemble scripts is given in km
-    (MOD_PROJECTION_DIST, MOD_ROI_PAD_XY, ...), while femtic_viz.py works in
-    model-local / UTM metres throughout (like mesh.dat).
+    The user settings of the FEMTIC scripts are given in km, while
+    femtic_viz.py and the model code work in model-local / UTM metres (like
+    mesh.dat). A magnitude above ``limit`` is refused (``ValueError``, see
+    :func:`check_km`).
     """
-    return None if val is None else float(val) * 1000.0
+    if val is None:
+        return None
+    return float(check_km(val, name=name, limit=limit)) * 1000.0
 
 
-def lim_km_to_m(lim):
-    """Convert a [min, max] km limit pair to metres; None passes through."""
-    return None if lim is None else [float(v) * 1000.0 for v in lim]
+def lim_km_to_m(lim, *, name="limit"):
+    """Convert a [min, max] km limit pair to metres; None passes through.
+
+    Magnitudes above :data:`KM_LIMIT_RANGE` are refused (``ValueError``).
+    """
+    if lim is None:
+        return None
+    return [km_to_m(v, name=name, limit=KM_LIMIT_RANGE) for v in lim]
 
 
 def slices_km_to_m(slices):
-    """Convert model-local km slice coordinates (x0/y0/z0) to metres.
+    """Convert the lengths of a slice list (MOD_SLICES) from km to metres.
 
-    ``slices`` is the MOD_SLICES list of dicts, e.g.
-    ``dict(kind="map", z0=5.0)`` or ``dict(kind="ns", x0=0.0)``. Plain
-    numeric x0/y0/z0 values (model-local km) are converted to metres;
-    (value, "latlon") tuples are left untouched since those are
-    degrees, resolved separately by fem.resolve_slice_positions().
-    None passes through.
+    The result is what :func:`resolve_slice_positions` and
+    ``femtic_viz.plot_model_slices`` expect. In the input every length is km:
+
+    ``x0``, ``y0``      model-local km, ``(value, "utm")`` in UTM km, or
+                        ``(value, "latlon")`` in degrees (unchanged)
+    ``z0``, ``z_top``, ``z_bot``  depth km, positive down
+    ``point``, ``p1``, ``p2``     see :func:`pos_km_to_m`
+    ``xlim``, ``ylim``, ``zlim``  per-panel limits, km
+
+    All other keys pass through (``limit_km`` / ``fade_km`` are km for the
+    plot routine as well). None passes through; the input is not modified.
+    A ``kind="plane"`` entry of the plot scripts goes through
+    :func:`plane_spec_km_to_m` instead (default extent).
+
+    Changed 2026-11-26 (Claude, Anthropic; AI-generated): UTM positions,
+    profile entries and per-panel limits are km too (before: metres).
     """
     if slices is None:
         return None
     out = []
-    for spec in slices:
+    for i, spec in enumerate(slices):
         spec = dict(spec)
-        for key in ("x0", "y0", "z0"):
-            if key in spec and isinstance(spec[key], (int, float)):
-                spec[key] = spec[key] * 1000.0
+        tag = f"slice[{i}]"
+        for key in ("z0", "z_top", "z_bot"):
+            if _is_number(spec.get(key)):
+                spec[key] = km_to_m(spec[key], name=f"{tag} {key}")
+        for axis, key in enumerate(("x0", "y0")):
+            val, name = spec.get(key), f"{tag} {key}"
+            if _is_number(val):
+                spec[key] = km_to_m(val, name=name)
+            elif _is_crs_tagged(val):
+                v, crs = val
+                if crs == "model":
+                    spec[key] = (km_to_m(v, name=name), crs)
+                elif crs == "utm":
+                    pair = (v, None) if axis == 0 else (None, v)
+                    spec[key] = (utm_km_to_m(*pair, name=name)[axis], crs)
+        for key in ("point", "p1", "p2"):
+            if spec.get(key) is not None:
+                spec[key] = pos_km_to_m(spec[key], name=f"{tag} {key}")
+        for key in ("xlim", "ylim", "zlim"):
+            if spec.get(key) is not None:
+                spec[key] = lim_km_to_m(spec[key], name=f"{tag} {key}")
         out.append(spec)
     return out
 
@@ -8928,7 +9072,7 @@ def plane_point_km_to_m(raw, zone=None, northern=None,
                                         missing); same as the tag "model"
     ``([x, y, z], "model")``            model-local km
     ``([E, N, z], "utm")``              absolute UTM easting / northing in
-                                        METRES (as for x0 / y0), z in km
+                                        km (as for x0 / y0), z in km
     ``([lon, lat, z], "latlon")``       decimal degrees, longitude first
                                         (as in fem.resolve_pos_point), z in km
 
@@ -8936,6 +9080,7 @@ def plane_point_km_to_m(raw, zone=None, northern=None,
     (UTM zone / hemisphere and UTM position of the model origin, [m]).
 
     Added 2026-11-09, Claude Sonnet 5.5 (Anthropic).
+    Changed 2026-11-26: UTM easting / northing in km (before: metres).
     """
     crs, pt = "model", raw
     if (isinstance(raw, (list, tuple)) and len(raw) == 2
@@ -8946,15 +9091,18 @@ def plane_point_km_to_m(raw, zone=None, northern=None,
         raise ValueError(
             f"plane point must have 2 or 3 elements [x, y(, z)], got {raw!r}")
     pt += [0.0] * (3 - len(pt))
-    z_m = pt[2] * 1000.0
+    z_m = km_to_m(pt[2], name="plane point z")
     if crs == "model":
-        return [pt[0] * 1000.0, pt[1] * 1000.0, z_m]
+        return [km_to_m(pt[0], name="plane point x"),
+                km_to_m(pt[1], name="plane point y"), z_m]
     if crs in ("utm", "latlon"):
         if None in (zone, northern, origin_E, origin_N):
             raise ValueError(
                 f"plane point {raw!r} is tagged {crs!r}: UTM zone, hemisphere "
                 "and model origin (zone, northern, origin_E, origin_N) are "
                 "needed to convert it.")
+        if crs == "utm":
+            pt[0], pt[1] = utm_km_to_m(pt[0], pt[1], name="plane point")
         return resolve_pos_point(([pt[0], pt[1], z_m], crs),
                                  zone, northern, origin_E, origin_N)
     raise ValueError(
@@ -8975,7 +9123,8 @@ def plane_spec_km_to_m(spec, xlim_km=None, ylim_km=None, *,
     dip; default 0), ``dip`` (degrees below the horizontal towards
     strike + 90, default 90), ``invert_x``, ``title``, and optionally
     ``xlim`` = [min, max] along-strike km and ``ylim`` = [min, max] down-dip
-    km (dip != 90 only), both relative to ``point``.
+    km (dip != 90 only), both relative to ``point``; ``zlim`` = [min, max]
+    depth km.
 
     For a vertical plane (dip = 90) without an explicit ``xlim`` the
     along-strike range is derived from the same limits as the other panels:
@@ -8995,6 +9144,8 @@ def plane_spec_km_to_m(spec, xlim_km=None, ylim_km=None, *,
     sp.setdefault("dip", 90.0)
     if "ylim" in sp:
         sp["ylim"] = lim_km_to_m(sp["ylim"])
+    if "zlim" in sp:
+        sp["zlim"] = lim_km_to_m(sp["zlim"])
     if "xlim" in sp:
         sp["xlim"] = lim_km_to_m(sp["xlim"])
     elif abs(float(sp["dip"]) - 90.0) < 1e-6:
@@ -9021,7 +9172,8 @@ def polylines_km_to_m(polylines):
     ``points`` = ``[[x, y(, z)], ...]`` or ``([[x, y(, z)], ...], "model")``
         model-local km, z = depth in km, positive down
     ``([[E, N(, z)], ...], "utm")``
-        absolute UTM easting / northing in **metres**, z in km
+        absolute UTM easting / northing in **km** (2026-11-26; before:
+        metres), z in km
     ``([[lon, lat(, z)], ...], "latlon")``
         decimal degrees, **longitude first**, z in km
 
@@ -9064,15 +9216,23 @@ def polylines_km_to_m(polylines):
             raise ValueError(
                 f"polylines[{name!r}]: points must be an (n, 2) or (n, 3) "
                 f"array, got shape {arr.shape}.")
-        if crs == "model":
-            arr[:, :2] *= 1000.0          # km -> m; UTM metres / degrees stay
+        tag = f"polylines[{name!r}]"
+        if arr.size and crs == "model":
+            check_km(np.nanmax(np.abs(arr[:, :2])), name=tag)
+        elif arr.size and crs == "utm":
+            utm_km_to_m(np.nanmax(np.abs(arr[:, 0])),
+                        np.nanmax(np.abs(arr[:, 1])), name=tag)
+        if crs in ("model", "utm"):
+            arr[:, :2] *= 1000.0          # km -> m; degrees stay
         if arr.shape[1] == 3:
+            if arr.size:
+                check_km(np.nanmax(np.abs(arr[:, 2])), name=f"{tag} depth")
             arr[:, 2] *= 1000.0           # depth km -> m for every CRS
         ent["points"] = (arr, crs)
         if ent.get("max_dist") is not None:
-            ent["max_dist"] = km_to_m(ent["max_dist"])
+            ent["max_dist"] = km_to_m(ent["max_dist"], name=f"{tag} max_dist")
         if ent.get("z_range") is not None:
-            ent["z_range"] = lim_km_to_m(ent["z_range"])
+            ent["z_range"] = lim_km_to_m(ent["z_range"], name=f"{tag} z_range")
         out[name] = ent
     return out
 
@@ -9112,7 +9272,7 @@ def markers_km_to_m(markers):
         ent = dict(ent)
         for key in ("depth", "depth_err", "max_dist"):
             if ent.get(key) is not None:
-                ent[key] = km_to_m(ent[key])
+                ent[key] = km_to_m(ent[key], name=f"markers[{i}] {key}")
         out.append(ent)
     return out
 
@@ -9960,7 +10120,9 @@ def resolve_origin_and_sites(
     ----------
     site_dat, site_names, site_number : MOD_SITE_DAT / _NAMES / _NUMBER
     observe_file : observe.dat used for the site_number fallback
-    origin_e, origin_n, origin_lat, origin_lon : MOD_UTM_ORIGIN_E / _N / _LAT / _LON
+    origin_e, origin_n, origin_lat, origin_lon : UTM origin in METRES (this
+        function and its results are metres) and decimal degrees; the scripts
+        give MOD_UTM_ORIGIN_E / _N in km and convert them with utm_km_to_m()
     zone_override : MOD_UTM_ZONE_OVERRIDE
     origin_method : MOD_ORIGIN_METHOD ("box" | "average" | None)
     plot_sites : True if any site overlay is wanted (MOD_PLOT_SITES_MAPS or
@@ -10324,8 +10486,9 @@ def borehole_resolve_xy(spec, utm_e, utm_n, zone, north):
 
     ``utm_e, utm_n, zone, north`` : mesh-centre UTM origin and zone.
 
-    Plain floats are model-local km; (value, "utm") / (value, "latlon")
-    tuples as for MOD_SLICES. x and y must carry the same CRS tag.
+    Plain floats are model-local km; (value, "utm") in UTM km /
+    (value, "latlon") in degrees, as for MOD_SLICES. x and y must carry the
+    same CRS tag. Changed 2026-11-26: UTM values in km (before: metres).
     """
     xv, xc = parse_pos_crs(spec["x"])
     yv, yc = parse_pos_crs(spec["y"])
@@ -10336,7 +10499,8 @@ def borehole_resolve_xy(spec, utm_e, utm_n, zone, north):
         )
     lat = lon = None
     if xc == "model":
-        x_m, y_m = float(xv) * 1000.0, float(yv) * 1000.0
+        x_m = km_to_m(xv, name=f"MOD_BH '{spec.get('name', '?')}' x")
+        y_m = km_to_m(yv, name=f"MOD_BH '{spec.get('name', '?')}' y")
         if utm_e is not None:
             try:
                 lat, lon = _utl().utm_to_latlon_zn(
@@ -10352,9 +10516,11 @@ def borehole_resolve_xy(spec, utm_e, utm_n, zone, north):
             f"MOD_UTM_ORIGIN_*)."
         )
     if xc == "utm":
-        x_m, y_m = utm_to_model(float(xv), float(yv), utm_e, utm_n)
+        e_m, n_m = utm_km_to_m(
+            xv, yv, name=f"MOD_BH '{spec.get('name', '?')}'")
+        x_m, y_m = utm_to_model(e_m, n_m, utm_e, utm_n)
         try:
-            lat, lon = _utl().utm_to_latlon_zn(float(xv), float(yv), zone, north)
+            lat, lon = _utl().utm_to_latlon_zn(e_m, n_m, zone, north)
         except Exception:
             lat = lon = None
         return x_m, y_m, lat, lon
@@ -10802,8 +10968,8 @@ def expand_site_templates(specs, site_dat, utm_e, *, out=True):
             }
             t.update(
                 name=str(r["name"]),
-                x=(float(r["easting"]), "utm"),
-                y=(float(r["northing"]), "utm"),
+                x=(float(r["easting"]) / 1000.0, "utm"),    # km, as MOD_BH
+                y=(float(r["northing"]) / 1000.0, "utm"),
             )
             result.append(t)
     return result
@@ -10839,7 +11005,7 @@ def sample_boreholes(
     ----------
     specs : list of dict
         Borehole entries (MOD_BH) after expand_site_templates().  Keys:
-        name, x / y (model-local km, or (value, "utm") / (value, "latlon")),
+        name, x / y (model-local km, (value, "utm") in km or (value, "latlon")),
         z_top (km or "surface"), z_bot (km), dz (km), what (list of "avg",
         "med", "percentiles", a percentile key, "sigma1", "sigma2",
         "ensemble", "heatmap", "best", "ref"), alpha, xlim, heat_bins, style,
@@ -10940,13 +11106,15 @@ def sample_boreholes(
         except KeyError as exc:
             print(f"  borehole '{nm}': missing key {exc} - skipped.")
             continue
+        except KmUnitError:
+            raise                       # a metre value: stop, do not skip
         except ValueError as exc:
             print(f"  {exc} - skipped.")
             continue
 
-        dz = float(spec.get("dz", 0.05)) * 1000.0
+        dz = km_to_m(spec.get("dz", 0.05), name=f"borehole '{nm}' dz")
         zb_km = spec.get("z_bot", zlim_km[1] if zlim_km is not None else 20.0)
-        zb = float(zb_km) * 1000.0
+        zb = km_to_m(zb_km, name=f"borehole '{nm}' z_bot")
         zt_raw = spec.get("z_top", "surface")
         if isinstance(zt_raw, str) and zt_raw.strip().lower() == "surface":
             zt = mesh.surface_m(x_m, y_m, dz, zb, er)
@@ -10958,7 +11126,7 @@ def sample_boreholes(
                 continue
             print(f"  {nm}: z_top='surface' -> {zt / 1000.0:.3f} km")
         else:
-            zt = float(zt_raw) * 1000.0
+            zt = km_to_m(zt_raw, name=f"borehole '{nm}' z_top")
         if zb <= zt or dz <= 0.0:
             print(f"  borehole '{nm}': need z_bot > z_top and dz > 0 - skipped.")
             continue
@@ -11098,6 +11266,143 @@ def sample_boreholes(
     return dict(
         profiles=profiles, npz=npz, hdr=hdr, npz_pert=npz_p, hdr_pert=hdr_p
     )
+
+
+#: Long forms of Line2D keywords -> the short forms used in the style dicts.
+_LINE_ALIASES = {"c": "color", "linestyle": "ls", "linewidth": "lw"}
+
+
+def model_style_keys(style):
+    """A borehole style dict (MOD_BH_STYLE) with "model" as the draw key "best".
+
+    ``style`` : {draw key: Line2D keywords} or None.  Returns a new dict in
+    which the key "model" is renamed to "best" (the draw key of the single
+    model in sample_boreholes() / femtic_viz.plot_boreholes()) and the long
+    keywords c / linestyle / linewidth are written color / ls / lw, so that
+    two style layers cannot give matplotlib both forms.
+
+    Added 2026-11-26, Claude Sonnet 5.5 (Anthropic); AI-generated -- review.
+    """
+    st = {
+        key: {_LINE_ALIASES.get(k, k): v for k, v in dict(val).items()}
+        for key, val in dict(style or {}).items()
+    }
+    if "model" in st:
+        st["best"] = {**st.get("best", {}), **st.pop("model")}
+    return st
+
+
+def sample_model_boreholes(
+    specs,
+    *,
+    mesh,
+    struct,
+    utm,
+    ref_el=None,
+    ref_default=True,
+    ocean_rho=0.25,
+    zlim_km=None,
+    display_coords="model",
+    out=True,
+):
+    """Sample ONE model (block file) along vertical boreholes.
+
+    The single-model counterpart of sample_boreholes(), which does the work:
+    the model is passed as an "ensemble" of one member.
+
+    Parameters
+    ----------
+    specs : list of dict
+        Borehole entries (MOD_BH) after expand_site_templates().  Keys:
+        name, x / y (model-local km, (value, "utm") in km or (value, "latlon")),
+        z_top (km or "surface"), z_bot (km), dz (km), xlim (Ohm.m), what
+        (list of "model" and "ref"; the model is always drawn), ref (False =
+        no reference line), style ({"model": ..., "ref": ...}); the Line2D
+        keywords color, ls, lw, marker may also be given directly (model
+        line).  Ensemble items of "what" are ignored with a note.
+    mesh : BoreholeMesh
+    struct : dict
+        Region structure of the model (_read_resistivity_block_struct).
+    utm : (utm_e, utm_n, zone, north)
+        Mesh-centre UTM origin (entries may be None without sites).
+    ref_el, ref_default, ocean_rho, zlim_km, display_coords
+        As in sample_boreholes().
+
+    Returns
+    -------
+    dict(profiles, npz, hdr)
+        ``profiles`` : profile dicts for femtic_viz.plan_borehole_figures()
+        (the model line has the draw key "best"); ``npz`` : arrays
+        depth_<name> [m], model_<name> and ref_<name> [Ohm.m]; ``hdr`` : one
+        dict per borehole (position, depth range, keys).
+
+    Raises ValueError when the model does not fit the mesh.
+
+    Added 2026-11-26, Claude Sonnet 5.5 (Anthropic); AI-generated -- review.
+    """
+    prepared, dropped = [], []
+    for spec in specs:
+        sp = dict(spec)  # never change the caller's entry
+        what = sp.get("what", ["model"])
+        what = [what] if isinstance(what, str) else list(what)
+        keys = ["best"]
+        for item in what:
+            if item == "ref":
+                if "ref" not in keys:
+                    keys.append("ref")
+            elif item not in ("model", "best") and item not in dropped:
+                dropped.append(item)
+        sp["what"] = keys
+        style = model_style_keys(sp.get("style"))
+        direct = {
+            _LINE_ALIASES.get(k, k): sp.pop(k)
+            for k in ("color", "c", "ls", "linestyle", "lw", "linewidth",
+                      "marker")
+            if k in sp
+        }
+        if direct:
+            style["best"] = {**direct, **style.get("best", {})}
+        sp["style"] = style
+        prepared.append(sp)
+    if dropped:
+        print(
+            f"  MOD_BH 'what': {dropped} are ensemble items - ignored for a "
+            f"single model."
+        )
+
+    free = np.asarray(struct["free_idx"], dtype=np.int64)
+    vec = np.log10(np.asarray(struct["region_rho"], dtype=float)[free])
+    res = sample_boreholes(
+        prepared,
+        mesh=mesh,
+        struct=struct,
+        ens=vec[None, :],
+        stat_map={},
+        value_keys=[],
+        best_i=0,
+        percentiles=[],
+        utm=utm,
+        cs=None,
+        ref_el=ref_el,
+        ref_default=ref_default,
+        ocean_rho=ocean_rho,
+        zlim_km=zlim_km,
+        display_coords=display_coords,
+    )
+    npz = {
+        ("model_" + k[len("best_"):] if k.startswith("best_") else k): v
+        for k, v in res["npz"].items()
+    }
+    hdr = [
+        dict(
+            {k: v for k, v in h.items() if k != "heat_bins"},
+            keys=["model" if k == "best" else k for k in h["keys"]],
+        )
+        for h in res["hdr"]
+    ]
+    if out:
+        print(f"  {len(res['profiles'])} borehole profile(s)")
+    return dict(profiles=res["profiles"], npz=npz, hdr=hdr)
 
 
 # ---------------------------------------------------------------------------
@@ -11569,13 +11874,14 @@ def resolve_model_files(
     *,
     cnv_name=None,
     block_name="resistivity_block_iter{n}.dat",
+    base_dir=None,
     out=True,
 ):
     """Resolve which resistivity-block files a single-model script plots.
 
-    Used by ``femtic_mod_plot_slice.py`` and ``femtic_mod_plot_bh.py`` (one
-    figure per returned model).  A plain block file gives exactly one model,
-    so those scripts behave as before for the one-model case.
+    Used by ``femtic_mod_plot_slice.py``, ``femtic_mod_plot_bh.py`` and
+    ``femtic_mod_plot_3d.py`` (one figure per returned model).  Every entry is
+    a model of its own: the entries do not form an ensemble.
 
     Parameters
     ----------
@@ -11584,6 +11890,9 @@ def resolve_model_files(
 
         * a **block file** (``resistivity_block_iterN.dat``), used as given
           (``iteration`` does not apply to it);
+        * a **results file** (``results_iterN.h5``): stands for the block file
+          of the same iteration in the same directory (the HDF5 file itself is
+          not read; ``iteration`` does not apply);
         * a **run directory**: the block file is chosen by ``iteration``
           (``femtic.cnv`` of that directory is read where it is needed);
         * a **glob pattern** (``*``, ``?``, ``[``), expanded and sorted;
@@ -11603,6 +11912,9 @@ def resolve_model_files(
         :data:`CNV_DEFAULT_NAMES`.
     block_name : str
         File name pattern of a block file; ``{n}`` is the iteration.
+    base_dir : str | None
+        Directory that relative entries (also relative globs) start from;
+        None = the current directory.  ``~`` is expanded in either case.
     out : bool
         Print one line per model and a warning for every entry skipped.
 
@@ -11613,7 +11925,9 @@ def resolve_model_files(
         directory name, made unique), ``tag`` (``"iter21"``), ``iter`` (int
         or None if it cannot be told), ``nrms`` and ``alpha`` (float or
         None, from ``femtic.cnv`` when that has a row of this iteration),
-        ``selector``.  Entries without a block file are left out.
+        ``selector``.  Entries without a block file are left out, and a block
+        file reached twice (e.g. a run directory and its results file) is
+        listed once.
 
     Raises
     ------
@@ -11646,7 +11960,12 @@ def resolve_model_files(
     paths = []
     for e in entries:
         e = os.path.expanduser(str(e))
-        if any(ch in e for ch in "*?["):
+        is_glob = any(ch in e for ch in "*?[")
+        if base_dir and not os.path.isabs(e):
+            root = str(base_dir)
+            # the base directory is taken literally, only the entry is a pattern
+            e = os.path.join(_glob.escape(root) if is_glob else root, e)
+        if is_glob:
             hits = sorted(_glob.glob(e))
             if not hits and out:
                 print(f"resolve_model_files: no match for {e}")
@@ -11697,8 +12016,8 @@ def resolve_model_files(
                     continue
                 r = _row_of(rows, n)
                 models.append(dict(
-                    file=f, dir=d, label=os.path.basename(d), tag=f"iter{n}",
-                    iter=n,
+                    file=f, dir=d, label=os.path.basename(os.path.abspath(d)),
+                    tag=f"iter{n}", iter=n,
                     nrms=float(r["RMS"]) if r and "RMS" in r else None,
                     alpha=float(r["Alpha"]) if r and "Alpha" in r else None,
                     selector=sel))
@@ -11706,9 +12025,23 @@ def resolve_model_files(
             d = os.path.dirname(os.path.abspath(p))
             m = re.search(r"iter(\d+)", os.path.basename(p))
             n = int(m.group(1)) if m else None
+            f = p
+            if p.lower().endswith(".h5"):
+                # a results file stands for the block file of its iteration
+                if n is None:
+                    if out:
+                        print(f"resolve_model_files: {p}: no 'iterN' in the "
+                              "name - skipped")
+                    continue
+                f = os.path.join(d, block_name.format(n=n))
+                if not os.path.isfile(f):
+                    if out:
+                        print(f"resolve_model_files: {f} (model of "
+                              f"{os.path.basename(p)}) not found - skipped")
+                    continue
             r = _row_of(_cnv_rows(d), n) if n is not None else None
             models.append(dict(
-                file=p, dir=d, label=os.path.basename(d),
+                file=f, dir=d, label=os.path.basename(d),
                 tag=f"iter{n}" if n is not None
                 else os.path.splitext(os.path.basename(p))[0],
                 iter=n,
@@ -11718,17 +12051,118 @@ def resolve_model_files(
         elif out:
             print(f"resolve_model_files: {p} not found - skipped")
 
-    seen = {}
+    unique, files_seen, names_used = [], set(), set()
     for m in models:
-        k = (m["label"], m["tag"])
-        seen[k] = seen.get(k, 0) + 1
-        if seen[k] > 1:
-            m["label"] = f"{m['label']}_{seen[k]}"
+        real = os.path.realpath(m["file"])
+        if real in files_seen:
+            continue
+        files_seen.add(real)
+        base, k = m["label"], 1
+        while (m["label"], m["tag"]) in names_used:
+            k += 1
+            m["label"] = f"{base}_{k}"
+        names_used.add((m["label"], m["tag"]))
+        unique.append(m)
+    models = unique
     if out:
         for m in models:
             nr = "n/a" if m["nrms"] is None else f"{m['nrms']:.4f}"
             print(f"  model {m['label']} / {m['tag']}  nRMS={nr}  {m['file']}")
     return models
+
+
+def anchor_path(path, base_dir=None):
+    """Expand ``~`` in ``path`` and anchor a relative path at ``base_dir``.
+
+    None (or "") gives None; an absolute path is returned as it is; without a
+    ``base_dir`` a relative path stays relative to the current directory.
+
+    Added 2026-11-26, Claude Sonnet 5.5 (Anthropic).
+    """
+    if path is None or str(path) == "":
+        return None
+    p = os.path.expanduser(str(path))
+    if base_dir and not os.path.isabs(p):
+        p = os.path.join(str(base_dir), p)
+    return p
+
+
+def find_run_file(spec, run_dir, base_dir=None):
+    """Path of a file that belongs to one model run (mesh, site list, ...).
+
+    Parameters
+    ----------
+    spec : str | Path | None
+        The setting of the calling script.  An absolute path (``~`` is
+        expanded) is used as it is; a relative one is looked for in
+        ``run_dir`` first and then in ``base_dir``, so a file kept with every
+        run takes precedence over a common one.
+    run_dir : str | None
+        Directory of the model.
+    base_dir : str | None
+        Working directory of the script.
+
+    Returns
+    -------
+    str | None
+        The path of the existing file; None if ``spec`` is None / "" or no
+        such file exists.
+
+    Added 2026-11-26, Claude Sonnet 5.5 (Anthropic).
+    """
+    if spec is None or str(spec) == "":
+        return None
+    p = os.path.expanduser(str(spec))
+    if os.path.isabs(p):
+        return p if os.path.isfile(p) else None
+    for d in (run_dir, base_dir):
+        if d:
+            q = os.path.normpath(os.path.join(str(d), p))
+            if os.path.isfile(q):
+                return q
+    return None
+
+
+def model_output_stem(model, kind, *, out_dir=None, prefix=None,
+                      prefix_dir=True, base_dir=None):
+    """Output path, without extension, of one figure of one model.
+
+    Parameters
+    ----------
+    model : dict
+        An entry of :func:`resolve_model_files` (keys ``dir``, ``label``,
+        ``tag``).
+    kind : str
+        Last part of the file name (``"slices"``, ``"boreholes"``, ``"3d"``).
+    out_dir : str | None
+        One directory for all figures (a relative one starts at
+        ``base_dir``), used as given.  None = per model, see ``prefix``.
+    prefix : str | None
+        Put in front of every file name; with ``out_dir`` None it also names a
+        sub-directory of the model directory (if ``prefix_dir``).
+    prefix_dir : bool
+        False = no sub-directory, write into the model directory itself.
+    base_dir : str | None
+        Working directory of the script.
+
+    Returns
+    -------
+    str
+        ``<directory>/[<prefix>_]<label>_<tag>_<kind>``.  The directory is not
+        created here.
+
+    Added 2026-11-26, Claude Sonnet 5.5 (Anthropic).
+    """
+    if out_dir:
+        directory = anchor_path(out_dir, base_dir)
+    elif prefix and prefix_dir:
+        directory = os.path.join(model["dir"], str(prefix))
+    else:
+        directory = model["dir"]
+    name = f"{model['label']}_{model['tag']}_{kind}"
+    if prefix:
+        name = f"{prefix}_{name}"
+    return os.path.join(directory, name)
 
 
 # ============================================================================

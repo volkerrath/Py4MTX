@@ -33,6 +33,21 @@ members:
    site data, run scripts, ...) -- it is a ready-to-run restart
    directory, not just a bare starting model.
 
+3. **RESTART procedure** (optional, MOD_RESTART) -- for every run
+   directory with a usable iteration, points ``control.dat`` at the last
+   completed iteration so FEMTIC continues from there instead of from
+   iteration 0. Nothing else in the directory is touched. The content of
+   the original ``control.dat`` (which may be a symbolic link to a shared
+   template) is first copied to ``control.orig`` (never overwritten once
+   it exists); ``control.dat`` is then replaced by a regular file in which
+   only the initial-iteration value is changed (keyword RESTART_KEY, value
+   token RESTART_VALUE_INDEX). A link is replaced, never written through,
+   so the shared template stays unchanged. Directories created by REPAIR
+   (name ending in MOD_REPAIR_SUFFIX) are skipped: they are meant to start
+   afresh from their new iteration-0 model. With RESTART_UNCONDITIONAL the
+   iteration is simply the last one listed in the convergence file, whether
+   or not its model files exist (missing files are only reported).
+
 This was originally prototyped as an addition to femtic_ens_post.py, then
 split out into this standalone script once the design settled, so
 femtic_ens_post.py can stay focused on its own scope (summary statistics,
@@ -179,11 +194,48 @@ Provenance:
                 then ignoring case); the scan report is unchanged. Needs the
                 femtic.py of the same date. AI-generated; review before
                 production use.
+    2026-11-24  Claude Sonnet 5.5 (Anthropic)
+                Date generated: 2026-11-24. Author: Claude, Anthropic.
+                New optional step (4), MOD_RESTART: for every run directory
+                the last completed iteration (RESTART_FROM = "last", or
+                "best") is determined from the convergence file; it must
+                have a resistivity_block_iter<N>.dat (and a
+                distortion_iter<N>.dat when the run has a
+                distortion_iter0.dat). The content of control.dat (a link
+                is followed) is copied to control.orig, which is never
+                overwritten, and control.dat is rewritten as a regular file
+                with the initial-iteration value (RESTART_KEY,
+                RESTART_VALUE_INDEX) set to N; all other bytes are kept.
+                A symbolic control.dat is replaced, not written through.
+                Directories ending in MOD_REPAIR_SUFFIX are skipped, and
+                REPAIR restores the original control.dat in a _restart copy
+                of a directory that had been restarted before. RESTART_DRY_RUN
+                lists the changes without writing. A RESTART report is
+                appended to femtic_ens_repair_summary.md.
+                The FEMTIC keyword and value position (ITERATION, first
+                value token) could NOT be checked against FEMTIC's own
+                control.dat parser while writing this; check one
+                directory with RESTART_DRY_RUN = True first.
+                AI-generated code; review before production use.
+    2026-11-24b Claude Sonnet 5.5 (Anthropic)
+                Date generated: 2026-11-24. Author: Claude, Anthropic.
+                New RESTART_UNCONDITIONAL (default False). True: the
+                restart iteration is taken from the convergence file alone
+                (last iteration > 0, or lowest nRMS with RESTART_FROM =
+                "best"), with no check for resistivity_block_iter<N>.dat /
+                distortion_iter<N>.dat and no fallback to an earlier
+                iteration; missing files give a warning in the note, the
+                directory is still written. select_restart_iteration() gets
+                the argument check_files (True = previous behaviour, which
+                is unchanged for the default). AI-generated code; review
+                before production use.
 """
 from __future__ import annotations
 
 import os
+import re
 import sys
+import stat
 import shutil
 from pathlib import Path
 
@@ -218,17 +270,16 @@ print(titstrng + "\n\n")
 # ---------------------------------------------------------------------------
 # Ensemble input
 # ---------------------------------------------------------------------------
-ENSEMBLE_DIR    = r"/media/vrath/LargeBack/Ensembles/misti_gst_ensembles/"
-ENSEMBLE_NAME   = "misti_gst_suzuki_rnd"
-ENSEMBLE_PREFIX = "misti_gst_suzuki_rnd"
 
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial_nodist_restart/"
+#: Run directories are <ENSEMBLE_DIR><ENSEMBLE_NAME><rho>/ .
+ENSEMBLE_NAME = "ini_"
 
-
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
-ENSEMBLE_NAME = "ann_rto_orig-err_"
+# ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
+# ENSEMBLE_NAME = "ann_rto_orig-err_"
 #: Prefix used for .npz output keys and default file/figure names.
 #: e.g. "rto" → keys rto_ens, rto_avg, …  and file RTO_results.npz.
-ENSEMBLE_PREFIX = "annecy_rto_orig-err"
+ENSEMBLE_PREFIX = "sabancaya_ini_nodist-restart"
 
 #: Expected member numbers as (first, last), inclusive, e.g. (0, 255) for 256
 #: members named <ENSEMBLE_NAME>0 ... <ENSEMBLE_NAME>255. Only used by the
@@ -351,6 +402,68 @@ MOD_REPAIR_SEED = None
 #: from. REPAIR is skipped entirely (with a warning) if fewer are
 #: available -- there's nothing sensible to average.
 MOD_REPAIR_MIN_MEMBERS = 2
+
+# ---------------------------------------------------------------------------
+# RESTART -- point control.dat of every run directory at its last iteration
+# ---------------------------------------------------------------------------
+#: Set True to run the RESTART procedure (step (4), after the scan, the
+#: convergence diagnostic and REPAIR). For every scanned run directory that
+#: has a usable iteration (see RESTART_FROM) it
+#:   1. copies the CONTENT of control.dat (a symbolic link, e.g. to the
+#:      templates, is followed) to control.orig -- only if control.orig does
+#:      not exist yet, so the true original is never overwritten by a second
+#:      RESTART;
+#:   2. replaces control.dat by a regular file that is identical except for
+#:      the initial-iteration value (RESTART_KEY / RESTART_VALUE_INDEX),
+#:      which is set to the iteration found. A symbolic control.dat is
+#:      replaced, never written through, so a shared template is not touched.
+#: Nothing else in the run directory is changed. Directories whose name ends
+#: with MOD_REPAIR_SUFFIX (created by REPAIR) are skipped: they are meant to
+#: start afresh from their new iteration-0 model. Off by default since it
+#: rewrites control.dat in every run directory.
+MOD_RESTART = True
+
+#: Which iteration a run is restarted from. Only iterations > 0 listed in the
+#: convergence file are considered, and only those with a complete model:
+#: resistivity_block_iter<N>.dat, and distortion_iter<N>.dat as well if the
+#: directory has a distortion_iter0.dat.
+#:   "last" = the highest such iteration (the run continues where it stopped);
+#:   "best" = the one with the lowest nRMS (ties: the lowest iteration).
+RESTART_FROM = "best"
+
+#: False (default) = the iteration must have its model files (see RESTART_FROM
+#: above); a run whose last iteration lacks them falls back to an earlier one,
+#: and a run with no complete iteration is skipped.
+#: True = UNCONDITIONAL: the iteration is taken from the convergence file
+#: alone -- the last iteration > 0 listed in it ("last"), or the one with the
+#: lowest nRMS ("best") -- whatever its nRMS and whether or not its model files
+#: exist. Nothing is skipped or replaced by an earlier iteration because of
+#: missing files; they are only reported as a warning (FEMTIC itself will
+#: fail on a missing resistivity_block_iter<N>.dat). Directories without any
+#: iteration > 0 in the convergence file, without a usable control file, and
+#: directories ending in MOD_REPAIR_SUFFIX are still left alone.
+RESTART_UNCONDITIONAL = True
+
+#: The control file and the name its original content is saved under.
+RESTART_CONTROL_FILE = "control.dat"
+RESTART_ORIG_NAME    = "control.orig"
+
+#: Keyword in the control file that holds the initial iteration number, and
+#: the position of that number among the value tokens after the keyword
+#: (0 = the first one, e.g. the "0" in "ITERATION 0 30"). Same file rules as
+#: femtic_lcurve_prep.py: whitespace-separated tokens, whole-line '#'
+#: comments, reading stops at END, every keyword at most once.
+RESTART_KEY         = "ITERATION"
+RESTART_VALUE_INDEX = 0
+
+#: Position of the maximum-iteration value among the value tokens after
+#: RESTART_KEY (1 = the second one in "ITERATION 0 30"). Only used for a
+#: warning: a restart from iteration N with a maximum <= N would not run any
+#: iteration. None = no check.
+RESTART_MAXITER_INDEX = 1
+
+#: True = report what would be changed in every directory, write nothing.
+RESTART_DRY_RUN = False
 
 # ---------------------------------------------------------------------------
 # Plot output
@@ -477,6 +590,215 @@ def select_member_iteration(rows, d, nrms_max, iter_fallback=True):
                 numit0=numit0, nrms0=nrms0, note=note)
 
 
+# --- RESTART helpers --------------------------------------------------------
+# The control file rules below are those of femtic_lcurve_prep.py (FEMTIC-DABIC
+# v2.7.1): whitespace-separated tokens, a value may follow its keyword on the
+# same or a later line, a comment is a WHOLE line starting with '#', reading
+# stops at END, and everything outside the changed token (including line
+# endings) is kept byte for byte.
+_CTL_TOKEN = re.compile(r"\S+")
+
+
+def _ctl_tokens(lines):
+    """Tokens of a control file as FEMTIC reads them.
+
+    Whole-line '#' comments are skipped, reading stops after END. Returns a
+    list of (line_index, start, end, token).
+    """
+    toks = []
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith("#"):
+            continue
+        for m in _CTL_TOKEN.finditer(line):
+            toks.append((i, m.start(), m.end(), m.group(0)))
+            if m.group(0) == "END":
+                return toks
+    return toks
+
+
+def locate_restart_value(lines, key, index, maxiter_index=None):
+    """Find the initial-iteration value token after keyword ``key``.
+
+    ``index`` counts the value tokens after the keyword (0 = first).
+    Returns (line_index, start, end, old_value_string, max_iteration), where
+    max_iteration is the integer at ``maxiter_index`` or None (no such token,
+    not an integer, or ``maxiter_index`` is None).
+    Raises ValueError if the keyword is absent or appears more than once, or
+    the token is missing or not an integer.
+    """
+    toks = _ctl_tokens(lines)
+    hits = [k for k, t in enumerate(toks) if t[3] == key]
+    if not hits:
+        raise ValueError(f"keyword {key} not found (before END)")
+    if len(hits) > 1:
+        raise ValueError(f"keyword {key} appears {len(hits)} times "
+                         f"(each keyword may appear once)")
+    k = hits[0] + 1 + index
+    if k >= len(toks) or toks[k][3] == "END":
+        raise ValueError(f"keyword {key} has no value token #{index}")
+    i, a, b, old = toks[k]
+    try:
+        int(old)
+    except ValueError:
+        raise ValueError(f"value token #{index} after {key} is {old!r}, "
+                         f"not an integer")
+    maxv = None
+    if maxiter_index is not None:
+        k2 = hits[0] + 1 + maxiter_index
+        if k2 < len(toks) and toks[k2][3] != "END":
+            try:
+                maxv = int(toks[k2][3])
+            except ValueError:
+                maxv = None
+    return i, a, b, old, maxv
+
+
+def select_restart_iteration(rows, d, mode="last", check_files=True):
+    """Iteration from which the run in directory ``d`` can be restarted.
+
+    Only iterations > 0 listed in the convergence rows count (iteration 0 is
+    the starting model, nothing to restart from), and -- with
+    ``check_files=True`` -- only those whose model files exist:
+    ``resistivity_block_iter<N>.dat``, plus ``distortion_iter<N>.dat`` if the
+    directory has a ``distortion_iter0.dat`` (a run with distortion cannot
+    continue without it). If an iteration occurs more than once in the
+    convergence file, its last row counts.
+
+    Parameters
+    ----------
+    rows : list of dict
+        ``fem.read_cnv(...)["rows"]`` (keys "Iter" and "RMS" are used).
+    d : str
+        Run directory.
+    mode : {"last", "best"}
+        "last" = highest usable iteration; "best" = lowest nRMS among the
+        usable ones (ties: lowest iteration).
+    check_files : bool
+        True (default): see above. False (unconditional): every iteration > 0
+        of the convergence file is a candidate, so "last" is simply its last
+        iteration and "best" its lowest nRMS; missing model files do not
+        change the choice, they are only named in ``note``.
+
+    Returns
+    -------
+    dict with ``numit`` (None if no iteration is usable), ``nrms`` and
+    ``note`` (why nothing is usable, which later iteration had to be passed
+    over, or -- unconditional -- which model files of the iteration chosen
+    are missing; "" otherwise).
+    """
+    if mode not in ("last", "best"):
+        raise ValueError(f"RESTART_FROM must be 'last' or 'best', got {mode!r}")
+    cands = {}
+    for row in rows:
+        it = int(round(row["Iter"]))
+        if it > 0:
+            cands[it] = float(row["RMS"])
+    if not cands:
+        return dict(numit=None, nrms=None,
+                    note="no iteration > 0 in the convergence file")
+
+    has_dist = os.path.isfile(os.path.join(d, "distortion_iter0.dat"))
+    if not check_files:
+        numit = (max(cands) if mode == "last"
+                 else min(cands, key=lambda i: (cands[i], i)))
+        missing = []
+        if not os.path.isfile(os.path.join(d, f"resistivity_block_iter{numit}.dat")):
+            missing.append(f"resistivity_block_iter{numit}.dat")
+        if has_dist and not os.path.isfile(
+                os.path.join(d, f"distortion_iter{numit}.dat")):
+            missing.append(f"distortion_iter{numit}.dat")
+        note = (f"WARNING unconditional: {', '.join(missing)} not found"
+                if missing else "")
+        return dict(numit=numit, nrms=cands[numit], note=note)
+
+    usable, lacking = {}, {}
+    for it, r in cands.items():
+        if not os.path.isfile(os.path.join(d, f"resistivity_block_iter{it}.dat")):
+            lacking[it] = "block file"
+        elif has_dist and not os.path.isfile(
+                os.path.join(d, f"distortion_iter{it}.dat")):
+            lacking[it] = "distortion file"
+        else:
+            usable[it] = r
+    if not usable:
+        return dict(numit=None, nrms=None,
+                    note=f"none of the {len(cands)} iteration(s) > 0 has a "
+                         f"resistivity_block_iter<N>.dat"
+                         + (" and distortion_iter<N>.dat" if has_dist else ""))
+
+    numit = (max(usable) if mode == "last"
+             else min(usable, key=lambda i: (usable[i], i)))
+    note = ""
+    if mode == "last" and max(cands) != numit:
+        note = (f"iteration {max(cands)} (last in the convergence file) has no "
+                f"{lacking[max(cands)]} - using iteration {numit}")
+    return dict(numit=numit, nrms=usable[numit], note=note)
+
+
+def apply_restart(d, numit, key, index, maxiter_index=None,
+                  control_file="control.dat", orig_name="control.orig",
+                  dry_run=False):
+    """Set the initial iteration in the control file of run directory ``d``.
+
+    1. The content of ``control_file`` (a symbolic link is followed) is
+       copied to ``orig_name`` unless that exists already, so the first
+       original is never overwritten.
+    2. ``control_file`` is rewritten with the value token set to ``numit`` --
+       through a temporary file that is renamed over ``control_file``. If
+       ``control_file`` is a symbolic link, the rename replaces the LINK; the
+       file it pointed to (a shared template) is neither written nor changed.
+       The result is a regular file with the permissions of the old one plus
+       owner-write.
+    Nothing is written if the value already equals ``numit`` or ``dry_run``.
+
+    Returns dict(action, old, new, was_link, orig_made, warn); ``action`` is
+    "written", "unchanged" or "dry-run". Raises ValueError (control file
+    missing or without a usable keyword) or OSError.
+    """
+    ctl = os.path.join(d, control_file)
+    orig = os.path.join(d, orig_name)
+    if not os.path.exists(ctl):
+        raise ValueError(f"{control_file} not found"
+                         + (" (broken symbolic link)" if os.path.islink(ctl) else ""))
+    # latin-1 round-trips any byte, newline="" keeps CR/LF exactly as found
+    with open(ctl, "r", encoding="latin-1", newline="") as fh:
+        lines = fh.read().split("\n")
+    i, a, b, old, maxv = locate_restart_value(lines, key, index, maxiter_index)
+    new = str(int(numit))
+    warn = None
+    if maxv is not None and maxv <= int(numit):
+        warn = (f"maximum iteration {maxv} <= start iteration {new}: the "
+                f"restarted run would not iterate")
+    was_link = os.path.islink(ctl)
+    res = dict(action="unchanged", old=old, new=new, was_link=was_link,
+               orig_made=False, warn=warn)
+    if old == new:
+        return res
+    if dry_run:
+        res["action"] = "dry-run"
+        return res
+
+    if not os.path.lexists(orig):
+        shutil.copyfile(ctl, orig)       # content of the target if ctl is a link
+        shutil.copymode(ctl, orig)
+        res["orig_made"] = True
+
+    lines[i] = lines[i][:a] + new + lines[i][b:]
+    tmp = ctl + ".tmp_restart"
+    try:
+        with open(tmp, "w", encoding="latin-1", newline="") as fh:
+            fh.write("\n".join(lines))
+        shutil.copymode(ctl, tmp)        # mode of the old file / link target
+        os.chmod(tmp, os.stat(tmp).st_mode | stat.S_IWUSR)
+        os.replace(tmp, ctl)             # replaces a link itself, not its target
+    except BaseException:
+        if os.path.lexists(tmp):
+            os.remove(tmp)
+        raise
+    res["action"] = "written"
+    return res
+
+
 # --- (1) Scan ensemble directories ----------------------------------------
 # Same member selection as femtic_ens_post.py's step (1) (see
 # select_member_iteration), plus per-directory
@@ -504,6 +826,10 @@ ens_matrix  = None        # will become (n_members, n_free) float64 (accepted on
 #: accepted entries.
 conv_list = []
 scan_fallback = []   # accepted members that needed ITER_FALLBACK (report)
+#: Convergence rows (fem.read_cnv) of every directory whose convergence file
+#: could be read and had data rows; key = directory path as in conv_list.
+#: Used by the RESTART step.
+scan_rows = {}
 #: EVERY glob match as (name, is_directory), for the report's match totals and
 #: numbering check (the loop below skips the non-directories).
 scan_matches = [(os.path.basename(os.path.normpath(_d)), os.path.isdir(_d))
@@ -549,6 +875,7 @@ for d in dir_list:
                               reason="cnv_no_iterations",
                               detail=f"{os.path.basename(cnv_file)} has no data rows"))
         continue
+    scan_rows[d] = _rows
     # Best-nRMS iteration (iter > 0), with block-file fallback -- the same
     # rule femtic_ens_post.py applies; NOT simply the last row of the file
     # (see the 2026-11-06 provenance entry).
@@ -696,6 +1023,20 @@ if MOD_REPAIR:
                 print(f"  REPAIR: {c['label']}: copytree failed ({_e}) — skipped.")
                 continue
 
+            # If the source directory went through RESTART before, its
+            # control.dat now starts at iteration N and the copy carries
+            # control.orig. The _restart copy starts afresh from the new
+            # iteration-0 model, so put the original control file back
+            # (as a regular file; the rename replaces control.dat itself).
+            _orig_copy = os.path.join(_dst_dir, RESTART_ORIG_NAME)
+            if os.path.isfile(_orig_copy) and not os.path.islink(_orig_copy):
+                _ctl_copy = os.path.join(_dst_dir, RESTART_CONTROL_FILE)
+                os.replace(_orig_copy, _ctl_copy)
+                os.chmod(_ctl_copy, os.stat(_ctl_copy).st_mode | stat.S_IWUSR)
+                print(f"  REPAIR: {c['label']}: was restarted before -- "
+                      f"{RESTART_CONTROL_FILE} in {os.path.basename(_dst_dir)}/ "
+                      f"restored from {RESTART_ORIG_NAME}.")
+
             _out_model = os.path.join(_dst_dir, MOD_REPAIR_MODEL_NAME)
             # Defensive: MOD_REPAIR_MODEL_NAME is expected to be a real,
             # physically-copied file (COPY_LIST, not LINK_LIST) both in
@@ -726,6 +1067,65 @@ if MOD_REPAIR:
         print(f"REPAIR: {_n_repaired}/{len(_non_converged)} "
               f"non-converged directory/ies repaired.")
 
+# --- (4) RESTART - control.dat of every run directory -> last iteration -----
+# Runs after REPAIR on purpose: REPAIR copies the directories as they are, so
+# a _restart copy made in this run still has the original control.dat.
+restart_log = []      # one dict per scanned directory (report)
+if MOD_RESTART:
+    print(f"\nRESTART: {len(conv_list)} scanned director(y/ies), "
+          f"from the {RESTART_FROM} iteration"
+          + (" (UNCONDITIONAL: model files not required)"
+             if RESTART_UNCONDITIONAL else "")
+          + f", keyword {RESTART_KEY} (value #{RESTART_VALUE_INDEX})"
+          + ("  --  DRY RUN, nothing is written" if RESTART_DRY_RUN else "") + " ...")
+    for c in conv_list:
+        _ent = dict(label=c["label"], status=c["status"], numit=None,
+                    old=None, new=None, result="", note="")
+        restart_log.append(_ent)
+        if MOD_REPAIR_SUFFIX and c["label"].endswith(MOD_REPAIR_SUFFIX):
+            _ent.update(result="skipped",
+                        note=f"name ends with {MOD_REPAIR_SUFFIX} (made by "
+                             f"REPAIR: starts afresh)")
+        elif c["dir"] not in scan_rows:
+            _ent.update(result="skipped", note="no convergence rows")
+        else:
+            _sel_r = select_restart_iteration(scan_rows[c["dir"]], c["dir"],
+                                              RESTART_FROM,
+                                              check_files=not RESTART_UNCONDITIONAL)
+            if _sel_r["numit"] is None:
+                _ent.update(result="skipped", note=_sel_r["note"])
+            else:
+                _ent["numit"] = _sel_r["numit"]
+                try:
+                    _res = apply_restart(
+                        c["dir"], _sel_r["numit"], RESTART_KEY,
+                        RESTART_VALUE_INDEX, RESTART_MAXITER_INDEX,
+                        control_file=RESTART_CONTROL_FILE,
+                        orig_name=RESTART_ORIG_NAME, dry_run=RESTART_DRY_RUN)
+                except (ValueError, OSError) as _e:
+                    _ent.update(result="FAILED", note=str(_e))
+                else:
+                    _notes = [n for n in (_sel_r["note"], _res["warn"]) if n]
+                    if _res["was_link"]:
+                        _notes.append(f"{RESTART_CONTROL_FILE} was a link")
+                    if _res["orig_made"]:
+                        _notes.append(f"{RESTART_ORIG_NAME} written")
+                    _ent.update(old=_res["old"], new=_res["new"],
+                                result=_res["action"], note="; ".join(_notes))
+        _msg = f"  RESTART: {c['label']:<28s} {_ent['result']:<9s}"
+        if _ent["numit"] is not None:
+            _msg += f" iter {_ent['numit']}"
+        if _ent["old"] is not None:
+            _msg += f"  {RESTART_KEY} {_ent['old']} -> {_ent['new']}"
+        if _ent["note"]:
+            _msg += f"  [{_ent['note']}]"
+        print(_msg)
+    _cnt = {}
+    for _ent in restart_log:
+        _cnt[_ent["result"]] = _cnt.get(_ent["result"], 0) + 1
+    print("RESTART: " + ", ".join(f"{k} {v}" for k, v in sorted(_cnt.items()))
+          + f"  (of {len(restart_log)} scanned)")
+
 print("\nfemtic_ens_repair.py complete.")
 
 
@@ -750,3 +1150,38 @@ _scan_md = fem.build_scan_report(
     index_range   = ENSEMBLE_INDEX_RANGE,
 )
 fem.append_scan_report(_scan_md, _summary_path, __file__)
+
+# RESTART report (plain ASCII): one row per scanned directory. Appended to the
+# parameter summary like the scan report; if that is not possible it goes to
+# its own file in ENSEMBLE_DIR (never over the scan-report fallback file).
+if MOD_RESTART and restart_log:
+    _rl = ["", "## RESTART report", "",
+           f"Initial iteration set from the {RESTART_FROM} iteration"
+           + (" (UNCONDITIONAL: model files not required)"
+              if RESTART_UNCONDITIONAL else "")
+           + f"; keyword {RESTART_KEY}, value token #{RESTART_VALUE_INDEX}; "
+           f"original saved as {RESTART_ORIG_NAME}"
+           + (" (DRY RUN: nothing was written)." if RESTART_DRY_RUN else "."),
+           "",
+           "| directory | status | result | iteration | "
+           f"{RESTART_KEY} old -> new | note |",
+           "|---|---|---|---|---|---|"]
+    for _ent in restart_log:
+        _chg = f"{_ent['old']} -> {_ent['new']}" if _ent["old"] is not None else ""
+        _rl.append(f"| {_ent['label']} | {_ent['status']} | {_ent['result']} | "
+                   f"{'' if _ent['numit'] is None else _ent['numit']} | "
+                   f"{_chg} | {_ent['note']} |")
+    _rl.append("")
+    _rl_md = "\n".join(_rl)
+    try:
+        with open(_summary_path, "a") as _fh:
+            _fh.write(_rl_md)
+        print(f"[restart report] appended to {_summary_path}")
+    except (OSError, TypeError):
+        _rl_path = os.path.join(ENSEMBLE_DIR, "femtic_ens_repair_restart_report.md")
+        try:
+            with open(_rl_path, "w") as _fh:
+                _fh.write(_rl_md)
+            print(f"[restart report] summary file not available; written to {_rl_path}")
+        except OSError as _e:
+            print(f"[restart report] could not be written ({_e}).")

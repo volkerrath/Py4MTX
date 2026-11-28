@@ -1,188 +1,108 @@
-# femtic_mod_plot_3d.py — README
+# femtic_mod_plot_3d.py - README
 
-**Purpose:** PyVista 3-D rendering and VTK/VTU export for a FEMTIC
-tetrahedral resistivity model.
+PyVista 3-D rendering and VTK/VTU export of single FEMTIC resistivity models.
 
-Sister script: [`femtic_mod_plot_slice.py`](femtic_mod_plot_slice_readme.md) —
-2-D slice panels and borehole logs from the same files.
+Settings are named as in the other plot scripts (`MOD_*`, lengths in km), and
+several runs can be given, as in `femtic_mod_misfit.py`: every entry is a model
+of its own and gets its own scene and grid file. The scene itself is built by
+`femtic_viz.plot_model_3d()`.
 
-This is one of the "mod" scripts (plots of single models; the "ens" scripts are
-the quality-control and ensemble summary plots). Unlike its sister scripts it
-has no batch option (list / glob / run directories) yet.
-
----
-
-## What this script does
-
-```
-mesh.dat + resistivity_block_iterX.dat
-        │
-        └─(3)─► fviz.plot_model_3d(...)
-                 ├─► .vtu / .vtk    [ParaView / Zenodo export, optional]
-                 ├─► .png / .jpg    [static screenshot]
-                 ├─► .html          [interactive WebGL, if trame_vtk present]
-                 └─► interactive    [PyVista window, if None]
-```
-
-The 3-D scene is constructed in `femtic_viz.plot_model_3d` and can include:
-
-- **Axis-aligned slice planes** (XY map, YZ N-S, XZ E-W) at any number of depths / positions.
-- **Arbitrary oblique planes** defined by an origin point and a normal vector.
-- **Iso-surfaces** of the selected scalar (log10(ρ) or ρ directly).
-- **Spatial clipping** to `PLOT_XLIM`/`PLOT_YLIM`/`PLOT_ZLIM` before export and rendering.
+Sister scripts:
+[`femtic_mod_plot_slice.py`](femtic_mod_plot_slice_readme.md),
+[`femtic_mod_plot_bh.py`](femtic_mod_plot_bh_readme.md).
 
 Requires [PyVista](https://docs.pyvista.org/)
 (`conda install -c conda-forge pyvista`).
 
----
+Paths, colours and region of interest default to the values of
+`femtic_ens_plot_slices.py` (2026-11-26).
 
-## Execution steps
-
-| Step | What happens |
-|---|---|
-| (1) | Optionally estimate UTM mesh-origin from `SITE_DAT` bounding-box or mean |
-| (2) | Derive UTM zone from finalised `UTM_ORIGIN_LAT` / `UTM_ORIGIN_LON` |
-| (3) | Render 3-D scene and/or export VTU grid via `fviz.plot_model_3d` |
+AI-generated documentation (Claude Sonnet 5.5, Anthropic, 2026-11-26); review
+before use. The 2026-11-26 version was run with a stand-in for PyVista only; no
+scene has been rendered with it.
 
 ---
 
-## Configuration reference
+## Usage
 
-### Paths
-
-| Variable | Description |
-|---|---|
-| `WORK_DIR` | Working directory prefix for all paths |
-| `MODEL_FILE` | `resistivity_block_iterX.dat` to display |
-| `MESH_FILE` | `mesh.dat` |
-| `SITE_DAT` | `mt_make_sitelist.py` CSV — used only for origin estimation; `None` to disable |
-
-### Ocean / air
-
-| Variable | Default | Description |
-|---|---|---|
-| `OCEAN` | `None` | `None` = auto-infer; `True`/`False` = force |
-| `AIR_RHO` | `1e9` | Air sentinel Ω·m (region 0) |
-| `OCEAN_RHO` | `0.25` | Ocean sentinel Ω·m (region 1) |
-
-### UTM / CRS
-
-| Variable | Default | Description |
-|---|---|---|
-| `UTM_ORIGIN_LAT` | `None` | Mesh-centre latitude [°] |
-| `UTM_ORIGIN_LON` | `None` | Mesh-centre longitude [°] |
-| `UTM_ORIGIN_E` | `None` | Mesh-centre UTM easting [m] |
-| `UTM_ORIGIN_N` | `None` | Mesh-centre UTM northing [m] |
-| `UTM_ZONE_OVERRIDE` | `None` | Force UTM zone number; `None` = auto |
-| `ORIGIN_METHOD` | `"box"` | `None` / `"box"` / `"average"` — origin estimation from `SITE_DAT` |
-
-### Spatial clip box
-
-Both the VTU grid export and the PyVista scene are clipped to this box
-before any rendering.
-
-| Variable | Default | Description |
-|---|---|---|
-| `PLOT_XLIM` | `[-15000., 15000.]` | Easting limits [m] |
-| `PLOT_YLIM` | `[-15000., 15000.]` | Northing limits [m] |
-| `PLOT_ZLIM` | `[-6000., 15000.]` | Depth limits [m] (z positive-down) |
-
-### Output files
-
-| Variable | Default | Description |
-|---|---|---|
-| `PLOT3D_FILE` | `*_3d.png` | Rendered output — `.png`, `.jpg`, `.html`, `.vtu/.vtk`, or `None` (interactive window) |
-| `PLOT3D_VTU_FILE` | `*.vtu` | Separate VTK/VTU export for ParaView; `None` = skip |
-| `PLOT_DPI` | `600` | DPI for screenshot files |
-
-Output format is determined by extension:
-
-| Extension | Result |
-|---|---|
-| `.png`, `.jpg` | Static screenshot (offscreen render) |
-| `.html` | Interactive WebGL scene (requires `trame_vtk`; falls back to `.png`) |
-| `.vtu`, `.vtk` | VTK unstructured grid written directly, no render window opened |
-| `None` | Interactive PyVista render window (requires a display) |
-
-### Scalar and colouring
-
-| Variable | Default | Description |
-|---|---|---|
-| `PLOT3D_SCALAR` | `"log10_resistivity"` | Scalar to colour slices by: `"log10_resistivity"` or `"resistivity"` |
-| `PLOT3D_CLIM` | `[0., 3.]` | `[vmin, vmax]` for the scalar; `None` = PyVista auto |
-| `PLOT3D_CMAP` | `"turbo_r"` | Matplotlib / PyVista colormap name |
-
-### Axis-aligned slices
-
-| Variable | Default | Description |
-|---|---|---|
-| `PLOT3D_SLICE_X` | `[0.0]` | YZ cutting planes — N-S sections at these easting values |
-| `PLOT3D_SLICE_Y` | `[0.0]` | XZ cutting planes — E-W sections at these northing values |
-| `PLOT3D_SLICE_Z` | `[5000., 15000.]` | XY cutting planes — horizontal maps at these depths |
-
-All positions are model-local metres (z positive-down).
-Empty list or `None` → no slices along that axis.
-
-### Oblique plane slices
-
-```python
-PLOT3D_SLICE_PLANES = [
-    dict(origin=[0., 0., 8000.], normal=[1., 1., 0.]),   # NE-trending vertical
-    dict(origin=[5000., 0., 0.], normal=[0., 0., 1.]),   # horizontal at z=0
-]
+```
+python femtic_mod_plot_3d.py                          # RUN_PATHS
+python femtic_mod_plot_3d.py kra_rto_0 kra_rto_1      # two run directories
+python femtic_mod_plot_3d.py "kra*/"                  # quote globs
+python femtic_mod_plot_3d.py -w /data/ann ann_rto_orig-err_0/resistivity_block_iter10.dat
 ```
 
-| Key | Type | Description |
+## Runs
+
+| Setting | Default | Meaning |
 |---|---|---|
-| `"origin"` | `[x, y, z]` | Any point on the plane (model-local m) |
-| `"normal"` | `[nx, ny, nz]` | Plane normal vector (need not be unit length) |
+| `WORK_DIR` | `.../krafla2026/krafla_fine/krafla_ens_fine/` | base of relative paths; `None` / `""` = current directory |
+| `RUN_PATHS` | `["kra*/"]` | run directories, block files, `results_iterN.h5` files or globs |
+| `ITERATION` | `"best"` | for run directories: `"best"`, `"last"`, `N`, or a list |
+| `CNV_FILE` | `["femtic.cnv", "FEMTIC-DABIC.cnv"]` | convergence file; first name that exists |
+| `MOD_MESH` | `"templates/mesh.dat"` | per run: run directory first, then `WORK_DIR` |
+| `MOD_MESH_SWAP_XY` | `True` | x = easting, y = northing |
+| `MOD_OCEAN` | `None` | `None` = infer from the block file |
+| `MOD_OCEAN_RHO`, `MOD_AIR_RHO` | `0.25`, `1e9` | region 1 gets `MOD_OCEAN_RHO` only if it is the ocean |
 
-Empty list or `None` → no oblique slices.
+Return code: `0` all models found were done; `1` one failed, none was found,
+PyVista is missing, or no output is selected; `2` `WORK_DIR` missing.
 
-### Iso-surfaces
+## Output
 
-| Variable | Default | Description |
+| Setting | Default | Meaning |
 |---|---|---|
-| `PLOT3D_ISOVALUES` | `[1., 2., 3.]` | Iso-surface levels in `PLOT3D_SCALAR` units |
-| `PLOT3D_ISO_OPACITY` | `0.35` | Opacity (0 = transparent, 1 = solid) |
+| `MOD_PLOT_FORMAT` | `["png"]` | `"png"`, `"jpg"`, `"tif"`, `"bmp"`, `"html"` (needs `trame_vtk`, else png); `None` = interactive window per model; `[]` = no rendering |
+| `MOD_3D_VTU` | `"vtu"` | grid file: `"vtu"`, `"vtk"`, `None` |
+| `OUT_DIR`, `OUT_PREFIX`, `OUT_PREFIX_DIR` | `None`, `None`, `True` | as in the slice script |
+| `MOD_3D_FILE` | `None` | explicit path without extension (one model only) |
 
-For `log10_resistivity`: `1.0 = 10 Ω·m`, `2.0 = 100 Ω·m`, `3.0 = 1000 Ω·m`.
-Empty list or `None` → no iso-surfaces.
+Files are `<dir>/[<OUT_PREFIX>_]<label>_<tag>_3d.<ext>`. Every image format
+builds and renders the scene again. The parameter summary
+`femtic_mod_plot_3d_summary.md` is written to `WORK_DIR`.
 
-### Window
+## Scene
 
-| Variable | Default | Description |
+Coordinates are model-local **km**; z is positive down.
+
+| Setting | Default | Meaning |
 |---|---|---|
-| `PLOT3D_WINDOW_SIZE` | `[1600, 900]` | Render window size in pixels `[width, height]` |
+| `MOD_XLIM`, `MOD_YLIM`, `MOD_ZLIM` | `None` | clip box (grid file and scene); `None` = none |
+| `MOD_ROI_AUTO`, `MOD_ROI_PAD_XY`, `MOD_ROI_ZLIM` | `True`, `2.0`, `[-1, 6]` | clip box from the sites of each run (x / y: site box + padding; z as given); without sites the limits above |
+| `MOD_SITE_DAT` | `"templates/site.dat"` | site list, used by `MOD_ROI_AUTO` only |
+| `MOD_ORIGIN_METHOD`, `MOD_UTM_ORIGIN_LAT/LON/E/N` (E / N in UTM km), `MOD_UTM_ZONE_OVERRIDE` | `"box"`, `None`, `None` | origin of the mesh centre, as in the slice script |
+| `MOD_3D_SCALAR` | `"log10_resistivity"` | or `"resistivity"` |
+| `MOD_CLIM` | `[0, 4]` | log10(Ohm.m), also for `"resistivity"`; `None` = auto |
+| `MOD_CMAP` | `"jet_r"` | colormap |
+| `MOD_3D_SLICE_X` | `[0.0]` | N-S sections at these eastings |
+| `MOD_3D_SLICE_Y` | `[0.0]` | E-W sections at these northings |
+| `MOD_3D_SLICE_Z` | `[1.0, 3.0]` | maps at these depths |
+| `MOD_3D_SLICE_PLANES` | `[]` | `dict(origin=[x, y, z], normal=[nx, ny, nz])` |
+| `MOD_3D_ISOVALUES` | `[1, 2, 3]` | log10(Ohm.m) |
+| `MOD_3D_ISO_OPACITY` | `0.35` | |
+| `MOD_3D_WINDOW_SIZE` | `[1600, 900]` | pixels |
+| `MOD_3D_SCREENSHOT_SCALE` | `2` | screenshot size = window size x scale |
 
----
+## Migration from the earlier version (2026-11-26)
 
-## VTU export for ParaView
-
-Set `PLOT3D_VTU_FILE` to a path ending in `.vtu` to export the full clipped
-unstructured grid as VTK XML.  This file can be opened directly in ParaView
-for interactive slicing, iso-surfacing, and publication-quality rendering,
-and is suitable for Zenodo data deposits.
-
-```python
-PLOT3D_VTU_FILE = WORK_DIR + "resistivity_block_iter17.vtu"
-```
-
-Setting `PLOT3D_FILE` to a `.vtu` / `.vtk` path is equivalent to VTU-only
-mode: the grid is written but no PyVista render window is opened.
-
----
+| Old | New |
+|---|---|
+| `MODEL_FILE` | `RUN_PATHS`, `ITERATION` |
+| `MESH_FILE` | `MOD_MESH` |
+| `OCEAN`, `AIR_RHO`, `OCEAN_RHO` | `MOD_OCEAN`, `MOD_AIR_RHO`, `MOD_OCEAN_RHO` |
+| `PLOT_XLIM/YLIM/ZLIM` (m) | `MOD_XLIM/YLIM/ZLIM` (km) |
+| `PLOT3D_FILE` | `MOD_PLOT_FORMAT`, `MOD_3D_FILE` |
+| `PLOT3D_VTU_FILE` | `MOD_3D_VTU` |
+| `PLOT3D_CLIM`, `PLOT3D_CMAP` | `MOD_CLIM`, `MOD_CMAP` |
+| `PLOT3D_SLICE_*` (m) | `MOD_3D_SLICE_*` (km) |
+| `PLOT3D_<name>` | `MOD_3D_<name>` |
+| `PLOT_DPI` (unused) | `MOD_3D_SCREENSHOT_SCALE` |
+| `SITE_DAT`, `UTM_*`, `ORIGIN_METHOD` | `MOD_SITE_DAT`, `MOD_UTM_*`, `MOD_ORIGIN_METHOD` (for the region of interest) |
 
 ## Dependencies
 
-| Package | Role |
-|---|---|
-| `femtic` (Py4MTX) | `read_site_dat` (origin estimation) |
-| `femtic_viz` (Py4MTX) | `plot_model_3d`, `read_femtic_mesh`, `read_resistivity_block` |
-| `util` (Py4MTX) | `utm_zone_from_latlon`, `utm_to_latlon_zn`, `print_title` |
-| `pyvista` | 3-D rendering and VTU export |
-| `numpy` | Array operations |
-| `trame_vtk` | Optional — required for HTML export only |
+`femtic.py`, `femtic_viz.py`, `util.py` (Py4MTX), `numpy`, `pyvista`;
+`trame_vtk` for HTML.
 
 ---
 
@@ -197,3 +117,6 @@ mode: the grid is written but no PyVista render window is opened.
 | 2026-06-03 | Claude Sonnet 4.6 | **Split** from `femtic_mod_plot.py` → `femtic_mod_plot_3d.py` (this script) + `femtic_mod_plot_slice.py` |
 | 2026-08-13 | Claude Sonnet 5 (Anthropic) | Added `femtic_mod_plot_3d_summary.md` output at end of run: writes user-set (UPPERCASE) parameters, script path, and run date/time |
 | 2026-10-28 | Claude Sonnet 5.5 (Anthropic) | The parameter summary `femtic_mod_plot_3d_summary.md` is now written to `WORK_DIR` (the working directory set in the script) instead of next to the script: `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the `util.py` of the same date. AI-generated; review before production use. |
+| 2026-11-26 | Claude Sonnet 5.5 (Anthropic) | Settings named as in the other plot scripts (`MOD_*`, km) and several runs as in `femtic_mod_misfit.py` (`RUN_PATHS`, command line, `-w`, `ITERATION`); `OUT_DIR` / `OUT_PREFIX`, `MOD_PLOT_FORMAT`, `MOD_3D_VTU`, `MOD_3D_FILE`. UTM origin and `SITE_DAT` settings removed (unused for the scene). Fixes: `MOD_MESH_SWAP_XY` (default `True`) now sets the x/y orientation; region 1 gets the ocean resistivity only if the model has an ocean. This readme was rewritten. Run with a PyVista stand-in only. AI-generated; review before production use. |
+| 2026-11-26c | Claude Sonnet 5.5 (Anthropic) | Defaults as in `femtic_ens_plot_slices.py` (`WORK_DIR`, `RUN_PATHS = ["kra*/"]`, mesh in `templates/`, `jet_r` [0, 4], no fixed clip box); new `MOD_ROI_*`, `MOD_SITE_DAT`, `MOD_UTM_*`, `MOD_ORIGIN_METHOD`; `MOD_3D_SLICE_Z` [1, 3] km. Run with a PyVista stand-in only. AI-generated; review before production use. |
+| 2026-11-26d | Claude Sonnet 5.5 (Anthropic) | All user settings are km, UTM coordinates too: `MOD_UTM_ORIGIN_E / _N` are UTM km (before: m). A value that looks like metres stops with an error (`fem.KmUnitError`); smaller values given in metres cannot be recognised and are read as km. Needs `femtic.py` of the same date. Tested on synthetic data only: same output as before for the same positions. AI-generated; review before production use. |

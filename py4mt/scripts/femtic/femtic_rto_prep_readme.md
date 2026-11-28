@@ -103,7 +103,7 @@ Removed (2026-10-21): `MOD_MU`, `MOD_PDF` (never passed on; implied alpha = 1),
 | `PLOT_SLICES_QC` | Enable per-member QC slice plot |
 | `PLOT_SLICES_ENS` | Enable joint ensemble slice figure |
 | `VIZ_N_SAMPLES` | Number of random members for the plots (default `N_SAMPLES`; capped at the number of members). Defined whatever the plot switches are; the draw of the members consumes the random generator in all cases, so the perturbed files do not depend on the plot switches. All five switches may be `False`: nothing is plotted and no plot variable is needed. |
-| `MOD_SLICES` | Slice dicts for QC/model plots (model-local **km**, `kind` key; converted to metres by `_slices_km_to_m`). As of 2026-06-07 the QC plot uses the full shared `MOD_*` plotting config block (`MOD_CMAP`, `MOD_CLIM`, `MOD_XLIM`/`YLIM`/`ZLIM`, `MOD_OCEAN_COLOR`, `MOD_DPI`, site overlay, UTM origin, etc. — same as `femtic_gst_prep.py`/`femtic_ens_post.py`), not the older `QC_SLICES`/`QC_CMAP`/etc. variables. |
+| `MOD_SLICES` | Slice dicts for QC/model plots (all lengths **km**, UTM positions in UTM km, `kind` key; converted to metres by `fem.slices_km_to_m`). As of 2026-06-07 the QC plot uses the full shared `MOD_*` plotting config block (`MOD_CMAP`, `MOD_CLIM`, `MOD_XLIM`/`YLIM`/`ZLIM`, `MOD_OCEAN_COLOR`, `MOD_DPI`, site overlay, UTM origin, etc. — same as `femtic_gst_prep.py`/`femtic_ens_post.py`), not the older `QC_SLICES`/`QC_CMAP`/etc. variables. |
 | `MOD_TICK_FONTSIZE` / `MOD_LABEL_FONTSIZE` | Axis tick/label font sizes for the QC/model slice plot. Defaults `7`/`8`, matching `fviz.plot_model_slices`' own defaults. |
 | `MOD_XLIM` / `MOD_YLIM` / `MOD_ZLIM` | Literal plot extent, model-local **km**; `None` = auto. Overridden by `MOD_ROI_AUTO` (below) when site positions are available. |
 | `MOD_ROI_AUTO` | Default `True`. With site positions available (`MOD_SITE_DAT` / `MOD_SITE_NUMBER`, subject to `MOD_PLOT_SITES_MAPS/SLICES`), `MOD_XLIM`/`MOD_YLIM` are derived from the site bounding box + `MOD_ROI_PAD_XY` and `MOD_ZLIM` is set from `MOD_ROI_ZLIM`, overriding the literals. Falls back to the literals if no sites are found. Identical to `femtic_ens_post.py` / `femtic_gst_prep.py`. Also drives the aspect-ratio panel sizing (`MOD_PANEL_WIDTH = None`). |
@@ -137,9 +137,10 @@ Added 2026-11-11 (Claude Sonnet 5.5 (Anthropic), AI-generated, review before use
 
 ## Slice specification
 
-All slice dicts use `kind` (not `type`) as the panel-type key. Positions in
-`MOD_SLICES` / `ENS_SLICES` are model-local **km** (the script converts them
-to the metres expected by `femtic_viz` / `fem.resolve_slice_positions`):
+All slice dicts use `kind` (not `type`) as the panel-type key. All lengths in
+`MOD_SLICES` / `ENS_SLICES` are **km**, UTM coordinates too (the script converts
+them with `fem.slices_km_to_m` to the metres expected by `femtic_viz` /
+`fem.resolve_slice_positions`):
 
 ```python
 dict(kind="map",  z0=5.0)                                  # km
@@ -152,7 +153,7 @@ dict(kind="plane", point=[0.0, 0.0, 0.0], strike=45, dip=90)  # z irrelevant for
 A plane `point` must have **three** elements `[x, y, z]`; a 2-element point
 raises `ValueError: resolve_pos_point: 'point' must have 3 elements`.
 CRS-tagged forms `([E, N, z], "utm")` and `([lon, lat, z], "latlon")` take
-E/N in metres and lon/lat in degrees (not km); only `z` is in km.
+E/N in UTM km and lon/lat in degrees; `z` is in km.
 The same rule applies to `p1` / `p2` of `kind="profile"` (z optional).
 
 ---
@@ -268,3 +269,4 @@ The same rule applies to `p1` / `p2` of `kind="profile"` (z optional).
 - **2026-11-11 (Claude Sonnet 5.5 (Anthropic)):** Titles and colour bars of the slice figures: `MOD_TITLE` / `ENS_TITLE`, `MOD_PANEL_TITLES` / `ENS_PANEL_TITLES`, `MOD_CBAR_LOCATION` / `ENS_CBAR_LOCATION`, `MOD_CBAR_SHRINK` / `ENS_CBAR_SHRINK`, `MOD_CBAR_THICKNESS` / `ENS_CBAR_THICKNESS` (see *Titles and colour bars of the slice figures* above). `_plot_member_slices()` got the arguments `kind` and `index` for the title placeholders. Defaults: figures unchanged. Needs the `femtic_viz.py` of the same date. Not run end to end (no site / mesh data); the changed calls were compile-checked. AI-generated; review before production use.
 - **2026-11-12 (Claude Sonnet 5.5 (Anthropic)):** Fault trace in the slice figures. `ENS_SLICES` / `MOD_SLICES` may contain a fault from two surface points (`kind="profile"` with `p1`, `p2` (km here), `dip`; `overlay=True`, optionally `panel=False` for the trace without a fault panel). `ENS_SLICES` are resolved with `fem.resolve_slice_positions()` for `plot_ensemble_slices` only when an entry is a `"profile"` or has `overlay` / `panel=False` (otherwise unchanged). Needs `femtic.py` / `femtic_viz.py` of the same date; see `femtic_viz_readme.md`, "Fault planes". Script not run here (syntax check and a synthetic-mesh test of the plot function). AI-generated; review before production use.
 - **2026-11-20 (Claude Sonnet 5.5 (Anthropic)):** Phase curves of the data plots that leave the +-180 deg window are interrupted and the two points joined by a dotted line: new `DAT_PHASE_WRAP_MODE` / `DAT_PHASE_WRAP_STYLE`, passed to `fviz.plot_data_ensemble`. Needs `femtic_viz.py` / `data_viz.py` of the same date. AI-generated; review before use.
+- **2026-11-26 (Claude Sonnet 5.5 (Anthropic)):** All user settings are km, UTM coordinates too: `MOD_UTM_ORIGIN_E / _N`, `"utm"` positions, profiles and per-panel limits of `MOD_SLICES` / `ENS_SLICES` (plane panels included; before: metres). The local slice converter is replaced by `fem.slices_km_to_m`; the default slices give the same specs as before. Plot limits and projection distance were km already and are now checked too. A value that looks like metres stops with an error (`fem.KmUnitError`); smaller values given in metres cannot be recognised and are read as km. Needs `femtic.py` of the same date. Tested on synthetic data only. AI-generated; review before production use.

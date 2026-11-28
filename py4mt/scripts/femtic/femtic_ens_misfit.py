@@ -77,6 +77,20 @@ local site.dat, any case, and/or site ids) writes one file per site and format
 
 Changelog
 ---------
+2026-11-27  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            New settings PANEL_MEASURES, PANEL_MEASURES_FONTSIZE,
+            HIST_SCALE_MEASURE, SITE_MEASURES and
+            CURVES_MAP_MEASURE_RANGE choose the measures of data fit that
+            are plotted (default: as before). PANEL_SIZE,
+            HIST_PANEL_SIZE, QQ_PANEL_SIZE and CURVES_PANEL_SIZE are in
+            cm (before: inch; multiply own values by 2.54). Needs
+            femtic_misfit.py of the same date and the new module
+            misfit_measures.py. Tested on synthetic files only.
+2026-11-26  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            SITE_MERGE_TOL and CURVES_SITE_TOL are km (0.001, 0.015; before:
+            1.0 and 15.0 m). A value of 1 or more is refused. Needs
+            femtic_misfit.py of the same date. Tested on synthetic files only.
+            AI-generated; review before production use.
 2026-11-22b Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
             new method "outliers" (add it to METHODS): the sites whose nRMS is
             outside the limits of the distribution of the site nRMS values;
@@ -238,7 +252,7 @@ SITE_MERGE_BY_POSITION: bool = True   # data types often number the same station
                                       # Affects the per-site table and the "curves"
                                       # figures (one figure per position, all data
                                       # types together); not the other methods
-SITE_MERGE_TOL: float = 1.0           # [m] positions closer than this are the same
+SITE_MERGE_TOL: float = 0.001         # [km] positions closer than this are the same
 
 # --- output ---
 OUT_DIR: Optional[str] = (
@@ -279,13 +293,43 @@ SHOW: bool = False
 FIGURE_TITLE: Union[str, bool, None, dict] = "auto"
 PANEL_TITLES: bool = True     # titles of the panels (crossplot, histogram, Q-Q)
 
+# --- which measures of data fit are plotted ---
+# Names: "nrms", "r_mae", "r_med", "q95", "mean" (bias), "std", "skew",
+# "kurt" (excess); for normally distributed residuals with correct errors
+# nrms = r_mae = r_med = 1, q95 = 1.96, mean = skew = kurt = 0, std = 1.
+PANEL_MEASURES: Union[None, bool, str, Sequence[str], dict] = None
+# Text box of every crossplot, histogram and Q-Q panel. Besides the names above:
+# "n" (number of values), "slope" and "icpt" (quartile line of the normal Q-Q
+# plot), "n_out" (histogram, Q-Q: values outside +/- *_LIMIT, only if > 0) and
+# "out_pct" (Q-Q: dots outside the envelope).
+# None  = as before (crossplot n, nrms; histogram n, nrms, n_out; Q-Q n, slope,
+#         icpt)
+# False = no box
+# list  = for all three figures, e.g. ["n", "nrms", "r_med", "q95"]
+# dict  = per figure, e.g. {"crossplot": ["n", "r_med"],
+#                           "histogram": ["n", "nrms", "r_mae", "skew"],
+#                           "qq": ["slope", "icpt", "out_pct"]}
+PANEL_MEASURES_FONTSIZE: float = 8.0   # [pt] of that box (smaller for long lists)
+HIST_SCALE_MEASURE: Optional[str] = "nrms"   # histogram: scale s of the red curve
+# N(0, s^2) and of the blue lines at +/- s: "nrms" (as before), "r_mae",
+# "r_med", "q95" (s = q95 / 1.96); None = not drawn
+SITE_MEASURES: Union[str, Sequence[str]] = "nrms"
+# Per-site value(s), e.g. "r_med" or ["nrms", "r_med"]:
+#   "outliers"  one table, CSV and figure per entry (names of measures other
+#               than nrms get the suffix _<measure>)
+#   "curves"    all entries in the figure title; the FIRST entry colours the
+#               site map and decides CURVES_SITE_ORDER "worst" / "best" and
+#               CURVES_SITES = "outliers"
+#   <prefix>_site_nrms.txt gets a column per further entry
+# "mean", "skew", "kurt" can be negative: worst / best go by the absolute value
+
 # --- selection (None = everything) ---
 DATATYPES: Optional[Sequence[str]] = None     # e.g. ["MT", "VTF"]
 COMPONENTS: Optional[Sequence[str]] = None    # e.g. ["Zxy", "Zyx"]
 
 # --- crossplot ---
 NCOLS: int = 4
-PANEL_SIZE: float = 3.3
+PANEL_SIZE: float = 8.382     # [cm] side of one panel
 EQUAL_ASPECT: bool = True
 CMAP: str = "turbo"
 COLOR_RANGE: str = "global"   # "global" | "panel" (range of log10 f)
@@ -307,7 +351,7 @@ HIST_LIMIT: float = 10.0            # histogram range +/- (values outside
 HIST_BIN_WIDTH: float = 0.5
 HIST_MIN_N: int = 5                 # skip bands with fewer values
 HIST_NCOLS: int = 4
-HIST_PANEL_SIZE: float = 3.0
+HIST_PANEL_SIZE: float = 7.62     # [cm] side of one panel
 
 # --- Q-Q plots (same normalized residuals as the histograms) ---
 QQ_BAND_AXIS: str = "frequency"     # "frequency" | "period"
@@ -319,7 +363,7 @@ QQ_EQUAL_AXES: bool = True         # True: same range on both axes, square
 QQ_CONFIDENCE: Optional[float] = 0.95   # pointwise envelope; None = off
 QQ_MIN_N: int = 10                  # skip bands with fewer values
 QQ_NCOLS: int = 4
-QQ_PANEL_SIZE: float = 3.0
+QQ_PANEL_SIZE: float = 7.62       # [cm] side of one panel
 
 # --- ensemble nRMS histogram (method "nrms") ---
 # Needs only the results of femtic_ens_post.py; no results_iterN.h5, and
@@ -402,7 +446,7 @@ CURVES_SITE_MATCH: str = "auto"  # how the site.dat names are assigned to the
 #          the results file has no coordinates
 # "coords" by coordinates only
 # "id"     by sitenum + CURVES_SITE_ID_OFFSET only
-CURVES_SITE_TOL: float = 15.0   # [m] largest distance for a coordinate match
+CURVES_SITE_TOL: float = 0.015  # [km] largest distance for a coordinate match
 CURVES_SITES: Union[None, int, Sequence[Union[int, str]]] = None
 # None = all sites; int N = N sites (chosen
 # by CURVES_SITE_ORDER); list = exactly these
@@ -446,7 +490,7 @@ CURVES_INVERT_X: bool = False      # False = period increasing to the right
 CURVES_PERIOD_LIM: Optional[Tuple[float, float]] = None   # (Tmin, Tmax) [s]
 CURVES_YLIM: Dict[str, Optional[Tuple[float, float]]] = {
     "rho": None, "phase": (-180.,+180.,), "tipper": (-0.5,+0.5,), "pt": None}
-CURVES_PANEL_SIZE: Tuple[float, float] = (4.2, 3.4)       # width, height [in]
+CURVES_PANEL_SIZE: Tuple[float, float] = (10.668, 8.636)  # width, height [cm]
 CURVES_LEGEND_LOC: Optional[str] = "below"   # "below" (under each panel), a
                                    # matplotlib loc such as "upper right", or
                                    # None for no legend. Avoid "best" with
@@ -501,6 +545,10 @@ CURVES_MAP_CMAP: Optional[str] = None   # None = single-hue blue ramp, light = l
                                    # nRMS, dark = high; or a Matplotlib colormap
 CURVES_MAP_NRMS_RANGE: Optional[Tuple[float, float]] = None   # (lo, hi) of the colour
                                    # scale; None = smallest / largest nRMS of the sites
+CURVES_MAP_MEASURE_RANGE: Optional[Tuple[float, float]] = None   # the same, used
+                                   # instead if the first entry of SITE_MEASURES is
+                                   # not "nrms"; None = smallest / largest value
+                                   # (signed measures: symmetric about 0)
 CURVES_MAP_MARKER_SIZE: float = 12.0   # [pt^2] of a site (the current one is larger)
 
 # ---------------------------------------------------------------------------

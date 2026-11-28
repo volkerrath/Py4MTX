@@ -85,7 +85,7 @@ warning rather than aborting the run.
 |---|---|
 | `DISPLAY_COORDS` | `"model"` (model-local km), `"utm"` (absolute UTM km), or `"latlon"` (decimal degrees). |
 | `UTM_ZONE`, `UTM_NORTHERN` | UTM zone / hemisphere, used for `"utm"`/`"model"` display and for reprojecting the SRTM basemap. |
-| `UTM_ORIGIN_E`, `UTM_ORIGIN_N` | UTM coordinates of the model origin, used only for `"model"` display. |
+| `UTM_ORIGIN_E`, `UTM_ORIGIN_N` | UTM coordinates of the model origin in **km**, used only for `"model"` display. |
 | `DISTORTION_KIND` | `"full"` plots `C = C' + I` (identity distortion -> unit circle); `"prime"` plots `C'` (deviation from identity) directly. |
 | `ELLIPSE_SCALE` | `"auto"` (fraction of median nearest-neighbour site spacing) or an explicit float in plot units. |
 | `COLOR_BY` | `"condition"` (sigma_max/sigma_min, Lilley 2016), `"determinant"` (`|det C|`), or `"gain"` (mean singular value). |
@@ -175,5 +175,7 @@ those sites instead.
 | 2026-09-13 | Claude Sonnet 5 (Anthropic) | Created: `plot_distortion_ellipses()` -- distortion-ellipse map plot with optional SRTM hillshade basemap, `model`/`utm`/`latlon` coordinate choice, `full`/`prime` distortion-kind choice, and `condition`/`determinant`/`gain` severity colouring. AI-generated; not verified against a real FEMTIC run (see "Verification performed" above). |
 | 2026-09-13 | Claude Sonnet 5 (Anthropic) | Added optional Groom-Bailey decomposition panel (`GB_DECOMP_ENABLE`, `_gb_decompose`, `_plot_gb_panel`) -- 2x2 grid of twist/shear/gain/anisotropy maps, with negative-determinant sites flagged and excluded per Lilley (2016). Replaced single `OUTPUT_FILE` with `OUTPUT_BASENAME` + `OUTPUT_FORMATS` list (`_savefig_multi`), so both figures can be saved in one or more formats (e.g. `["pdf", "jpg"]`) in one run. |
 | 2026-11-11 | Claude Sonnet 5.5 (Anthropic) | Titles and colour bars in the form of all plot scripts: `TITLE` and new `GB_TITLE` / `GB_PANEL_TITLES`; new `CBAR_LOCATION` / `CBAR_SHRINK` / `CBAR_THICKNESS` and `GB_CBAR_*`; colour bars drawn by `fviz.add_colorbar`. Default figures unchanged. Needs the `femtic_viz.py` of the same date. |
+| 2026-11-26 | Claude Sonnet 5.5 (Anthropic) | `UTM_ORIGIN_E` / `UTM_ORIGIN_N` are UTM **km** (before: m); a personal setting in metres must be converted. A value that looks like metres stops with an error (`fem.KmUnitError`). Needs `femtic.py` of the same date. Tested on synthetic data only: same model coordinates as before for the same origin. AI-generated; review before production use. |
+| 2026-11-27 | Claude Sonnet 5.5 (Anthropic) | `FIGSIZE` and `GB_FIGSIZE` are in cm (before: inch); the defaults `(20.32, 17.78)` and `(22.86, 20.32)` are the former `(8, 7)` and `(9, 8)`. Multiply personal values by 2.54. AI-generated; review before use. |
 
 Author: Volker Rath (DIAS)

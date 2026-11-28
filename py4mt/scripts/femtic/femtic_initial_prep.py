@@ -91,7 +91,7 @@ print(titstrng + "\n\n")
 
 #: Directory holding the templates/ sub-directory; the run directories are
 #: created here.
-ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial/"
+ENSEMBLE_DIR = r"/media/vrath/LargeBack/Ensembles/sabancaya2026/initial_nodist/"
 #: Run directories are <ENSEMBLE_DIR><ENSEMBLE_NAME><rho>/ .
 ENSEMBLE_NAME = "ini_"
 TEMPLATES = ENSEMBLE_DIR + "templates/"
@@ -101,7 +101,8 @@ TEMPLATES = ENSEMBLE_DIR + "templates/"
 #: or list(np.logspace(0, 3, 7)).  Every free region of the starting model
 #: is set to this value.  The directory name uses the value in Ohm.m with 6
 #: significant digits (duplicates at that precision are refused).
-RHO_LIST = [10., 30., 100., 300., 1000.]
+RHO_LIST =  np.logspace(0., 2., 11)
+# RHO_LIST = [10., 30., 100., 300., 1000.]
 RHO_LOG10 = False       # True: RHO_LIST is in log10(Ohm.m), e.g. [1., 2., 3.]
 
 #: The starting model that is filled.  It is written in every run directory,

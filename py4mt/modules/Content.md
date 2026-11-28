@@ -321,7 +321,8 @@ Visualisation for FEMTIC resistivity models operating directly on
 | Point markers (epicentre, model centre, ...) on the maps and, with a depth and a `+-` depth bar, on the vertical sections | `plot_model_slices(map_markers=...)` (keys `depth`, `depth_err`, `kinds`, `max_dist`; `is_model_centre` entry), `femtic.markers_km_to_m` |
 | Fault plane from two surface points on all slices (`overlay`, `panel=False`); the part between the two points as given, the rest fading out (`limit_km`, `alpha_outside`, `fade_km`) | slice spec `kind="profile"` of `plot_model_slices` / `plot_ensemble_slices`; `slice_overlay_polylines` |
 | Titles and colour bar position of the plot scripts | `resolve_title`, `check_cbar_location`, `add_colorbar`; `figure_title` / `panel_titles` / `cbar_location` of `plot_ensemble_slices`, `plot_borehole_logs`, `BoreholeFigureOptions` |
-| Borehole ρ(z) logs | `plot_borehole_logs` |
+| Borehole ρ(z) logs, one model | `femtic.sample_model_boreholes` + `plan_borehole_figures` / `draw_borehole_figures`; `plot_borehole_logs` (stand-alone function) |
+| Single-model plot scripts, several runs | `femtic.resolve_model_files`, `find_run_file`, `model_output_stem`, `anchor_path` |
 | Ensemble borehole figures (profiles, heat maps) | `plan_borehole_figures`, `draw_borehole_figures`, `plot_boreholes`, `BoreholeFigureOptions` |
 | 3-D rendering | `plot_model_3d` |
 | Convergence diagnostics | `plot_convergence_bar`, `plot_convergence_histogram`, `plot_nrms_histogram` (ensemble nRMS table) |
@@ -476,6 +477,26 @@ X with missing values filled in.
 
 ---
 
+### `dem.py` -- Digital elevation models for maps and sections
+
+Tile names, download and cache, reading (`.hgt`, GeoTIFF, `.npz`), mosaic, crop,
+thinning out, shaded relief and credit lines (Copernicus GLO-30 / GLO-90, AWS
+Terrain Tiles, own tiles or files). Main functions: `load_dem`, `shade_dem`,
+`dem_extent`, `dem_credit`. Used by `femtic_plot_sitemap.py`; see
+`dem_readme.md`. Added 2026-11-27.
+
+---
+
+### `misfit_measures.py` -- Measures of data fit
+
+Fit measures of error-normalized residuals (`fit_measures`, `sample_moments`,
+`qq_quartile_line`) and the choice of the measures shown by the misfit figures
+(`box_items`, `box_text`, `hist_scale`, `site_measures`). Used by
+`femtic_misfit.py` and `modem_data_misfit.py`; see
+`misfit_measures_readme.md`. Added 2026-11-27.
+
+---
+
 ### `version.py` — Package version string
 
 `versionstrg()` — returns `(version_string, release_date)` for the Py4MTX
@@ -540,10 +561,10 @@ util  ◄── (imported by all scripts and most modules)
 | Inversion | 4 |
 | FEMTIC interface | 3 |
 | ModEM interface | 2 |
-| General utilities | 4 |
+| General utilities | 6 |
 | Test suite | 1 |
-| **Total** | **21** |
+| **Total** | **23** |
 
 ---
 
-*Generated 2026-06-26 from README files in `modules.zip`; missing READMEs synthesised from source. FEMTIC/ensembles/viz sections updated 2026-10-11.*
+*Generated 2026-06-26 from README files in `modules.zip`; missing READMEs synthesised from source. FEMTIC/ensembles/viz sections updated 2026-10-11. `dem.py` and `misfit_measures.py` added 2026-11-27 (Claude Sonnet 5.5, Anthropic).*

@@ -98,20 +98,23 @@ slice figure saved / shown
 | `OP_PERTURB_STD` | Noise standard deviation (log₁₀ Ω·m) for `"perturb"` |
 | `OP_CLIP_MIN/MAX` | log₁₀(ρ) bounds for `"clip"` |
 
-> **Units note:** all length-valued config inputs — `OP_SMOOTH_SIGMA`,
-> `OP_ELLIPSOID_BODIES`/`OP_BRICK_BODIES` (`center`, `axes`,
-> `boundary_smooth.sigma`), `PLOT_SLICES` (`z0`, `x0`, `y0`, `point`,
-> `xlim`/`ylim`/`zlim`), `PLOT_XLIM`/`PLOT_YLIM`/`PLOT_ZLIM`, and
-> `PROJECTION_DIST` — are entered **in km**. A single conversion block
-> right after the config section multiplies them by 1000 once; all
-> downstream code and the geometry helpers in `femtic.py` still operate
-> in metres unchanged.
+> **Units note:** all length-valued config inputs are entered **in km**, UTM
+> coordinates too: `OP_SMOOTH_SIGMA`, `OP_ELLIPSOID_BODIES` /
+> `OP_BRICK_BODIES` (`center`, `axes`, `boundary_smooth.sigma`), `PLOT_SLICES`
+> (`z0`, `x0`, `y0`, `point`, `p1` / `p2`, `z_top` / `z_bot`, `xlim` / `ylim` /
+> `zlim`; `(value, "utm")` in UTM km), `PLOT_XLIM` / `PLOT_YLIM` / `PLOT_ZLIM`,
+> `PROJECTION_DIST`, `UTM_ORIGIN_E` / `_N` and `MAP_MARKERS` (`depth`,
+> `depth_err`, `max_dist`). A conversion block after the config section builds
+> metre copies for the library (`femtic.py`, `femtic_viz.py` work in metres);
+> the settings stay as entered. A value that looks like metres stops with an
+> error (`fem.KmUnitError`); smaller values given in metres cannot be
+> recognised and are read as km. `site.dat` stays in metres.
 
 ### Origin estimation
 | Variable | Description |
 |---|---|
 | `ORIGIN_METHOD` | `None` / `"box"` / `"average"` |
-| `UTM_ORIGIN_LAT/LON/E/N` | Fallback origin (used when `ORIGIN_METHOD=None`) |
+| `UTM_ORIGIN_LAT/LON/E/N` | Fallback origin (used when `ORIGIN_METHOD=None`); LAT / LON in degrees, E / N in UTM **km** |
 | `UTM_ZONE_OVERRIDE` | Force a UTM zone; `None` = auto |
 
 ### Plot
@@ -129,6 +132,7 @@ slice figure saved / shown
 | `HORIZ_KM` | `True` → horizontal axes in km |
 | `PLOT_EQUAL_ASPECT` | Equal aspect ratio |
 | `PLOT_PANEL_HEIGHT` | Panel height in cm |
+| `PLOT_SINGLE_PANELS` | `False` (default) = all slices in one figure; `True` = one figure per slice, `_01_<kind>`, ... added to the figure names; `PLOT_NROWS` / `PLOT_NCOLS` not used; same colour scale |
 | `DISPLAY_COORDS` | `"model"` / `"utm"` / `"latlon"` |
 
 ### Site overlay
@@ -253,3 +257,22 @@ The geometry primitives used by `"smooth"`, `"wmean"`, `"ellipsoid"`, and
   `utl.write_param_summary(fname, out_dir=WORK_DIR)`. Needs the
   `util.py` of the same date. AI-generated; review before
   production use.
+
+## 2026-11-26 (single-panel output)
+
+- New `PLOT_SINGLE_PANELS` (default `False`): one figure per slice instead of
+  one figure with all slices. Needs `femtic_viz.py` of the same date. Tested on
+  synthetic files only. Claude Sonnet 5.5 (Anthropic); AI-generated, review
+  before production use.
+
+## 2026-11-26 (km user settings)
+
+- All user settings are km, UTM coordinates too: new for `UTM_ORIGIN_E` / `_N`
+  and `MAP_MARKERS` (`depth`, `depth_err`, `max_dist`), before in metres.
+  `PLOT_SLICES` takes `(value, "utm")` (UTM km) and `(value, "latlon")`.
+- The settings are no longer overwritten by metre values; the parameter summary
+  shows them in km. `PLOT_XLIM` / `YLIM` / `ZLIM = None` works (before: error).
+- Lengths that look like metres stop the script (`fem.KmUnitError`).
+- Needs `femtic.py` of the same date. Tested on synthetic files only: same
+  model files and figures as before for the same positions. Claude Sonnet 5.5
+  (Anthropic); AI-generated, review before production use.

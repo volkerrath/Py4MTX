@@ -6,9 +6,10 @@ femtic_plot_sitemap.py
 
 Site map of a FEMTIC run, or of a whole ensemble, on a DEM (Copernicus) background:
 every site is an icon (marker) coloured by its normalized RMS misfit (nRMS), for
-frequency bands and data components. For an ensemble the colour is a statistic
-of the member nRMS at the site. Profile lines and other polylines (faults, coast
-lines, ...) can be drawn on the maps.
+frequency bands and data components, or by another measure of data fit, or by the
+strength of its galvanic distortion (see "Measures and distortion strength"). For
+an ensemble the colour is a statistic of the member values at the site. Profile
+lines and other polylines (faults, coast lines, ...) can be drawn on the maps.
 
 What it does
 ------------
@@ -55,6 +56,45 @@ What it does
    min, max over the members per selection and site); for profiles
    _profiles.csv and _profile_sites.csv (see "Profiles and lines").
 
+Measures and distortion strength
+--------------------------------
+SITE_MEASURES (command line --measures) lists what is mapped; each entry gets its
+own maps, tables and summary section. Fit measures, of the error-normalized
+residuals r = (obs - cal) / err of the rows of a selection (real and imaginary
+parts together; modules/misfit_measures.py), with the value expected for
+Gaussian errors of the stated size:
+
+    "nrms"   sqrt(mean(r**2))                      1     (the default)
+    "r_mae"  sqrt(pi/2) * mean(|r|)                1
+    "r_med"  median(|r|) / 0.67449                 1
+    "q95"    95th percentile of |r|                1.96
+    "mean"   mean(r), the bias                     0
+    "std"    standard deviation of r (1/n)         1
+    "skew"   skewness                              0
+    "kurt"   excess kurtosis                       0
+
+Colour scales: nrms, r_mae, r_med, std use CMAP_NRMS, NRMS_REFERENCE, NRMS_VMIN
+and NRMS_VMAX; q95 CMAP_NRMS centred on 1.96; mean, skew, kurt "RdBu_r" centred
+on 0 (the largest absolute values drawn on top); distortion CMAP_SPREAD, linear
+from 0. MEASURE_SCALES overrides cmap, reference, vmin, vmax per measure. With
+ENS_STAT = "std" every measure but nRMS uses CMAP_SPREAD linear from 0 (nRMS as
+before: NRMS_VMIN / NRMS_VMAX still apply to it).
+
+"distortion": one map (no bands or components) of |C - I| = Frobenius norm
+sqrt(sum C'ij**2) of the matrix difference C' = C - I that FEMTIC estimates with
+the distortion type ESTIMATE_DISTORTION_MATRIX_DIFFERENCE (Z_obs = C Z_model).
+0 = no distortion estimated at the site. This one number is a summary chosen
+here (femtic_distcorr.py ranks sites by the same norm); it does not tell a gain
+from a rotation or shear, and the estimated C' depends on the regularization of
+the distortion in the inversion (see Usui et al., 2017), so compare runs with the
+same settings only. C' is read from the /distortion group of the results file; if
+there is none, from DISTORTION_FILE (distortion_iter<N>.dat) next to it, whose
+type CANNOT be checked: do not use it for runs with gains / rotations. Runs
+without distortion (or of another type) give a warning and no distortion map.
+For an ensemble the value of a site is ENS_STAT over the members that have it.
+Sites whose matrix was held fixed are included (C' as given) and marked in
+_distortion.csv.
+
 Ensemble
 --------
 WORK_DIR = the root of an ensemble: <WORK_DIR>/templates/site.dat and one
@@ -75,9 +115,9 @@ Profiles and lines
 PROFILES (cross-section lines) and LINES (faults, coast lines, caldera rims,
 ...) are lists of dicts (the keys are listed at the settings and in the readme)
 that are drawn on every map. Positions are given in `coords`: "lonlat" (default),
-"latlon", "utm" (easting, northing in m, in the UTM zone of site.dat, which is
+"latlon", "utm" (easting, northing in km, in the UTM zone of site.dat, which is
 found by comparing the easting / northing of the sites with their lat / lon) or
-"model" (x, y in m of the FEMTIC model, as site_x, site_y of the results file;
+"model" (x, y in km of the FEMTIC model, the frame of site_x, site_y of the results file;
 needs the sites assigned by position). Lines are given by points or read from a
 file: text (GMT multi-segment, two columns), GeoJSON, KML or KMZ (the last three
 always lon, lat). A profile is given by points, a file, start and end, or
@@ -88,11 +128,26 @@ profile and their nRMS in _profile_sites.csv. Distances are flat-earth km on a
 sphere (the scale of the map), about 0.3 % less east-west than on the WGS84
 ellipsoid at mid latitudes; use profiles of up to a few 100 km.
 The end points may carry their label: start=(x, y, "A"), end=(x, y, "A'");
-PROFILE_END_MARKER adds a symbol there. Profiles and lines are cut at the map
+PROFILE_END_MARKER adds a symbol there.
+Style: every entry may set its own colour, line width and style, opacity,
+drawing order, halo and markers (profiles also texts, ticks, swath and rings);
+a key that is not given takes the setting PROFILE_* / LINE_*. A profile or line
+that lies outside the map is named in a warning, with a note if it would be on
+the map with longitude and latitude exchanged.
+Profiles and lines are cut at the map
 box made smaller by OVERLAY_CUT_MARGIN_KM (default 1 km), so that both ends of a
 cut profile are inside the map; the tick distances and the tables still refer to
 the whole profile (None = not cut). The map box itself does not depend on them
 (MAP_INCLUDE_PROFILES = False): what goes beyond it is cut at it.
+
+Appearance
+----------
+Fonts: FONT_FAMILY, FONT_RC (matplotlib rcParams) and the sizes in pt of tick
+labels (TICK_FONTSIZE, also the base of the sizes that are None), axis labels,
+figure and panel titles, site names, legend, colour bar, scale bar and DEM
+credit; weights of the title and the site names. A figure title that is wider
+than the figure is broken into lines. Sizes of figures: PANEL_SIZE (one panel),
+CBAR_LENGTH and CBAR_WIDTH are in cm.
 
 Selections
 ----------
@@ -111,7 +166,8 @@ DATATYPES  None = all data types, or a list of names, e.g. ["MT", "VTF"].
 
 DEM source
 ----------
-DEM_SOURCE selects the elevation model of the relief:
+DEM_SOURCE selects the elevation model of the relief (the routines are in
+modules/dem.py):
 
   "copernicus30"  Copernicus DEM GLO-30 (the default): global, 1 arc second
                   (30 m; coarser in longitude at high latitudes), a surface
@@ -169,6 +225,7 @@ Usage
     python femtic_plot_sitemap.py --runs "kra*/" --stat p90 # members by glob, 90th percentile
     python femtic_plot_sitemap.py --profile "A-A'" -16.82 65.70 -16.74 65.74   # profile line
     python femtic_plot_sitemap.py --line gis/faults.txt    # polylines (text, GeoJSON, KML)
+    python femtic_plot_sitemap.py --measures nrms r_mae distortion  # replaces SITE_MEASURES
 
 All relative paths of the settings refer to WORK_DIR. Return code 0 on
 success, 1 if the data could not be read or nothing could be plotted, 2 for a
@@ -177,7 +234,7 @@ wrong usage (WORK_DIR missing).
 @author vrath
 @project py4mt
 @created 2026-11-21
-@modified 2026-11-22
+@modified 2026-11-28
 
 AI-GENERATED CODE NOTICE
 -------------------------
@@ -217,6 +274,12 @@ Notice      : This code is AI-generated. Review and test it before any
 
 Reference
 ---------
+Usui, Y., Ogawa, Y., Aizawa, K., Kanda, W., Hashimoto, T., Koyama, T.,
+Yamaya, Y., Kagiyama, T. (2017): Three-dimensional resistivity structure of
+Asama Volcano revealed by data-space magnetotelluric inversion using
+unstructured tetrahedral elements. Geophysical Journal International 208(3),
+1359-1372. doi:10.1093/gji/ggw459
+
 Copernicus GLO-30 Digital Elevation Model, data record of OpenTopography:
 doi:10.5069/G9028PQB (data: ESA, DLR, Airbus Defence and Space; the notice of
 the licence is the default credit line of the maps).
@@ -293,6 +356,43 @@ Changelog
             "sites": sites + margin) is not enlarged by profiles that go beyond it;
             they are cut at that box (OVERLAY_CUT_MARGIN_KM). True restores the
             earlier behaviour (box large enough for the profiles).
+
+2026-11-26 (km)  Claude Sonnet 5.5 (Anthropic)
+              Settings in km: SITE_MATCH_TOL (0.015; before 15.0 m) and
+              PROFILES / LINES positions with coords = 'utm' or 'model'
+              typed in the settings; values that look like metres are
+              refused. Coordinates read from files (site.dat, text files of
+              a profile or line) stay in metres. Tested on synthetic files
+              only. AI-generated; review before production use.
+
+2026-11-27  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            (1) The DEM functions moved to the new module modules/dem.py,
+            which this script now needs. (2) Style of profiles and lines:
+            new settings PROFILE_* and LINE_* (colour, width, style,
+            opacity, order, halo, markers; end markers, texts, ticks,
+            swath, rings; fill), each also a key of an entry of PROFILES
+            / LINES; the warning for an overlay outside the map says
+            where it is and hints at exchanged lon / lat. The default
+            profile "Vuache fault" did not show: its points are
+            (lon, lat) but coords was "latlon"; now "lonlat" (also
+            labels=False and a legend entry). (3) Fonts are settings (see
+            "Appearance"). (4) PANEL_SIZE is in cm (before: inch; the
+            default (12.2, 11.2) is about the former (4.8, 4.4)); panels
+            below 6 cm get a note. Tested on synthetic data only.
+
+2026-11-28  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            (1) Halos are off by default: PROFILE_HALO and LINE_HALO are now
+            False; the halo of the site names, the scale bar and the DEM
+            credit (before: always drawn) is the new setting MAP_HALO
+            (False; MAP_HALO_COLOR, MAP_HALO_WIDTH). (2) New settings
+            SITE_MEASURES, DISTORTION_FILE, MEASURE_SCALES and option
+            --measures: maps, tables and summary sections of the fit
+            measures of modules/misfit_measures.py and of the galvanic
+            distortion strength |C - I|. With the default SITE_MEASURES =
+            "nrms" the nRMS tables and summary are as before. (3) With
+            SHOW = False every figure is closed as soon as it is saved.
+            Tested on synthetic data only; the reading of a real /distortion
+            group (h5py not installed) has not been run.
 """
 from __future__ import annotations
 
@@ -300,21 +400,15 @@ import argparse
 import contextlib
 import csv
 import glob
-import gzip
-import http.client
 import io
 import math
 import os
 import re
-import shutil
 import sys
 import inspect
-import urllib.error
-import urllib.parse
-import urllib.request
 import warnings
 import zipfile
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 
@@ -329,6 +423,9 @@ if PY4MTX_ROOT:
             sys.path.insert(0, _pth)
 
 import femtic_misfit as fm  # noqa: E402
+import misfit_measures as mm  # noqa: E402
+from dem import (DEM_SOURCES, DEM_STYLES, EARTH_RADIUS_M, dem_credit, dem_extent,  # noqa: E402
+                 dem_template, is_url, load_dem, shade_dem, tile_kind)
 import util as utl
 from version import versionstrg
 
@@ -348,7 +445,7 @@ print(titstrng + "\n\n")
 # that starts with ~, is used as given). None or "" = the current directory.
 # WORK_DIR: Optional[str] = "./"
 # RESULTS_PATH: str = "."               # run directory (searched for ITER_PATTERN) or a results file
-WORK_DIR: Optional[str] = r"/media/vrath/LargeBack/Ensembles/krafla2026/krafla_ens/"
+WORK_DIR: Optional[str] = r"/media/vrath/LargeBack/Ensembles/annecy2026/RTO/ann_rto_orig-err/"
 RESULTS_PATH: str = WORK_DIR              # run directory (searched for ITER_PATTERN) or a results file
 
 
@@ -357,7 +454,7 @@ ITER_PATTERN: str = "results_iter*.h5"
 TEMPLATES_DIR: str = "templates"      # sub-directory of WORK_DIR with site.dat
 SITE_DAT: Optional[str] = "auto"      # "auto": TEMPLATES_DIR, WORK_DIR, then ../<TEMPLATES_DIR>; or a path
 SITE_MATCH: str = "auto"              # "auto", "coords" (by position) or "id" (sitenum + SITE_ID_OFFSET)
-SITE_MATCH_TOL: float = 15.0          # [m] largest distance for a match by position
+SITE_MATCH_TOL: float = 0.015         # [km] largest distance for a match by position
 SITE_ID_OFFSET: int = 0               # site_id in the results file = sitenum + SITE_ID_OFFSET
 DATATYPES: Optional[Sequence[str]] = None   # None = all, or e.g. ["MT", "VTF"]
 
@@ -366,7 +463,7 @@ DATATYPES: Optional[Sequence[str]] = None   # None = all, or e.g. ["MT", "VTF"]
 # RESULTS_PATH holds no results file, but sub-directories do, they are the
 # members. RUN_PATHS names the members explicitly. With one member only, the
 # ensemble settings have no effect.
-RUN_PATHS: Optional[Sequence[str]] =  ["kra*/"] # None   # run directories / results files / globs, e.g. ["kra*/"]
+RUN_PATHS: Optional[Sequence[str]] =  ["ann*/"] # None   # run directories / results files / globs, e.g. ["kra*/"]
 ENS_STAT: str = "median"              # per site over the members: "mean", "median", "min", "max",
                                       # "std" (spread) or "pNN" (percentile, e.g. "p90")
 MEMBER_NRMS_MAX: Optional[float] = None   # members with a larger nRMS of the iteration are left out
@@ -376,7 +473,8 @@ BANDS: Union[str, Sequence[Any]] = "decades"   # "all", "decades", or ["all", (l
 BAND_AXIS: str = "period"             # "period" [s] or "frequency" [Hz]
 BAND_PER_DECADE: int = 1              # for "decades"
 BAND_MIN_N: int = 20                  # bands with fewer data rows are dropped
-COMPONENTS: Sequence[str] = ["all", "Zoff", "Zdiag", "T"]
+# COMPONENTS: Sequence[str] = ["all", "Zoff", "Zdiag", "T"]
+COMPONENTS: Sequence[str] = ["all",  "T"]
 COMPONENT_GROUPS: Dict[str, Sequence[str]] = {
     "Z": ("Zxx", "Zxy", "Zyx", "Zyy"),
     "Zoff": ("Zxy", "Zyx"),
@@ -386,6 +484,18 @@ COMPONENT_GROUPS: Dict[str, Sequence[str]] = {
     "phs": ("phsXX", "phsXY", "phsYX", "phsYY"),
     "PT": ("PTxx", "PTxy", "PTyx", "PTyy"),
 }
+
+# --- what the maps show ---
+# One name or a list; each gets its own maps, tables and summary section:
+#   "nrms", "r_mae", "r_med", "q95", "mean", "std", "skew", "kurt"
+#                  fit measures of (obs - cal) / err (modules/misfit_measures.py)
+#   "distortion"   strength of the galvanic distortion of a site, |C - I| (Frobenius
+#                  norm of the matrix difference C' that FEMTIC estimates); one map,
+#                  if the run has distortion estimates
+SITE_MEASURES: Union[str, Sequence[str]] = "nrms"   # e.g. ["nrms", "r_mae", "distortion"]
+# "distortion" of a run whose results file has no /distortion group: this text file
+# next to the results file ({iter} = iteration; its type cannot be checked); None = no
+DISTORTION_FILE: Optional[str] = "distortion_iter{iter}.dat"
 
 # --- basemap: extent and coordinates ---
 MAP_EXTENT_MODE: str = "sites"        # "sites" (sites + margin), "box" or "center"
@@ -446,43 +556,110 @@ SITE_SIZE: float = 80.0               # [pt^2]
 SITE_EDGECOLOR: str = "black"
 SITE_LW: float = 0.8
 SITE_NODATA_EDGECOLOR: str = "0.35"   # open icons: sites without data in the selection
-SITE_LABELS: bool = False             # site names next to the icons
-LABEL_FONTSIZE: float = 6.0
+SITE_LABELS: bool = True             # site names next to the icons
 CMAP_NRMS: str = "jet"            # diverging colour map, centred on NRMS_REFERENCE
 # CMAP_NRMS: str = "RdBu_r"             # diverging colour map, centred on NRMS_REFERENCE
 CMAP_SPREAD: str = "YlOrRd"           # ENS_STAT = "std": sequential colour map, linear scale from 0
 NRMS_REFERENCE: Optional[float] = 1.0   # target nRMS = centre colour; None = linear scale
 NRMS_VMIN: Optional[float] = 0.6     # colour limits; None = from the data ("std": 0)
 NRMS_VMAX: Optional[float] = 1.8
+# colour scales of the other SITE_MEASURES, where they differ from the defaults:
+#   {measure: dict(cmap=..., reference=..., vmin=..., vmax=...)}, any of the four keys
+#   (reference = centre colour, None = linear scale; vmin / vmax None = from the data)
+# defaults: r_mae, r_med, std as the nRMS settings above; q95 CMAP_NRMS about 1.96;
+#   mean, skew, kurt "RdBu_r" about 0; distortion CMAP_SPREAD, linear from 0
+# ENS_STAT = "std" (spread): every measure CMAP_SPREAD, linear from 0, MEASURE_SCALES unused
+MEASURE_SCALES: Dict[str, Dict[str, Any]] = {}   # e.g. {"distortion": dict(vmax=0.5)}
 
 # --- profiles and polylines ---
 # Profile lines (cross-section lines) and other polylines / polygons (faults, coast
 # lines, caldera rims, ...) on the maps; lists of dicts, see the readme.
 #   profile: name, one of points | file | start + end | center + azimuth + length_km,
-#            coords, width_km (swath), ticks_km, tick_labels, labels, label, color, lw, ls
+#            coords, width_km (swath), ticks_km, tick_labels, labels, label
 #            start / end: (a, b) or (a, b, "A") = with the label ("marker") of that end; without
-#            it labels = ("A", "A'") or, if there is none, the two halves of the name "A-A'"
-#   line:    label, one of file | points | segments, coords, closed, fill, alpha,
-#            color, lw, ls, halo
-#   coords:  "lonlat" (default), "latlon", "utm" (easting, northing of the site.dat zone)
-#            or "model" (x, y in m of the FEMTIC model); GeoJSON and KML are always lon, lat
+#            it labels = ("A", "A'") or, if there is none, the two halves of the name "A-A'";
+#            labels=False = no text at the ends; label = entry in the legend
+#   line:    label, one of file | points | segments, coords, closed, fill
+#   coords:  how the number pairs are read:
+#            "lonlat" (default) = (longitude, latitude), "latlon" = (latitude, longitude),
+#            "utm" (easting, northing in km, zone of site.dat) or "model" (x, y in km of the
+#            FEMTIC model); GeoJSON and KML are always lon, lat.
+#            NOTE: in femtic_ens_plot_slices.py the tag "latlon" stands for [lon, lat]; a point
+#            list copied from there needs coords="lonlat" here.
+#            Only the numbers given here are km: "utm" / "model" coordinates read from a
+#            text file (`file`) stay in m, as GIS programs and the results file write them
+#   style:   every entry may set its own style; a key that is not given takes the setting below
+#            (PROFILE_* / LINE_*):
+#            both:     color, lw (or linewidth), ls (or linestyle), line_alpha, zorder, halo,
+#                      halo_color, halo_width, marker, markersize (or ms)
+#            profile:  end_marker, end_marker_size, fontsize, fontweight, text_color,
+#                      label_offset, tick_length, tick_lw, tick_fontsize, swath_color,
+#                      swath_alpha, mark_sites, ring_size, ring_lw
+#            line:     alpha (opacity of the fill)
 # PROFILES: Sequence[dict] = []         # e.g. [dict(name="A-A'", start=(-16.80, 65.68, "A"), end=(-16.70, 65.72, "A'"), width_km=4.0, ticks_km=5.0)]
-#                                       # UTM: coords="utm", start=(405000, 7291800, "A"), end=(424000, 7287800, "A'")
+#                                       # UTM: coords="utm", start=(405.0, 7291.8, "A"), end=(424.0, 7287.8, "A'")
+#                                       # own style: color="magenta", lw=3.0, ls=":", line_alpha=0.9
 PROFILES: Sequence[dict] = [
-    dict(name="A-A'", start=(405000, 7291800, "A"), end=(424000, 7287800, "A'"), coords="utm", 
-         width_km=1.0,) # ticks_km=5.0)
-    ]                       
-LINES: Sequence[dict] = []            # e.g. [dict(label="Faults", file="gis/faults.txt", color="tab:red")]
+    # dict(name="A-A'", start=(405.0, 7291.8, "A"), end=(424.0, 7287.8, "A'"), coords="utm",
+    #      width_km=1.0,) # ticks_km=5.0)
+    dict(
+        name="Vuache fault",
+        start=(6.030869, 45.962166),          # (longitude, latitude)
+        end=(6.115936, 45.910655),
+        coords="lonlat",
+        labels=False,                         # no text at the two ends
+        label="Vuache fault",                 # entry in the legend
+        # color="magenta", lw=3.0, ls=":",    # own style (else the PROFILE_* settings)
+    ),
+]
+
+LINES: Sequence[dict] = [    ]            # e.g. [dict(label="Faults", file="gis/faults.txt", color="tab:red")]
+
+# style of the profiles (an entry of PROFILES may override every one of these)
 PROFILE_COLOR: str = "black"
-PROFILE_LW: float = 1.8
-PROFILE_FONTSIZE: float = 9.0         # end labels (the distance labels are 2 pt smaller)
-PROFILE_SWATH_ALPHA: float = 0.15     # shading of the swath (width_km of the profile)
-PROFILE_MARK_SITES: bool = True       # open circles around the sites in the swath
+PROFILE_LW: float = 1.8               # [pt]
+PROFILE_LS: Any = "-"                 # "-", "--", "-.", ":" or (offset, (on, off, ...))
+PROFILE_ALPHA: float = 1.0            # opacity of the line (key line_alpha)
+PROFILE_ZORDER: float = 4.0           # drawing order; the sites are at 5: e.g. 5.5 = on top of them
+PROFILE_HALO: bool = False            # outline under the line, the ticks and the texts
+PROFILE_HALO_COLOR: str = "white"
+PROFILE_HALO_WIDTH: float = 1.6       # [pt] the outline of the line is wider than the line by this
+PROFILE_MARKER: Optional[str] = None  # symbol at every vertex of the profile; None = none
+PROFILE_MARKER_SIZE: float = 4.0      # [pt]
 PROFILE_END_MARKER: Optional[str] = None   # symbol ("o", "s", "D", "^", ...) at the two ends of every profile
                                       # (the ends of the cut part, see OVERLAY_CUT_MARGIN_KM); None = none
+PROFILE_END_MARKER_SIZE: float = 6.0  # [pt]
+PROFILE_FONTSIZE: float = 9.0         # [pt] end labels
+PROFILE_FONTWEIGHT: str = "bold"      # end labels
+PROFILE_TEXT_COLOR: Optional[str] = None   # end and distance labels; None = the colour of the line
+PROFILE_LABEL_OFFSET: float = 10.0    # [pt] distance of an end label from the end
+PROFILE_TICK_FONTSIZE: Optional[float] = None   # [pt] distance labels; None = PROFILE_FONTSIZE - 2
+PROFILE_TICK_LENGTH: Optional[float] = None     # length of a tick as a fraction of the map width; None = 0.012
+PROFILE_TICK_LW: Optional[float] = None         # [pt]; None = 0.8 x the line width, at least 0.8
+PROFILE_SWATH_COLOR: Optional[str] = None       # shading of the swath (width_km); None = line colour
+PROFILE_SWATH_ALPHA: float = 0.15
+PROFILE_MARK_SITES: bool = False      # open circles around the sites in the swath
+PROFILE_RING_SIZE: float = 1.9        # size of these circles, in units of SITE_SIZE
+PROFILE_RING_LW: float = 1.0          # [pt]
+
+# style of the lines (an entry of LINES may override every one of these)
 LINE_COLOR: str = "tab:green"
-LINE_LW: float = 1.2
-LINE_HALO: bool = True                # white outline under the lines
+LINE_LW: float = 1.2                  # [pt]
+LINE_LS: Any = "-"
+LINE_ALPHA: float = 1.0               # opacity of the line (key line_alpha)
+LINE_ZORDER: float = 3.0              # the sites are at 5
+LINE_HALO: bool = False               # outline under the lines
+LINE_HALO_COLOR: str = "white"
+LINE_HALO_WIDTH: float = 1.6          # [pt]
+LINE_MARKER: Optional[str] = None     # symbol at every vertex; None = none
+LINE_MARKER_SIZE: float = 4.0         # [pt]
+LINE_FILL_ALPHA: float = 0.25         # opacity of the fill of a closed line (key alpha)
+
+# outline of the other things on the maps: site names, scale bar and DEM credit
+MAP_HALO: bool = False
+MAP_HALO_COLOR: str = "white"
+MAP_HALO_WIDTH: float = 1.5           # [pt] around the texts (scale bar: 1 pt more)
+
 MAP_INCLUDE_PROFILES: bool = False    # MAP_EXTENT_MODE "sites": False = the map box does not depend on the profiles:
                                       # what goes beyond it is cut at it (OVERLAY_CUT_MARGIN_KM); True = the box is
                                       # made large enough for the profiles
@@ -492,18 +669,38 @@ OVERLAY_CUT_MARGIN_KM: Optional[float] = 1.0   # profiles and lines are cut at t
                                       # labels) are inside the map; None = not cut (the map edge clips them)
 LEGEND_LOC: Optional[str] = "upper left"   # legend (no-data icon, labelled profiles and lines); None = none
 
+# --- fonts ---
+# Sizes in pt. None = derived from TICK_FONTSIZE as noted (or matplotlib's default).
+# The sizes of the profile texts are PROFILE_FONTSIZE and PROFILE_TICK_FONTSIZE above.
+FONT_FAMILY: Union[None, str, Sequence[str]] = None   # None = matplotlib's; "serif", "sans-serif",
+                                      # "monospace", or an installed font such as "DejaVu Serif"; a list
+                                      # is a fall-back order, e.g. ["Arial", "DejaVu Sans"]
+FONT_RC: Optional[Dict[str, Any]] = None   # further matplotlib rcParams for the text, e.g.
+                                      # {"mathtext.fontset": "stix"} or {"font.style": "italic"}
+TICK_FONTSIZE: float = 8.0            # tick labels of the maps (base of the sizes that are None)
+AXIS_LABEL_FONTSIZE: Optional[float] = None    # "Longitude [deg]", ...; None = TICK_FONTSIZE
+TITLE_FONTSIZE: Optional[float] = None         # figure title; None = TICK_FONTSIZE + 3
+TITLE_FONTWEIGHT: str = "normal"
+PANEL_TITLE_FONTSIZE: Optional[float] = None   # panel titles; None = TICK_FONTSIZE + 1
+LABEL_FONTSIZE: float = 6.0           # site names
+LABEL_FONTWEIGHT: str = "normal"
+LEGEND_FONTSIZE: Optional[float] = None        # None = TICK_FONTSIZE - 1
+CBAR_LABEL_FONTSIZE: Optional[float] = None    # colour bar title; None = matplotlib's (font.size)
+CBAR_TICK_FONTSIZE: Optional[float] = None     # colour bar numbers; None = matplotlib's
+SCALEBAR_FONTSIZE: Optional[float] = None      # None = TICK_FONTSIZE - 1
+CREDIT_FONTSIZE: float = 5.0          # DEM credit line
+
 # --- figures and output ---
 PAGE_BY: str = "band"                 # one figure per "band" (panels: components), per "component"
                                       # (panels: bands), per "none" (one map each), or "all" (one figure)
 PANEL_COLS: int = 2                   # panels per row
-PANEL_SIZE: Tuple[float, float] = (4.8, 4.4)   # [inch] of one panel
+PANEL_SIZE: Tuple[float, float] = (12.2, 11.2)   # [cm] width, height of one panel (until 2026-11-26: inch)
 TITLE: Optional[str] = "auto"         # "auto", None / "" (none) or text with {iter}, {nrms}, {M}, {stat}
 CBAR_LOCATION: Optional[str] = None   # None / "right", "left", "top", "bottom"
 CBAR_SHRINK: float = 0.7              # length of the colour bar: fraction (0 .. 1] of the panels along it
 CBAR_LENGTH: Optional[float] = None   # [cm] length of the colour bar; None = CBAR_SHRINK x the panels
 CBAR_WIDTH: Optional[float] = None    # [cm] width (thickness); None = 1/20 of the length
-TICK_FONTSIZE: float = 8.0
-DPI: int = 200
+DPI: int = 400
 SHOW: bool = False
 OUTPUT_DIR: str = "sitemap"           # relative to WORK_DIR
 OUTPUT_BASENAME: str = "femtic_sitemap"
@@ -516,31 +713,13 @@ _SETTING_NAMES = tuple(k for k in list(globals())
                        if k.isupper() and not k.startswith("_") and k != "PY4MTX_ROOT")
 
 _TAG = "femtic_plot_sitemap:"
-_EARTH_RADIUS_M = 6371008.8
-_KM_PER_DEG = _EARTH_RADIUS_M * math.pi / 180.0 / 1000.0     # one degree of latitude [km]
-_HGT_EXTENSIONS = (".hgt", ".hgt.gz", ".hgt.zip", ".SRTMGL1.hgt.zip", ".SRTMGL3.hgt.zip")
-_RASTER_EXTENSIONS = (".tif", ".tiff")
-_DEM_SOURCES = ("copernicus30", "copernicus90", "skadi", "tiles", "file", "none")
-_COP_NOTICE = ("produced using Copernicus WorldDEM-{n} \u00a9 DLR e.V. 2010-2014 and \u00a9 Airbus "
-               "Defence and Space GmbH 2014-2018 provided under COPERNICUS by the European Union "
-               "and ESA; all rights reserved")
-# tiles of the DEM_SOURCEs: URL pattern ({name}, {NS}, {lat}, {EW}, {lon}) and the credit line of the maps
-_DEM_PRESETS: Dict[str, dict] = {
-    "copernicus30": dict(
-        template=("https://copernicus-dem-30m.s3.amazonaws.com/"
-                  "Copernicus_DSM_COG_10_{NS}{lat:02d}_00_{EW}{lon:03d}_00_DEM/"
-                  "Copernicus_DSM_COG_10_{NS}{lat:02d}_00_{EW}{lon:03d}_00_DEM.tif"),
-        credit="Relief: " + _COP_NOTICE.format(n=30)),
-    "copernicus90": dict(
-        template=("https://copernicus-dem-90m.s3.amazonaws.com/"
-                  "Copernicus_DSM_COG_30_{NS}{lat:02d}_00_{EW}{lon:03d}_00_DEM/"
-                  "Copernicus_DSM_COG_30_{NS}{lat:02d}_00_{EW}{lon:03d}_00_DEM.tif"),
-        credit="Relief: " + _COP_NOTICE.format(n=90)),
-    "skadi": dict(
-        template="https://s3.amazonaws.com/elevation-tiles-prod/skadi/{NS}{lat:02d}/{name}.hgt.gz",
-        credit="Relief: AWS Terrain Tiles (Mapzen), a composite of several elevation data sets"),
-}
+_USER_AGENT = "py4mt-femtic_plot_sitemap"    # of the DEM tile downloads
+_KM_PER_DEG = EARTH_RADIUS_M * math.pi / 180.0 / 1000.0     # one degree of latitude [km]
 _PAGE_BY = ("band", "component", "none", "all")
+_DISTORTION = "distortion"           # the measure that is no fit measure
+_DISTORTION_NAMES = ("distortion", "dist", "distortion_strength")
+_DISTORTION_LABEL = "distortion strength |C - I|"
+_SCALE_KEYS = ("cmap", "reference", "vmin", "vmax")
 _CBAR_LOCATIONS = (None, "right", "left", "top", "bottom")
 
 
@@ -603,6 +782,10 @@ def check_settings(cfg: Dict[str, Any]) -> None:
         if cfg[key] not in allowed:
             raise ValueError(f"{key} = {cfg[key]!r}: must be one of {list(allowed)}")
     one_of("SITE_MATCH", ("auto", "coords", "id"))
+    tol = cfg["SITE_MATCH_TOL"]
+    if isinstance(tol, (int, float)) and tol >= 1.0:
+        raise ValueError(f"SITE_MATCH_TOL = {tol!r}: given in km (0.015 = 15 m); this "
+                         "looks like metres")
     one_of("BAND_AXIS", ("period", "frequency"))
     one_of("MAP_EXTENT_MODE", ("sites", "box", "center"))
     one_of("DISPLAY_COORDS", ("latlon", "km"))
@@ -610,8 +793,8 @@ def check_settings(cfg: Dict[str, Any]) -> None:
         raise ValueError("DEM_SOURCE = 'srtm' does not exist any more: use 'copernicus30' (the "
                          "default), 'copernicus90', or 'skadi' (the AWS Terrain Tiles that 'srtm' "
                          "meant)")
-    one_of("DEM_SOURCE", _DEM_SOURCES)
-    one_of("DEM_STYLE", ("hillshade", "terrain"))
+    one_of("DEM_SOURCE", DEM_SOURCES)
+    one_of("DEM_STYLE", DEM_STYLES)
     one_of("PAGE_BY", _PAGE_BY)
     one_of("CBAR_LOCATION", _CBAR_LOCATIONS)
     for key in ("CBAR_LENGTH", "CBAR_WIDTH"):
@@ -619,13 +802,7 @@ def check_settings(cfg: Dict[str, Any]) -> None:
         if v is not None and not (isinstance(v, (int, float, np.integer, np.floating))
                                   and not isinstance(v, bool) and np.isfinite(v) and v > 0):
             raise ValueError(f"{key} = {v!r}: must be None or a number > 0 (cm)")
-    em = cfg["PROFILE_END_MARKER"]
-    if em is not None:
-        try:
-            from matplotlib.markers import MarkerStyle
-            MarkerStyle(em)
-        except (ValueError, TypeError) as exc:
-            raise ValueError(f"PROFILE_END_MARKER = {em!r} is no matplotlib marker: {exc}") from None
+    check_appearance(cfg)
     mg = cfg["OVERLAY_CUT_MARGIN_KM"]
     if mg is not None and not (isinstance(mg, (int, float, np.integer, np.floating))
                                and not isinstance(mg, bool) and np.isfinite(mg) and mg >= 0):
@@ -649,7 +826,7 @@ def check_settings(cfg: Dict[str, Any]) -> None:
         raise ValueError("DEM_SOURCE = \"file\" needs DEM_FILE")
     if cfg["DEM_SOURCE"] == "tiles" and not cfg["DEM_URL_TEMPLATE"]:
         raise ValueError("DEM_SOURCE = \"tiles\" needs DEM_URL_TEMPLATE")
-    if cfg["DEM_SOURCE"] in ("copernicus30", "copernicus90", "skadi", "tiles"):
+    if cfg["DEM_SOURCE"] not in ("file", "none"):
         tile_kind(dem_template(cfg["DEM_SOURCE"], cfg["DEM_URL_TEMPLATE"]))      # ValueError
     if int(cfg["PANEL_COLS"]) < 1:
         raise ValueError("PANEL_COLS must be >= 1")
@@ -659,7 +836,337 @@ def check_settings(cfg: Dict[str, Any]) -> None:
     if cfg["MEMBER_NRMS_MAX"] is not None and not float(cfg["MEMBER_NRMS_MAX"]) > 0:
         raise ValueError("MEMBER_NRMS_MAX must be > 0 (or None)")
     one_of("LEGEND_LOC", _LEGEND_LOCS)
+    check_measure_settings(cfg)
     check_overlay_specs(cfg)
+
+
+# ---------------------------------------------------------------------------
+# Measures: what the maps show, and their colour scales
+# ---------------------------------------------------------------------------
+def parse_measures(spec: Any) -> Tuple[str, ...]:
+    """
+    SITE_MEASURES as a tuple of names, in the order given and without repeats: the
+    fit measures of misfit_measures (aliases "rms", "rmae", "rmed", "bias") and
+    "distortion" (also "dist"). A name, "a, b" or a list; None = ("nrms",).
+    ValueError for an unknown name or an empty list.
+    """
+    if spec is None:
+        return ("nrms",)
+    names = [t for t in re.split(r"[,;\s]+", spec.strip()) if t] if isinstance(spec, str) else spec
+    allowed = ", ".join(mm.FIT_MEASURE_NAMES + (_DISTORTION,))
+    bad = f"SITE_MEASURES = {spec!r}: one or more of {allowed}"
+    try:
+        names = [str(t).strip().lower() for t in names]
+    except TypeError:
+        raise ValueError(bad) from None
+    out: List[str] = []
+    for t in names:
+        if t in _DISTORTION_NAMES:
+            t = _DISTORTION
+        else:
+            try:
+                t = mm.site_measures([t])[0]
+            except ValueError:
+                raise ValueError(bad) from None
+        if t not in out:
+            out.append(t)
+    if not out:
+        raise ValueError(bad)
+    return tuple(out)
+
+
+def fit_names(measures: Sequence[str]) -> Tuple[str, ...]:
+    """The fit measures of `measures` that are computed besides nRMS."""
+    return tuple(m for m in measures if m not in ("nrms", _DISTORTION))
+
+
+def measure_label(measure: str) -> str:
+    """"nRMS", "rMAE", ..., "distortion strength |C - I|"."""
+    return _DISTORTION_LABEL if measure == _DISTORTION else mm.MEASURE_LABELS[measure]
+
+
+def measure_text(value: float, measure: str) -> str:
+    """A value for a panel title: 2 decimals, 3 for mean, skew and kurt (never "-0.000")."""
+    text = f"{value:.{3 if measure in mm.SIGNED_MEASURES else 2}f}"
+    return text.lstrip("-") if float(text) == 0.0 else text
+
+
+def sel_values(s: dict, measure: str = "nrms") -> Tuple[float, np.ndarray]:
+    """(global value, value per site) of `measure` in the selection `s`."""
+    if measure == "nrms":
+        return s["nrms"], s["nrms_site"]
+    return s["glob_m"][measure], s["site_m"][measure]
+
+
+def _scales_of(cfg: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
+    """MEASURE_SCALES with canonical measure names; ValueError if it is malformed."""
+    spec = cfg["MEASURE_SCALES"] or {}
+    if not isinstance(spec, dict):
+        raise ValueError("MEASURE_SCALES must be a dict {measure: dict(cmap, reference, vmin, vmax)}")
+    out: Dict[str, Dict[str, Any]] = {}
+    for key, val in spec.items():
+        try:
+            name = parse_measures([key])[0]
+        except ValueError:
+            raise ValueError(f"MEASURE_SCALES: unknown measure {key!r}") from None
+        if not isinstance(val, dict) or any(k not in _SCALE_KEYS for k in val):
+            raise ValueError(f"MEASURE_SCALES[{key!r}] must be a dict with keys of "
+                             f"{list(_SCALE_KEYS)}")
+        out[name] = dict(val)
+    return out
+
+
+def check_measure_settings(cfg: Dict[str, Any]) -> None:
+    """ValueError for a SITE_MEASURES, MEASURE_SCALES or DISTORTION_FILE that cannot work."""
+    parse_measures(cfg["SITE_MEASURES"])
+    scales = _scales_of(cfg)
+    if scales:
+        import matplotlib
+        for name, val in scales.items():
+            what = f"MEASURE_SCALES[{name!r}]"
+            cmap = val.get("cmap")
+            if "cmap" in val and not (isinstance(cmap, matplotlib.colors.Colormap)
+                                      or cmap in matplotlib.colormaps):
+                raise ValueError(f"{what}: cmap {cmap!r} is no matplotlib colour map")
+            for k in ("reference", "vmin", "vmax"):
+                v = val.get(k)
+                if v is not None and not (isinstance(v, (int, float, np.integer, np.floating))
+                                          and not isinstance(v, bool) and np.isfinite(v)):
+                    raise ValueError(f"{what}: {k} = {v!r} must be None or a number")
+    tpl = cfg["DISTORTION_FILE"]
+    if tpl is not None:
+        try:
+            ok = isinstance(tpl, str) and bool(tpl.format(iter=1))
+        except (KeyError, IndexError, ValueError):
+            ok = False
+        if not ok:
+            raise ValueError(f"DISTORTION_FILE = {tpl!r}: None or a file name, {{iter}} = "
+                             "iteration")
+
+
+def measure_scale(measure: str, cfg: Dict[str, Any], *, spread: bool = False) -> Dict[str, Any]:
+    """
+    dict(cmap, reference, vmin, vmax) of the colour scale of `measure`. `spread` =
+    ENS_STAT "std": CMAP_SPREAD, linear from 0 (nRMS keeps NRMS_VMIN / NRMS_VMAX).
+    Else the default of the measure (see MEASURE_SCALES) updated by MEASURE_SCALES.
+    """
+    nrms = dict(cmap=cfg["CMAP_NRMS"], reference=cfg["NRMS_REFERENCE"], vmin=cfg["NRMS_VMIN"],
+                vmax=cfg["NRMS_VMAX"])
+    if spread:
+        if measure != "nrms":
+            return dict(cmap=cfg["CMAP_SPREAD"], reference=None, vmin=0.0, vmax=None)
+        return dict(nrms, cmap=cfg["CMAP_SPREAD"], reference=None,
+                    vmin=0.0 if nrms["vmin"] is None else nrms["vmin"])
+    if measure in ("nrms", "r_mae", "r_med", "std"):          # all expected to be 1
+        out = nrms
+    elif measure == "q95":
+        out = dict(cmap=cfg["CMAP_NRMS"], reference=1.96, vmin=None, vmax=None)
+    elif measure in mm.SIGNED_MEASURES:
+        out = dict(cmap="RdBu_r", reference=0.0, vmin=None, vmax=None)
+    else:                                                      # distortion strength
+        out = dict(cmap=cfg["CMAP_SPREAD"], reference=None, vmin=0.0, vmax=None)
+    out.update(_scales_of(cfg).get(measure, {}))
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Distortion strength
+# ---------------------------------------------------------------------------
+def distortion_strength(c_prime: Any) -> np.ndarray:
+    """
+    Strength of galvanic distortion |C - I|: the Frobenius norm of the matrix
+    difference C' = C - I, for an array [..., 2, 2]; 0 = no distortion.
+    """
+    c = np.asarray(c_prime, float)
+    return np.sqrt(np.sum(c * c, axis=(-2, -1)))
+
+
+def read_distortion_text(path: str) -> Dict[int, Tuple[np.ndarray, bool]]:
+    """
+    {site id: (C' (2, 2), fixed)} of a distortion_iter<N>.dat (first line the
+    number of sites, then: site id, C'xx, C'xy, C'yx, C'yy and, if there, the
+    flag "fixed"); the matrices as femtic.read_distortion_file reads them.
+    """
+    _, c_prime = fm.fem.read_distortion_file(path)
+    with open(path, "r", errors="replace") as fh:
+        rows = [ln.split() for ln in fh.read().strip().splitlines()[1:]]
+    if len(rows) != len(c_prime):
+        raise ValueError(f"{len(rows)} lines but {len(c_prime)} matrices")
+    return {int(p[0]): (np.asarray(c_prime[k], float),
+                        len(p) > 5 and int(float(p[5])) != 0) for k, p in enumerate(rows)}
+
+
+def read_run_distortion(results_path: str, iteration: int, *, file_template: Optional[str]
+                        ) -> Tuple[Optional[Dict[int, Tuple[np.ndarray, bool]]], str]:
+    """
+    The distortion of one run: ({site id: (C' (2, 2), fixed)}, source) or (None, why
+    there is none). First the /distortion group of the results file; without it the
+    text file `file_template` ({iter} = `iteration`) next to the results file, whose
+    type cannot be checked. Only the type "matrix difference" is used.
+    """
+    note = ""
+    try:
+        res = fm.fem.read_results_distortion(results_path, out=False)
+    except Exception as exc:              # no h5py, damaged group, ...: try the text file
+        res = None
+        note = f" (/distortion of {os.path.basename(results_path)} not readable: {exc})"
+    if res is not None:
+        kind = int(res["type"])
+        if kind == 0:
+            return None, "the run has no distortion estimation"
+        if kind != 1:
+            return None, (f"distortion type {res['type_name']} is not implemented (only "
+                          "ESTIMATE_DISTORTION_MATRIX_DIFFERENCE)")
+        out = {int(r["site_id"]): (np.array([[r["param1"], r["param2"]],
+                                             [r["param3"], r["param4"]]], float),
+                                   bool(r["isFixed"])) for r in res["rows"]}
+        if not out:
+            return None, "the /distortion group of the results file is empty"
+        return out, "/distortion of the results file"
+    if not file_template:
+        return None, "no /distortion group in the results file (DISTORTION_FILE = None)" + note
+    p = os.path.join(os.path.dirname(os.path.abspath(results_path)),
+                     file_template.format(iter=iteration))
+    if not os.path.isfile(p):
+        return None, (f"no /distortion group in the results file and no {os.path.basename(p)}"
+                      + note)
+    try:
+        out = read_distortion_text(p)
+    except Exception as exc:
+        return None, f"{os.path.basename(p)} not readable: {exc}"
+    if not out:
+        return None, f"{os.path.basename(p)} holds no site"
+    shown = file_template.replace("{iter}", "<N>")
+    return out, f"text file {shown}, type not checked" + note
+
+
+def distortion_per_site(dist: Dict[int, Tuple[np.ndarray, bool]], id_to_site: Dict[int, int],
+                        n_sites: int) -> dict:
+    """
+    The distortion of the site ids on the sites: dict(strength (n_sites, NaN = none),
+    cprime (n_sites, 2, 2), fixed (n_sites, bool), unmatched (ids without a site),
+    n_multi (sites with several ids: their mean is taken)).
+    """
+    found: Dict[int, List[Tuple[np.ndarray, bool]]] = {}
+    unmatched: List[int] = []
+    for sid_, (cp, fixed) in dist.items():
+        j = id_to_site.get(sid_)
+        if j is None:
+            unmatched.append(sid_)
+        elif np.isfinite(cp).all():
+            found.setdefault(j, []).append((cp, fixed))
+    strength = np.full(n_sites, np.nan)
+    cprime = np.full((n_sites, 2, 2), np.nan)
+    is_fixed = np.zeros(n_sites, dtype=bool)
+    for j, items in found.items():
+        stack = np.array([cp for cp, _ in items])
+        strength[j] = float(np.mean(distortion_strength(stack)))
+        cprime[j] = stack.mean(axis=0)
+        is_fixed[j] = all(f for _, f in items)
+    return dict(strength=strength, cprime=cprime, fixed=is_fixed, unmatched=sorted(unmatched),
+                n_multi=sum(1 for v in found.values() if len(v) > 1))
+
+
+def distortion_selection(members: Sequence[dict], stat: str, used: np.ndarray, *,
+                         ens: bool) -> Optional[dict]:
+    """
+    The distortion strength as a selection for plot_page and the tables, from the
+    members with "dist" (distortion_per_site); None if no site in `used` has a value.
+    Single run: the strength per site, global = median of the sites. Ensemble: `stat`
+    over the members per site; global = `stat` over the members of the site median
+    of each member (not the median of the mapped values). X (members x sites), M
+    (members with distortion).
+    """
+    have = [m for m in members if m.get("dist") is not None]
+    if not have:
+        return None
+    x = np.vstack([m["dist"]["strength"] for m in have])
+    n_sites = x.shape[1]
+    med = np.array([np.median(r[used][np.isfinite(r[used])]) if np.isfinite(r[used]).any()
+                    else np.nan for r in x])
+    if ens:
+        value, glob = ens_statistic(x, stat), float(ens_statistic(med, stat))
+    else:
+        value, glob = x[0], float(med[0])
+    n = int(np.isfinite(x[:, used]).any(axis=0).sum())
+    if n == 0:
+        return None
+    if not ens:
+        sub = f"median of the sites = {glob:.3f}, {n} sites"
+    elif parse_stat(stat)[0] == "std":
+        sub = f"std of the site median = {glob:.3f} (M = {len(have)}), {n} sites"
+    else:
+        sub = (f"site median = {glob:.3f} ({stat_words(stat)} of M = {len(have)} members), "
+               f"{n} sites")
+    return dict(band="distortion", comp="strength", head=_DISTORTION_LABEL, n=n,
+                nrms=float("nan"), nrms_site=np.full(n_sites, np.nan),
+                glob_m={_DISTORTION: glob}, site_m={_DISTORTION: value},
+                sub_m={_DISTORTION: sub}, X=x, M=len(have))
+
+
+def format_distortion(sel: dict, used: np.ndarray, *, ens: bool, stat: str,
+                      members: Sequence[dict]) -> str:
+    """Plain-text section of the summary about the distortion strength."""
+    v = sel["site_m"][_DISTORTION][used]
+    v = v[np.isfinite(v)]
+    have = [m for m in members if m.get("dist") is not None]
+    fixed = np.all([m["dist"]["fixed"] | ~np.isfinite(m["dist"]["strength"]) for m in have],
+                   axis=0) & np.isfinite(sel["X"]).any(axis=0)
+    cols = ("sites", "min", "median", "max", "fixed")
+    row = (str(v.size), _fmt(float(v.min()), 3) if v.size else "",
+           _fmt(float(np.median(v)), 3) if v.size else "",
+           _fmt(float(v.max()), 3) if v.size else "", str(int(fixed[used].sum())))
+    w = [max(len(c), len(r)) for c, r in zip(cols, row)]
+    line = "-" * (sum(w) + 2 * (len(w) - 1))
+    head = ["distortion strength |C - I| of the sites (Frobenius norm of the estimated matrix "
+            "difference C')",
+            "source: " + "; ".join(sorted({m["dist_source"] for m in have}))
+            + (f"; {len(have)} of {len(members)} members, statistic: {stat_words(stat)}"
+               if ens else "")]
+    if ens:
+        head.append(f"site median of each member, {stat_words(stat)} over the members: "
+                    f"{_fmt(sel['glob_m'][_DISTORTION], 3)}; table below: the mapped site values")
+    out = head + ["", "=" * len(line), "  ".join(c.rjust(w[i]) for i, c in enumerate(cols)), line,
+                  "  ".join(c.rjust(w[i]) for i, c in enumerate(row)), line,
+                  "fixed = sites whose matrix was held fixed (not estimated) in the inversion"
+                  + (", in every member that has them." if ens else ".")]
+    return "\n".join(out) + "\n"
+
+
+def write_distortion_table(stem: str, rows: Sequence[dict], sel: dict, used: np.ndarray,
+                           members: Sequence[dict], *, ens: bool) -> str:
+    """
+    <stem>_distortion.csv: one row per site with a value: site, lat, lon, site_ids,
+    distortion (the mapped value). Single run: also C' (cp_xx ... cp_yy) and fixed
+    (1 / 0). Ensemble: also M, mean, median, std (ddof = 1), min, max of the member
+    strengths and n_fixed (members in which the matrix was fixed).
+    """
+    p = f"{stem}_distortion.csv"
+    kinds = ("mean", "median", "std", "min", "max")
+    have = [m for m in members if m.get("dist") is not None]
+    x = sel["X"]
+    cnt = np.sum(np.isfinite(x), axis=0)
+    stats_ = {k: ens_statistic(x, k) for k in kinds} if ens else {}
+    n_fixed = np.sum([m["dist"]["fixed"] for m in have], axis=0)
+    with open(p, "w", newline="") as fh:
+        w = csv.writer(fh)
+        w.writerow(["site", "lat", "lon", "site_ids", "distortion"]
+                   + (["M"] + list(kinds) + ["n_fixed"] if ens else
+                      ["cp_xx", "cp_xy", "cp_yx", "cp_yy", "fixed"]))
+        for j in used:
+            if cnt[j] == 0:
+                continue
+            r = rows[j]
+            out = [r["name"], f"{r['lat']:.6f}", f"{r['lon']:.6f}",
+                   " ".join(str(i) for i in r.get("ids", [])),
+                   _fmt(sel["site_m"][_DISTORTION][j])]
+            if ens:
+                out += [int(cnt[j])] + [_fmt(stats_[k][j]) for k in kinds] + [int(n_fixed[j])]
+            else:
+                d = have[0]["dist"]
+                out += [_fmt(float(c)) for c in d["cprime"][j].ravel()] + [int(d["fixed"][j])]
+            w.writerow(out)
+    return p
 
 
 # ---------------------------------------------------------------------------
@@ -964,15 +1471,46 @@ def nrms_per_site(r_re: np.ndarray, r_im: np.ndarray, mask: np.ndarray,
     return cnt, nr
 
 
+def measures_pooled(r_re: np.ndarray, r_im: np.ndarray, mask: np.ndarray,
+                    names: Sequence[str]) -> Dict[str, float]:
+    """{name: value} of the fit measures `names` of the residuals of the rows in `mask`."""
+    f = mm.fit_measures(np.concatenate([r_re[mask], r_im[mask]]))
+    return {k: float(f[k]) for k in names}
+
+
+def measures_per_site(r_re: np.ndarray, r_im: np.ndarray, mask: np.ndarray,
+                      site_index: np.ndarray, n_sites: int,
+                      names: Sequence[str]) -> Dict[str, np.ndarray]:
+    """{name: value per site index} of the fit measures `names`; NaN where a site has no value."""
+    out = {k: np.full(n_sites, np.nan) for k in names}
+    rows = np.flatnonzero(mask & (site_index >= 0))
+    if not names or rows.size == 0:
+        return out
+    rows = rows[np.argsort(site_index[rows], kind="stable")]
+    for group in np.split(rows, np.flatnonzero(np.diff(site_index[rows])) + 1):
+        r = np.concatenate([r_re[group], r_im[group]])
+        r = r[np.isfinite(r)]
+        if r.size == 0:
+            continue
+        f = mm.fit_measures(r)
+        j = site_index[group[0]]
+        for k in names:
+            out[k][j] = f[k]
+    return out
+
+
 def compute_nrms(ds: dict, site_index: np.ndarray, n_sites: int,
                  bands: Sequence[Tuple[str, np.ndarray]],
                  comps: Sequence[Tuple[str, np.ndarray]], *,
-                 base: Optional[np.ndarray] = None) -> List[dict]:
+                 base: Optional[np.ndarray] = None,
+                 measures: Sequence[str] = ()) -> List[dict]:
     """
     One dict per (band, component selection) that has data: ib, ic, band, comp,
     n and nrms (global: all rows of the selection, assigned to a site or not),
     n_site and nrms_site (arrays per site index), n_unassigned (values of rows
-    that belong to no site). `base` = rows to use at all (data types).
+    that belong to no site). `base` = rows to use at all (data types). `measures`
+    = further fit measures (misfit_measures): glob_m {name: value} and site_m
+    {name: array per site index}, from the same residuals (empty dicts without).
     """
     r_re, r_im = row_residuals(ds)
     if base is None:
@@ -988,6 +1526,9 @@ def compute_nrms(ds: dict, site_index: np.ndarray, n_sites: int,
             n_s, nr_s = nrms_per_site(r_re, r_im, m, site_index, n_sites)
             out.append(dict(ib=ib, ic=ic, band=bl, comp=cl, n=n_all, nrms=nr_all,
                             n_site=n_s, nrms_site=nr_s,
+                            glob_m=measures_pooled(r_re, r_im, m, measures) if measures else {},
+                            site_m=measures_per_site(r_re, r_im, m, site_index, n_sites,
+                                                     measures),
                             n_unassigned=int(n_all - int(n_s.sum()))))
     return out
 
@@ -1111,18 +1652,23 @@ def load_member(path: str, cfg: Dict[str, Any]) -> dict:
     ds = fm.build_dataset([res["data"]])
     n_rows = int(np.asarray(ds["freq"]).size)
     res = {k: v for k, v in res.items() if k != "data"}
+    all_ids = None                       # distortion is of MT ids, also if DATATYPES leaves MT out
+    if cfg["DATATYPES"] and _DISTORTION in parse_measures(cfg["SITE_MEASURES"]):
+        all_ids = {k: ds[k] for k in ("freq", "site_id", "datatype_name", "site_x", "site_y")}
     ds, base = apply_datatypes(ds, cfg["DATATYPES"])
-    return dict(res=res, ds=ds, base=base, n_rows=n_rows)
+    return dict(res=res, ds=ds, base=base, n_rows=n_rows, all_ids=all_ids)
 
 
 def member_selections(lm: dict, site_index: np.ndarray, n_sites: int,
                       cfg: Dict[str, Any]) -> List[dict]:
-    """compute_nrms of a loaded member for the BANDS and COMPONENTS of `cfg` (ValueError for a bad setting)."""
+    """compute_nrms of a loaded member for the BANDS, COMPONENTS and SITE_MEASURES of `cfg` (ValueError
+    for a bad setting)."""
     ds = lm["ds"]
     bands = band_selections(ds["freq"], cfg["BANDS"], axis=cfg["BAND_AXIS"],
                             per_decade=cfg["BAND_PER_DECADE"], min_n=cfg["BAND_MIN_N"])
     comps = component_selections(ds["component_name"], cfg["COMPONENTS"], cfg["COMPONENT_GROUPS"])
-    return compute_nrms(ds, site_index, n_sites, bands, comps, base=lm["base"])
+    return compute_nrms(ds, site_index, n_sites, bands, comps, base=lm["base"],
+                        measures=fit_names(parse_measures(cfg["SITE_MEASURES"])))
 
 
 @contextlib.contextmanager
@@ -1146,7 +1692,9 @@ def aggregate_members(members: Sequence[dict], stat: str, n_sites: int) -> List[
     of their nRMS at the site, nrms = the same for the global nRMS of the members;
     n, n_site, n_unassigned = median of the members (rounded). Further keys: M
     (members with a value), G (global nRMS per member), X (members x sites), stat,
-    sub (second line of the panel title). `members`: dicts with "sels".
+    sub (second line of the panel title). The further fit measures of the members
+    (site_m) in the same way: glob_m, site_m, G_m, X_m, sub_m. `members`: dicts
+    with "sels".
     """
     bands: List[str] = []
     comps: List[str] = []
@@ -1180,6 +1728,18 @@ def aggregate_members(members: Sequence[dict], stat: str, n_sites: int) -> List[
             X[k] = s["nrms_site"]
             N[k] = np.where(s["n_site"] > 0, s["n_site"], np.nan)
             G[k], nG[k], nU[k] = s["nrms"], s["n"], s["n_unassigned"]
+        names: List[str] = []
+        for d in lookup:
+            names += [k for k in d.get(key, {}).get("site_m", {}) if k not in names]
+        Xm = {q: np.full((nm, n_sites), np.nan) for q in names}
+        Gm = {q: np.full(nm, np.nan) for q in names}
+        for k, d in enumerate(lookup):
+            s = d.get(key)
+            if s is not None:
+                for q in s.get("site_m", {}):
+                    Xm[q][k] = s["site_m"][q]
+                    Gm[q][k] = s["glob_m"][q]
+        gm = {q: float(ens_statistic(Gm[q], stat)) for q in names}
         n_have = int(np.sum(np.isfinite(G)))
         g = float(ens_statistic(G, stat))
         n_med = int(round(float(ens_statistic(nG, "median"))))
@@ -1192,7 +1752,10 @@ def aggregate_members(members: Sequence[dict], stat: str, n_sites: int) -> List[
             nrms_site=ens_statistic(X, stat),
             n_unassigned=int(round(float(np.nan_to_num(ens_statistic(nU, "median"))))),
             M=n_have, G=G, X=X, stat=stat,
-            sub=f"{what} = {g:.2f} ({words}M = {n_have}), n = {n_med}"))
+            sub=f"{what} = {g:.2f} ({words}M = {n_have}), n = {n_med}",
+            glob_m=gm, site_m={q: ens_statistic(Xm[q], stat) for q in names}, G_m=Gm, X_m=Xm,
+            sub_m={q: f"{what.replace('nRMS', measure_label(q))} = {measure_text(gm[q], q)} "
+                      f"({words}M = {n_have}), n = {n_med}" for q in names}))
     return out
 
 
@@ -1200,567 +1763,6 @@ def iteration_text(iters: Sequence[int]) -> str:
     """"8" for one iteration, "5-8" for a range (smallest-largest)."""
     lo, hi = int(min(iters)), int(max(iters))
     return str(lo) if lo == hi else f"{lo}-{hi}"
-
-
-# ---------------------------------------------------------------------------
-# DEM: tiles, download, mosaic
-# ---------------------------------------------------------------------------
-def tile_name(lat0: int, lon0: int) -> str:
-    """Name of the 1 x 1 degree tile with the lower left corner (lat0, lon0): N37W105."""
-    return (f"{'N' if lat0 >= 0 else 'S'}{abs(int(lat0)):02d}"
-            f"{'E' if lon0 >= 0 else 'W'}{abs(int(lon0)):03d}")
-
-
-def tiles_for_extent(lon_min: float, lon_max: float, lat_min: float,
-                     lat_max: float) -> List[Tuple[int, int]]:
-    """(lat0, lon0) of the lower left corners of the tiles that cover the box."""
-    if not (-90.0 <= lat_min <= lat_max <= 90.0 and -180.0 <= lon_min <= lon_max <= 180.0):
-        raise ValueError(f"extent lon {lon_min:g}..{lon_max:g}, lat {lat_min:g}..{lat_max:g} "
-                         "is outside -180..180, -90..90")
-    i0 = int(math.floor(lat_min))
-    i1 = max(int(math.floor(lat_max - 1e-9)), i0)
-    j0 = int(math.floor(lon_min))
-    j1 = max(int(math.floor(lon_max - 1e-9)), j0)
-    return [(i, j) for i in range(i0, i1 + 1) for j in range(j0, j1 + 1)]
-
-
-def tile_url(template: str, lat0: int, lon0: int) -> str:
-    """URL of a tile; the placeholders of `template` are {name}, {NS}, {lat}, {EW}, {lon}."""
-    return template.format(name=tile_name(lat0, lon0), NS="N" if lat0 >= 0 else "S",
-                           lat=abs(int(lat0)), EW="E" if lon0 >= 0 else "W",
-                           lon=abs(int(lon0)))
-
-
-def parse_hgt(raw: bytes, label: str = "tile") -> np.ndarray:
-    """
-    Elevation [m] of an SRTM .hgt tile: 16-bit signed big-endian, n x n samples
-    (3601 for 1 arc second, 1201 for 3 arc seconds), the first row at the north
-    edge; the void value -32768 becomes NaN. float32 array (n, n).
-    """
-    if len(raw) % 2:
-        raise ValueError(f"{label}: odd number of bytes ({len(raw)}), not a .hgt tile")
-    n2 = len(raw) // 2
-    n = int(round(math.sqrt(n2)))
-    if n < 2 or n * n != n2:
-        raise ValueError(f"{label}: {len(raw)} bytes are not a square 16-bit .hgt tile "
-                         "(3601 x 3601 or 1201 x 1201 samples expected)")
-    z = np.frombuffer(raw, dtype=">i2").reshape(n, n).astype(np.float32)
-    z[z == -32768.0] = np.nan
-    return z
-
-
-def read_hgt_file(path: str) -> np.ndarray:
-    """Tile from a .hgt, .hgt.gz or .hgt.zip file (the first .hgt in the archive)."""
-    low = path.lower()
-    if low.endswith(".gz"):
-        with gzip.open(path, "rb") as fh:
-            raw = fh.read()
-    elif low.endswith(".zip"):
-        with zipfile.ZipFile(path) as zf:
-            member = [m for m in zf.namelist() if m.lower().endswith(".hgt")]
-            if not member:
-                raise ValueError(f"{path}: no .hgt file in the archive")
-            raw = zf.read(member[0])
-    else:
-        with open(path, "rb") as fh:
-            raw = fh.read()
-    return parse_hgt(raw, os.path.basename(path))
-
-
-def fetch_tile(lat0: int, lon0: int, *, cache_dir: str, template: str, download: bool,
-               timeout: float) -> Tuple[Optional[np.ndarray], str]:
-    """
-    One tile, from `cache_dir` if it is there, else downloaded (and kept in
-    `cache_dir`). Returns (elevation or None, status); status is "cache",
-    "downloaded", "missing" (HTTP 403 / 404: the server has no such tile, as for
-    the ocean), "absent" (not in the cache, download off) or "failed (reason)".
-    """
-    name = tile_name(lat0, lon0)
-    for ext in _HGT_EXTENSIONS:
-        p = os.path.join(cache_dir, name + ext)
-        if os.path.isfile(p):
-            try:
-                return read_hgt_file(p), "cache"
-            except (OSError, ValueError, EOFError, zipfile.BadZipFile) as exc:
-                _say(f"WARNING: cannot read {p} ({exc}); "
-                     + ("loading it again." if download else "ignored."))
-    if not download:
-        return None, "absent"
-    url = tile_url(template, lat0, lon0)
-    req = urllib.request.Request(url, headers={"User-Agent": "py4mt-femtic_plot_sitemap"})
-    try:
-        with urllib.request.urlopen(req, timeout=float(timeout)) as resp:
-            raw = resp.read()
-    except urllib.error.HTTPError as exc:
-        if exc.code in (403, 404):
-            return None, "missing"
-        return None, f"failed (HTTP {exc.code})"
-    except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
-        return None, f"failed ({exc})"
-    gz = raw[:2] == b"\x1f\x8b"
-    try:
-        z = parse_hgt(gzip.decompress(raw) if gz else raw, name)
-    except (OSError, EOFError, ValueError) as exc:
-        return None, f"failed (bad data from {url}: {exc})"
-    try:
-        os.makedirs(cache_dir, exist_ok=True)
-        dest = os.path.join(cache_dir, name + (".hgt.gz" if gz else ".hgt"))
-        with open(dest + ".part", "wb") as fh:
-            fh.write(raw)
-        os.replace(dest + ".part", dest)
-    except OSError as exc:
-        _say(f"WARNING: tile {name} not kept in {cache_dir} ({exc}).")
-    return z, "downloaded"
-
-
-def mosaic_tiles(tiles: Dict[Tuple[int, int], Optional[np.ndarray]], *,
-                 fill: Optional[float] = 0.0,
-                 sea: Iterable[Tuple[int, int]] = ()) -> Optional[dict]:
-    """
-    One DEM from tiles {(lat0, lon0): elevation or None}. The tiles share their
-    edge row / column with the neighbours (n samples = n - 1 intervals per
-    degree); tiles with more samples than the coarsest one are thinned out to
-    it. A missing tile in `sea` is set to `fill` (None = NaN), other missing
-    tiles are NaN. Returns dict(lon, lat, z): lon increasing, lat decreasing
-    (row 0 = north), z[lat, lon] float32 (NaN = void); None without any tile.
-    """
-    present = {k: v for k, v in tiles.items() if v is not None}
-    if not present:
-        return None
-    nmin = min(v.shape[0] for v in present.values())
-    red: Dict[Tuple[int, int], np.ndarray] = {}
-    for k, v in present.items():
-        if (v.shape[0] - 1) % (nmin - 1):
-            raise ValueError(f"tile {tile_name(*k)} has {v.shape[0]} samples, not a multiple of "
-                             f"the {nmin} of the coarsest tile")
-        s = (v.shape[0] - 1) // (nmin - 1)
-        red[k] = v[::s, ::s]
-    m = nmin - 1
-    lats = [k[0] for k in tiles]
-    lons = [k[1] for k in tiles]
-    i0, i1, j0, j1 = min(lats), max(lats), min(lons), max(lons)
-    ny, nx = (i1 - i0 + 1) * m + 1, (j1 - j0 + 1) * m + 1
-    z = np.full((ny, nx), np.nan, dtype=np.float32)
-    if fill is not None:
-        for k in sea:
-            if k in tiles and tiles[k] is None:
-                r0, c0 = (i1 - k[0]) * m, (k[1] - j0) * m
-                z[r0:r0 + nmin, c0:c0 + nmin] = np.float32(fill)
-    for (la, lo), v in red.items():
-        r0, c0 = (i1 - la) * m, (lo - j0) * m
-        blk = z[r0:r0 + nmin, c0:c0 + nmin]
-        z[r0:r0 + nmin, c0:c0 + nmin] = np.where(np.isfinite(v), v, blk)
-    lon = j0 + np.arange(nx) / float(m)
-    lat = (i1 + 1) - np.arange(ny) / float(m)
-    return dict(lon=lon, lat=lat, z=z)
-
-
-def _tile_report(status: Dict[Tuple[int, int], str], *, fill: Optional[float],
-                 strict: bool) -> List[Tuple[int, int]]:
-    """
-    Messages on the tiles that could not be had (warning, or RuntimeError if `strict`), and
-    on the ones that the server does not have; returns these (the open ocean).
-    """
-    bad = [k for k, st in status.items() if st.startswith("failed") or st == "absent"]
-    if bad:
-        txt = ("DEM tiles not available: "
-               + ", ".join(f"{tile_name(*k)} ({status[k]})" for k in bad))
-        if strict:
-            raise RuntimeError(txt)
-        _say("WARNING: " + txt + " -- no relief there.")
-    sea = [k for k, st in status.items() if st == "missing"]
-    if sea:
-        _say(f"{len(sea)} tile(s) not on the server (ocean?): "
-             + (f"set to {fill:g} m." if fill is not None else "no value."))
-    return sea
-
-
-def load_dem_hgt(lon_min: float, lon_max: float, lat_min: float, lat_max: float, *,
-                 cache_dir: str, template: str, download: bool = True, timeout: float = 60.0,
-                 max_tiles: int = 16, fill: Optional[float] = 0.0,
-                 strict: bool = False) -> Optional[dict]:
-    """
-    DEM of the box from tiles in the .hgt format (see fetch_tile, mosaic_tiles). None if
-    no tile could be had. strict: a tile that failed to download (or is absent
-    with download off) is an error, else a message and NaN there.
-    """
-    tiles = tiles_for_extent(lon_min, lon_max, lat_min, lat_max)
-    if len(tiles) > int(max_tiles):
-        raise ValueError(f"the map needs {len(tiles)} DEM tiles (DEM_MAX_TILES = {int(max_tiles)}); "
-                         "make the map smaller or raise DEM_MAX_TILES")
-    got: Dict[Tuple[int, int], Optional[np.ndarray]] = {}
-    status: Dict[Tuple[int, int], str] = {}
-    for la, lo in tiles:
-        z, st = fetch_tile(la, lo, cache_dir=cache_dir, template=template,
-                           download=download, timeout=timeout)
-        got[(la, lo)], status[(la, lo)] = z, st
-        _say(f"DEM tile {tile_name(la, lo)}: {st}.")
-    sea = _tile_report(status, fill=fill, strict=strict)
-    return mosaic_tiles(got, fill=fill, sea=sea)
-
-
-# --- DEM tiles as GeoTIFF files (rasterio) ---
-def is_url(text: str) -> bool:
-    """True for an http:// or https:// address (else: a path)."""
-    return str(text).lower().startswith(("http://", "https://"))
-
-
-def dem_template(source: str, template: Optional[str]) -> str:
-    """Tile pattern of the DEM source: `template` if given, else that of the preset of `source`."""
-    if template:
-        return str(template)
-    if source in _DEM_PRESETS:
-        return _DEM_PRESETS[source]["template"]
-    raise ValueError(f"DEM_SOURCE = {source!r} needs DEM_URL_TEMPLATE")
-
-
-def tile_kind(template: str) -> str:
-    """
-    "raster" (GeoTIFF tiles, read with rasterio) or "hgt" (.hgt, .hgt.gz, .hgt.zip tiles),
-    from the end of the tile name of `template`. ValueError for an unusable pattern
-    (a placeholder that does not exist, another file type).
-    """
-    try:
-        name = tile_url(template, 65, -17)
-    except (KeyError, IndexError, ValueError) as exc:
-        raise ValueError(f"DEM_URL_TEMPLATE {template!r}: {exc!r}; the placeholders are {{name}}, "
-                         "{NS}, {lat}, {EW}, {lon}") from exc
-    path = urllib.parse.urlsplit(name).path if is_url(name) else name
-    low = path.lower()
-    if low.endswith(_RASTER_EXTENSIONS):
-        return "raster"
-    if low.endswith((".hgt", ".hgt.gz", ".hgt.zip")):
-        return "hgt"
-    raise ValueError(f"DEM_URL_TEMPLATE {template!r}: the tiles have to be GeoTIFF (.tif, .tiff) "
-                     "or .hgt (.hgt, .hgt.gz, .hgt.zip) files")
-
-
-def _remove(path: str) -> None:
-    try:
-        os.remove(path)
-    except OSError:
-        pass
-
-
-def fetch_raster_tile(lat0: int, lon0: int, *, cache_dir: str, template: str, download: bool,
-                      timeout: float, refresh: bool = False) -> Tuple[Optional[str], str]:
-    """
-    The file of one raster tile. A path pattern is used as it is; a URL is looked up in
-    `cache_dir` (the file name is the last part of the URL), else downloaded into it.
-    Returns (path or None, status); status is "local", "cache", "downloaded", "missing"
-    (HTTP 403 / 404: the server has no such tile, as for the open ocean), "absent" (not in
-    the cache and download off, or a local file that is not there) or "failed (reason)".
-    `refresh`: ignore a file in the cache and load it again.
-    """
-    url = tile_url(template, lat0, lon0)
-    if not is_url(url):
-        path = os.path.expanduser(url)
-        return (path, "local") if os.path.isfile(path) else (None, "absent")
-    dest = os.path.join(cache_dir, os.path.basename(urllib.parse.urlsplit(url).path))
-    if not refresh and os.path.isfile(dest):
-        return dest, "cache"
-    if not download:
-        return None, "absent"
-    req = urllib.request.Request(url, headers={"User-Agent": "py4mt-femtic_plot_sitemap"})
-    try:
-        os.makedirs(cache_dir, exist_ok=True)
-        with urllib.request.urlopen(req, timeout=float(timeout)) as resp:
-            with open(dest + ".part", "wb") as fh:
-                shutil.copyfileobj(resp, fh, 1 << 20)
-        os.replace(dest + ".part", dest)
-    except urllib.error.HTTPError as exc:
-        _remove(dest + ".part")
-        return None, ("missing" if exc.code in (403, 404) else f"failed (HTTP {exc.code})")
-    except (urllib.error.URLError, http.client.HTTPException, OSError) as exc:
-        _remove(dest + ".part")
-        return None, f"failed ({exc})"
-    return dest, "downloaded"
-
-
-def _raster_errors() -> tuple:
-    """The exceptions of reading a damaged or unusable raster file."""
-    errs: tuple = (OSError, ValueError, RuntimeError)
-    try:
-        from rasterio.errors import RasterioError
-        errs += (RasterioError,)
-    except ImportError:
-        pass
-    return errs
-
-
-def read_raster_window(path: str, lon_min: float, lon_max: float, lat_min: float,
-                       lat_max: float, *, max_pixels: Optional[int] = None) -> Optional[dict]:
-    """
-    The part of a GeoTIFF that covers the box (plus a margin of two output pixels), read with
-    rasterio: dict(lon, lat, z) as mosaic_tiles (pixel centres; lon increasing, lat
-    decreasing; NaN = no data). The raster has to be north-up; a raster in a projected
-    coordinate system is warped to lon / lat (WGS 84) first. With `max_pixels` the window is
-    averaged down to at most about that many pixels per side. None if the raster does not
-    cover the box. ImportError without rasterio.
-    """
-    try:
-        import rasterio
-        from rasterio.enums import Resampling
-        from rasterio.windows import Window
-    except ImportError as exc:
-        raise ImportError("reading a GeoTIFF needs rasterio (not installed): install it (conda "
-                          "install -c conda-forge rasterio), or use DEM_SOURCE = \"skadi\" or an "
-                          ".npz file") from exc
-    with contextlib.ExitStack() as stack:
-        ds = stack.enter_context(rasterio.open(path))
-        if ds.crs is not None and not ds.crs.is_geographic:
-            from rasterio.vrt import WarpedVRT
-            ds = stack.enter_context(WarpedVRT(ds, crs="EPSG:4326", resampling=Resampling.bilinear))
-        tr = ds.transform
-        if tr.b != 0.0 or tr.d != 0.0 or not (tr.a > 0.0 > tr.e):
-            raise ValueError(f"{path}: the raster is rotated or not north-up")
-        width, height = int(ds.width), int(ds.height)
-
-        def span(lo: float, hi: float, origin: float, step: float, n: int) -> Tuple[int, int]:
-            a, b = sorted(((lo - origin) / step, (hi - origin) / step))
-            return max(int(math.floor(a)), 0), min(int(math.ceil(b)), n)
-
-        c0, c1 = span(lon_min, lon_max, tr.c, tr.a, width)
-        r0, r1 = span(lat_max, lat_min, tr.f, tr.e, height)
-        if c1 - c0 < 1 or r1 - r0 < 1:
-            return None
-        step = 1
-        if max_pixels:
-            step = max(1, int(math.ceil(max(c1 - c0, r1 - r0) / float(max_pixels))))
-        c0, c1 = max(c0 - 2 * step, 0), min(c1 + 2 * step, width)
-        r0, r1 = max(r0 - 2 * step, 0), min(r1 + 2 * step, height)
-        ncol, nrow = c1 - c0, r1 - r0
-        out_w, out_h = int(math.ceil(ncol / step)), int(math.ceil(nrow / step))
-        if out_w < 2 or out_h < 2:
-            return None
-        z = np.array(ds.read(1, window=Window(c0, r0, ncol, nrow), out_shape=(out_h, out_w),
-                             resampling=Resampling.average if step > 1 else Resampling.nearest),
-                     dtype=np.float32)
-        nodata = ds.nodata
-        if nodata is not None and np.isfinite(nodata):
-            z[z == np.float32(nodata)] = np.nan
-    dx, dy = tr.a * ncol / out_w, tr.e * nrow / out_h
-    lon = tr.c + c0 * tr.a + dx * (np.arange(out_w) + 0.5)
-    lat = tr.f + r0 * tr.e + dy * (np.arange(out_h) + 0.5)
-    return dict(lon=lon, lat=lat, z=z)
-
-
-def merge_dems(parts: Sequence[dict], *, fill_boxes: Sequence[Tuple[float, float, float, float]] = (),
-               fill: Optional[float] = 0.0) -> Optional[dict]:
-    """
-    One DEM from windows dict(lon, lat, z) of the same area (pixel centres, regular spacing;
-    the first valid value wins where they overlap). The grid has the coarsest spacing of the
-    windows (they are sampled by the nearest pixel). `fill_boxes` (lon_min, lon_max, lat_min,
-    lat_max) are given the value `fill` where the windows have no value (None = NaN); they
-    widen the grid in whole pixels, so that the pixels of the windows stay where they are.
-    None without a window.
-    """
-    if not parts:
-        return None
-    ext = [dem_extent(p) for p in parts]
-    step = [((p["lon"][-1] - p["lon"][0]) / (p["lon"].size - 1),
-             (p["lat"][0] - p["lat"][-1]) / (p["lat"].size - 1)) for p in parts]
-    dlon = max(st[0] for st in step)
-    dlat = max(st[1] for st in step)
-    boxes = [tuple(float(v) for v in b) for b in fill_boxes]
-    west, east = min(e[0] for e in ext), max(e[1] for e in ext)
-    south, north = min(e[2] for e in ext), max(e[3] for e in ext)
-    for b in boxes:                  # a box widens the grid in whole pixels (the pixels of the windows stay)
-        west -= dlon * max(0, math.ceil((west - b[0]) / dlon - 1e-6))
-        east += dlon * max(0, math.ceil((b[1] - east) / dlon - 1e-6))
-        south -= dlat * max(0, math.ceil((south - b[2]) / dlat - 1e-6))
-        north += dlat * max(0, math.ceil((b[3] - north) / dlat - 1e-6))
-    nx = max(2, int(round((east - west) / dlon)))
-    ny = max(2, int(round((north - south) / dlat)))
-    lon = west + dlon * (np.arange(nx) + 0.5)
-    lat = north - dlat * (np.arange(ny) + 0.5)
-    z = np.full((ny, nx), np.nan, dtype=np.float32)
-    for p, (w, e, s_, n), (px, py) in zip(parts, ext, step):
-        jj = np.nonzero((lon >= w) & (lon < e))[0]
-        ii = np.nonzero((lat > s_) & (lat <= n))[0]
-        if jj.size == 0 or ii.size == 0:
-            continue
-        sj = np.clip(np.floor((lon[jj] - w) / px).astype(int), 0, p["lon"].size - 1)
-        si = np.clip(np.floor((n - lat[ii]) / py).astype(int), 0, p["lat"].size - 1)
-        cur = z[np.ix_(ii, jj)]
-        z[np.ix_(ii, jj)] = np.where(np.isfinite(cur), cur, p["z"][np.ix_(si, sj)])
-    if fill is not None:
-        for w, e, s_, n in boxes:
-            jj = np.nonzero((lon >= w) & (lon < e))[0]
-            ii = np.nonzero((lat > s_) & (lat <= n))[0]
-            if jj.size and ii.size:
-                cur = z[np.ix_(ii, jj)]
-                z[np.ix_(ii, jj)] = np.where(np.isfinite(cur), cur, np.float32(fill))
-    return dict(lon=lon, lat=lat, z=z)
-
-
-def load_dem_raster(lon_min: float, lon_max: float, lat_min: float, lat_max: float, *,
-                    cache_dir: str, template: str, download: bool = True, timeout: float = 60.0,
-                    max_tiles: int = 16, fill: Optional[float] = 0.0, strict: bool = False,
-                    max_pixels: Optional[int] = None) -> Optional[dict]:
-    """
-    DEM of the box from GeoTIFF tiles (see fetch_raster_tile, read_raster_window,
-    merge_dems); a tile that the server does not have (the ocean) is set to `fill`. None if
-    no tile could be had. strict: a tile that failed to download or to read (or is absent) is
-    an error, else a message and NaN there.
-    """
-    tiles = tiles_for_extent(lon_min, lon_max, lat_min, lat_max)
-    if len(tiles) > int(max_tiles):
-        raise ValueError(f"the map needs {len(tiles)} DEM tiles (DEM_MAX_TILES = {int(max_tiles)}); "
-                         "make the map smaller or raise DEM_MAX_TILES")
-    errs = _raster_errors()
-    parts: List[dict] = []
-    status: Dict[Tuple[int, int], str] = {}
-    for la, lo in tiles:
-        kw = dict(cache_dir=cache_dir, template=template, download=download, timeout=timeout)
-        path, st = fetch_raster_tile(la, lo, **kw)
-        retry = path is not None and st == "cache" and download
-        while path is not None:
-            try:
-                win = read_raster_window(path, lon_min, lon_max, lat_min, lat_max,
-                                         max_pixels=max_pixels)
-            except errs as exc:
-                if retry:
-                    _say(f"WARNING: cannot read {path} ({exc}); loading it again.")
-                    retry = False
-                    path, st = fetch_raster_tile(la, lo, refresh=True, **kw)
-                    continue
-                path, st = None, f"failed (cannot read {path}: {exc})"
-                break
-            if win is not None:
-                parts.append(win)
-            break
-        status[(la, lo)] = st
-        _say(f"DEM tile {tile_name(la, lo)}: {st}.")
-    sea = _tile_report(status, fill=fill, strict=strict)
-    boxes = [(lo, lo + 1.0, la, la + 1.0) for la, lo in sea]
-    if not parts:
-        return None
-    if boxes:                          # no larger than the map and the margin of the windows (< 3 pixels)
-        pad_x = 3.0 * max((p["lon"][-1] - p["lon"][0]) / (p["lon"].size - 1) for p in parts)
-        pad_y = 3.0 * max((p["lat"][0] - p["lat"][-1]) / (p["lat"].size - 1) for p in parts)
-        boxes = [(max(b[0], lon_min - pad_x), min(b[1], lon_max + pad_x),
-                  max(b[2], lat_min - pad_y), min(b[3], lat_max + pad_y)) for b in boxes]
-        boxes = [b for b in boxes if b[0] < b[1] and b[2] < b[3]]
-    return merge_dems(parts, fill_boxes=boxes, fill=fill)
-
-
-def _tile_corner(path: str) -> Tuple[int, int]:
-    """(lat0, lon0) from a file name like N37W105.hgt.gz."""
-    m = re.match(r"([NS])(\d{2})([EW])(\d{3})", os.path.basename(path), re.IGNORECASE)
-    if not m:
-        raise ValueError(f"{path}: the name has to start with the tile name (N37W105...)")
-    lat0 = int(m.group(2)) * (1 if m.group(1).upper() == "N" else -1)
-    lon0 = int(m.group(4)) * (1 if m.group(3).upper() == "E" else -1)
-    return lat0, lon0
-
-
-def _orient(lon: np.ndarray, lat: np.ndarray, z: np.ndarray) -> dict:
-    """lon increasing, lat decreasing (row 0 = north)."""
-    lon = np.asarray(lon, float)
-    lat = np.asarray(lat, float)
-    z = np.asarray(z, dtype=np.float32)
-    if z.shape != (lat.size, lon.size):
-        raise ValueError(f"DEM: z has the shape {z.shape}, lat / lon give {(lat.size, lon.size)}")
-    if lon[0] > lon[-1]:
-        lon, z = lon[::-1], z[:, ::-1]
-    if lat[0] < lat[-1]:
-        lat, z = lat[::-1], z[::-1, :]
-    return dict(lon=lon, lat=lat, z=np.ascontiguousarray(z))
-
-
-def load_dem_file(path: str, box: Optional[Tuple[float, float, float, float]] = None,
-                  max_pixels: Optional[int] = None) -> dict:
-    """
-    DEM from a file: .npz (arrays lon, lat, z with z[lat, lon]), GeoTIFF (.tif /
-    .tiff; needs rasterio; only the part inside `box` = (lon_min, lon_max, lat_min, lat_max)
-    is read, averaged down to about `max_pixels` per side; see read_raster_window) or one
-    .hgt tile (.hgt, .hgt.gz, .hgt.zip, named like N37W105...). Returns dict(lon, lat, z)
-    as mosaic_tiles does.
-    """
-    low = path.lower()
-    if low.endswith(".npz"):
-        with np.load(path) as d:
-            return _orient(d["lon"], d["lat"], d["z"])
-    if low.endswith(_RASTER_EXTENSIONS):
-        b = (-180.0, 180.0, -90.0, 90.0) if box is None else box
-        dem = read_raster_window(path, b[0], b[1], b[2], b[3], max_pixels=max_pixels)
-        if dem is None:
-            raise ValueError(f"{path}: the raster does not cover the map")
-        return dem
-    if low.endswith((".hgt", ".hgt.gz", ".hgt.zip")):
-        la, lo = _tile_corner(path)
-        dem = mosaic_tiles({(la, lo): read_hgt_file(path)})
-        assert dem is not None
-        return dem
-    raise ValueError(f"{path}: DEM file type not known (.npz, .tif, .tiff, .hgt, .hgt.gz, .hgt.zip)")
-
-
-def crop_dem(dem: dict, lon_min: float, lon_max: float, lat_min: float, lat_max: float) -> dict:
-    """The part of `dem` that covers the box (one more pixel at each side)."""
-    lon, lat, z = dem["lon"], dem["lat"], dem["z"]
-    j0 = max(int(np.searchsorted(lon, lon_min, side="left")) - 1, 0)
-    j1 = min(int(np.searchsorted(lon, lon_max, side="right")) + 1, lon.size)
-    i0 = max(int(np.searchsorted(-lat, -lat_max, side="left")) - 1, 0)
-    i1 = min(int(np.searchsorted(-lat, -lat_min, side="right")) + 1, lat.size)
-    if i1 - i0 < 2 or j1 - j0 < 2:
-        raise ValueError("the DEM does not cover the map "
-                         f"(lon {lon_min:g}..{lon_max:g}, lat {lat_min:g}..{lat_max:g})")
-    return dict(lon=lon[j0:j1], lat=lat[i0:i1], z=z[i0:i1, j0:j1])
-
-
-def decimate_dem(dem: dict, max_pixels: int) -> dict:
-    """Every s-th pixel, s the smallest integer that gives at most `max_pixels` per side."""
-    ny, nx = dem["z"].shape
-    s = max(1, int(math.ceil(max(ny, nx) / float(max_pixels))))
-    if s == 1:
-        return dem
-    return dict(lon=dem["lon"][::s], lat=dem["lat"][::s], z=dem["z"][::s, ::s])
-
-
-def dem_extent(dem: dict) -> Tuple[float, float, float, float]:
-    """(lon_west, lon_east, lat_south, lat_north) of the pixel edges."""
-    lon, lat = dem["lon"], dem["lat"]
-    dlon = (lon[-1] - lon[0]) / (lon.size - 1)
-    dlat = (lat[0] - lat[-1]) / (lat.size - 1)
-    return (float(lon[0] - dlon / 2), float(lon[-1] + dlon / 2),
-            float(lat[-1] - dlat / 2), float(lat[0] + dlat / 2))
-
-
-def shade_dem(dem: dict, *, style: str = "hillshade", azdeg: float = 315.0,
-              altdeg: float = 45.0, vert_exag: float = 1.0,
-              cmap: str = "gist_earth") -> dict:
-    """
-    Shaded relief of `dem` (row 0 = north) for imshow: dict(kind, img) with
-    kind "gray" (img: intensity 0..1, NaN = no value) or "rgba" (style
-    "terrain": the elevation in colour `cmap`, shaded). The pixel size in m is
-    taken from the pixel spacing in degrees at the mean latitude.
-    """
-    import matplotlib
-    from matplotlib.colors import LightSource
-    z = np.asarray(dem["z"], float)
-    fin = np.isfinite(z)
-    zf = np.where(fin, z, float(np.mean(z[fin])) if fin.any() else 0.0)
-    lon, lat = dem["lon"], dem["lat"]
-    dlon = abs((lon[-1] - lon[0]) / (lon.size - 1))
-    dlat = abs((lat[0] - lat[-1]) / (lat.size - 1))
-    lat0 = float(np.mean(lat))
-    dx = _EARTH_RADIUS_M * math.radians(dlon) * math.cos(math.radians(lat0))
-    dy = _EARTH_RADIUS_M * math.radians(dlat)
-    ls = LightSource(azdeg=float(azdeg), altdeg=float(altdeg))
-    if style == "hillshade":
-        img = ls.hillshade(zf, vert_exag=float(vert_exag), dx=dx, dy=dy)
-        return dict(kind="gray", img=np.where(fin, img, np.nan))
-    if style == "terrain":
-        vmin = float(np.min(z[fin])) if fin.any() else 0.0
-        vmax = float(np.max(z[fin])) if fin.any() else 1.0
-        if vmax <= vmin:
-            vmax = vmin + 1.0
-        rgba = ls.shade(zf, cmap=matplotlib.colormaps[cmap], blend_mode="soft",
-                        vert_exag=float(vert_exag), dx=dx, dy=dy, vmin=vmin, vmax=vmax)
-        rgba[~fin, 3] = 0.0
-        return dict(kind="rgba", img=rgba)
-    raise ValueError(f"DEM_STYLE = {style!r}: \"hillshade\" or \"terrain\"")
 
 
 # ---------------------------------------------------------------------------
@@ -1834,11 +1836,48 @@ _WGS84_F = 1.0 / 298.257223563
 _UTM_K0 = 0.9996
 _UTM_TOL_M = 25.0                  # site.dat easting / northing must agree with lat / lon to this (median)
 _COORDS = ("lonlat", "latlon", "utm", "model")
+# style keys of the entries and the setting that holds the default of each
+_PROFILE_STYLE = {
+    "color": "PROFILE_COLOR", "lw": "PROFILE_LW", "ls": "PROFILE_LS",
+    "line_alpha": "PROFILE_ALPHA", "zorder": "PROFILE_ZORDER", "halo": "PROFILE_HALO",
+    "halo_color": "PROFILE_HALO_COLOR", "halo_width": "PROFILE_HALO_WIDTH",
+    "marker": "PROFILE_MARKER", "markersize": "PROFILE_MARKER_SIZE",
+    "end_marker": "PROFILE_END_MARKER", "end_marker_size": "PROFILE_END_MARKER_SIZE",
+    "fontsize": "PROFILE_FONTSIZE", "fontweight": "PROFILE_FONTWEIGHT",
+    "text_color": "PROFILE_TEXT_COLOR", "label_offset": "PROFILE_LABEL_OFFSET",
+    "tick_fontsize": "PROFILE_TICK_FONTSIZE", "tick_length": "PROFILE_TICK_LENGTH",
+    "tick_lw": "PROFILE_TICK_LW", "swath_color": "PROFILE_SWATH_COLOR",
+    "swath_alpha": "PROFILE_SWATH_ALPHA", "mark_sites": "PROFILE_MARK_SITES",
+    "ring_size": "PROFILE_RING_SIZE", "ring_lw": "PROFILE_RING_LW",
+}
+_LINE_STYLE = {
+    "color": "LINE_COLOR", "lw": "LINE_LW", "ls": "LINE_LS", "line_alpha": "LINE_ALPHA",
+    "zorder": "LINE_ZORDER", "halo": "LINE_HALO", "halo_color": "LINE_HALO_COLOR",
+    "halo_width": "LINE_HALO_WIDTH", "marker": "LINE_MARKER",
+    "markersize": "LINE_MARKER_SIZE", "alpha": "LINE_FILL_ALPHA",
+}
+_STYLE_ALIASES = {"linewidth": "lw", "linestyle": "ls", "ms": "markersize"}
 _PROFILE_KEYS = ("name", "points", "file", "start", "end", "center", "azimuth", "length_km",
-                 "coords", "width_km", "ticks_km", "tick_labels", "labels", "label", "color",
-                 "lw", "ls")
-_LINE_KEYS = ("label", "file", "points", "segments", "coords", "closed", "fill", "alpha",
-              "color", "lw", "ls", "halo")
+                 "coords", "width_km", "ticks_km", "tick_labels", "labels",
+                 "label") + tuple(_PROFILE_STYLE) + tuple(_STYLE_ALIASES)
+_LINE_KEYS = ("label", "file", "points", "segments", "coords", "closed",
+              "fill") + tuple(_LINE_STYLE) + tuple(_STYLE_ALIASES)
+# kinds of the style values (for the checks)
+_STYLE_KINDS = {
+    "color": "color", "halo_color": "color", "text_color": "color_or_none",
+    "swath_color": "color_or_none", "lw": "pos", "ls": "ls", "line_alpha": "unit",
+    "alpha": "unit", "swath_alpha": "unit", "zorder": "num", "halo": "bool",
+    "halo_width": "nonneg", "marker": "marker", "end_marker": "marker", "markersize": "pos",
+    "end_marker_size": "pos", "fontsize": "pos", "tick_fontsize": "pos_or_none",
+    "fontweight": "weight", "label_offset": "nonneg", "tick_length": "pos_or_none",
+    "tick_lw": "pos_or_none", "mark_sites": "bool", "ring_size": "pos", "ring_lw": "pos",
+}
+_FONT_WEIGHTS = ("ultralight", "light", "normal", "regular", "book", "medium", "roman",
+                 "semibold", "demibold", "demi", "bold", "heavy", "extra bold", "black")
+_GENERIC_FAMILIES = ("serif", "sans-serif", "sans", "sans serif", "cursive", "fantasy",
+                     "monospace")
+_SMALL_PANEL_CM = 6.0              # smaller panels get a note (PANEL_SIZE was in inches before)
+_SCALE_BAR_LW = 2.0                # [pt] line of the scale bar
 _LEGEND_LOCS = (None, "best", "upper right", "upper left", "lower left", "lower right", "right",
                 "center left", "center right", "lower center", "upper center", "center")
 _MAX_TICKS = 2000
@@ -2204,12 +2243,197 @@ def default_end_labels(name: str) -> Tuple[str, str]:
     return (m.group(1), m.group(2)) if m else (str(name), str(name) + "'")
 
 
+def style_entries(spec: dict, table: Dict[str, str]) -> Dict[str, Any]:
+    """
+    The style keys that an entry of PROFILES / LINES gives (`table`: _PROFILE_STYLE
+    or _LINE_STYLE), with the aliases (linewidth, linestyle, ms) turned into the
+    short names. A value None is the same as a key that is not given. OverlayError
+    if a key and its alias are both given.
+    """
+    out: Dict[str, Any] = {}
+    for key, val in spec.items():
+        name = _STYLE_ALIASES.get(key, key)
+        if name not in table or val is None:
+            continue
+        if name in out:
+            raise OverlayError(f"{name!r} is given twice (also as an alias)")
+        out[name] = val
+    return out
+
+
+def overlay_style(item: dict, cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    The complete style of a prepared profile or line: its own entries, else the
+    settings PROFILE_* / LINE_* of `cfg` (a setting that `cfg` does not hold:
+    that of this script). Derived values are filled in: text and swath colour
+    (the line colour), size and width of the distance ticks, tick length. A
+    marker "" / "none" / False is None.
+    """
+    table = _PROFILE_STYLE if item["kind"] == "profile" else _LINE_STYLE
+    st = {k: (item[k] if item.get(k) is not None else cfg.get(setting, globals()[setting]))
+          for k, setting in table.items()}
+    for k in ("marker", "end_marker"):
+        if k in st and (st[k] is False or st[k] in ("", "none", "None")):
+            st[k] = None
+    if item["kind"] == "profile":
+        st["text_color"] = st["text_color"] or st["color"]
+        st["swath_color"] = st["swath_color"] or st["color"]
+        if st["tick_fontsize"] is None:
+            st["tick_fontsize"] = max(float(st["fontsize"]) - 2.0, 1.0)
+        if st["tick_length"] is None:
+            st["tick_length"] = _PROFILE_TICK_FRAC
+        if st["tick_lw"] is None:
+            st["tick_lw"] = max(0.8 * float(st["lw"]), 0.8)
+    return st
+
+
+def check_style_value(value: Any, kind: str, what: str) -> None:
+    """ValueError if `value` is no style value of the kind `kind` (see _STYLE_KINDS)."""
+    from matplotlib.colors import is_color_like
+    is_num = (isinstance(value, (int, float, np.integer, np.floating))
+              and not isinstance(value, (bool, np.bool_)) and bool(np.isfinite(value)))
+    if kind.endswith("_or_none"):
+        if value is None:
+            return
+        kind = kind[:-len("_or_none")]
+    if kind == "color":
+        if not is_color_like(value):
+            raise ValueError(f"{what} = {value!r} is not a matplotlib colour")
+    elif kind == "ls":
+        from matplotlib.lines import Line2D
+        try:
+            Line2D([], [], linestyle=value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"{what} = {value!r} is not a matplotlib line style: {exc}") from None
+    elif kind == "marker":
+        if value is None or value is False or value in ("", "none", "None"):
+            return
+        from matplotlib.markers import MarkerStyle
+        try:
+            MarkerStyle(value)
+        except (ValueError, TypeError) as exc:
+            raise ValueError(f"{what} = {value!r} is no matplotlib marker: {exc}") from None
+    elif kind == "weight":
+        ok = (value in _FONT_WEIGHTS) or (is_num and 0 <= value <= 1000)
+        if not ok:
+            raise ValueError(f"{what} = {value!r}: a font weight is 0 .. 1000 or one of "
+                             f"{list(_FONT_WEIGHTS)}")
+    elif kind == "bool":
+        if not isinstance(value, (bool, np.bool_, int)):
+            raise ValueError(f"{what} = {value!r} must be True or False")
+    else:
+        need = {"pos": "a number > 0", "nonneg": "a number >= 0", "unit": "a number in 0 .. 1",
+                "num": "a number"}[kind]
+        ok = is_num and {"pos": lambda v: v > 0, "nonneg": lambda v: v >= 0,
+                         "unit": lambda v: 0 <= v <= 1, "num": lambda v: True}[kind](value)
+        if not ok:
+            raise ValueError(f"{what} = {value!r} must be {need}")
+
+
+def font_rc(cfg: Dict[str, Any]) -> Dict[str, Any]:
+    """The matplotlib rcParams of the font settings (FONT_FAMILY, FONT_RC)."""
+    rc: Dict[str, Any] = {}
+    fam = cfg.get("FONT_FAMILY")
+    if fam:
+        rc["font.family"] = [fam] if isinstance(fam, str) else list(fam)
+    rc.update(cfg.get("FONT_RC") or {})
+    return rc
+
+
+def missing_fonts(family: Union[None, str, Sequence[str]]) -> List[str]:
+    """The names in `family` that are no generic family and no font matplotlib can find."""
+    if not family:
+        return []
+    from matplotlib import font_manager
+    out = []
+    for name in ([family] if isinstance(family, str) else family):
+        if str(name).lower() in _GENERIC_FAMILIES:
+            continue
+        try:
+            font_manager.findfont(font_manager.FontProperties(family=[str(name)]),
+                                  fallback_to_default=False)
+        except ValueError:
+            out.append(str(name))
+    return out
+
+
+def font_size(cfg: Dict[str, Any], key: str, offset: float = 0.0) -> float:
+    """The setting `key` [pt]; None = TICK_FONTSIZE + offset."""
+    v = cfg.get(key)
+    return max(float(cfg["TICK_FONTSIZE"]) + offset, 1.0) if v is None else float(v)
+
+
+def check_appearance(cfg: Dict[str, Any]) -> None:
+    """ValueError for a style, font or panel size setting that cannot work."""
+    for table in (_PROFILE_STYLE, _LINE_STYLE):
+        for key, setting in table.items():
+            check_style_value(cfg[setting], _STYLE_KINDS[key], setting)
+    for key in ("TICK_FONTSIZE", "LABEL_FONTSIZE", "CREDIT_FONTSIZE"):
+        check_style_value(cfg[key], "pos", key)
+    for key in ("AXIS_LABEL_FONTSIZE", "TITLE_FONTSIZE", "PANEL_TITLE_FONTSIZE",
+                "LEGEND_FONTSIZE", "CBAR_LABEL_FONTSIZE", "CBAR_TICK_FONTSIZE",
+                "SCALEBAR_FONTSIZE"):
+        check_style_value(cfg[key], "pos_or_none", key)
+    for key in ("TITLE_FONTWEIGHT", "LABEL_FONTWEIGHT"):
+        check_style_value(cfg[key], "weight", key)
+    for key, kind in (("MAP_HALO", "bool"), ("MAP_HALO_COLOR", "color"),
+                      ("MAP_HALO_WIDTH", "nonneg")):
+        check_style_value(cfg[key], kind, key)
+    fam = cfg["FONT_FAMILY"]
+    if fam is not None and not (isinstance(fam, str) or (
+            isinstance(fam, (list, tuple)) and fam and all(isinstance(f, str) for f in fam))):
+        raise ValueError(f"FONT_FAMILY = {fam!r}: must be None, a name or a list of names")
+    rc = cfg["FONT_RC"]
+    if rc is not None:
+        if not isinstance(rc, dict):
+            raise ValueError("FONT_RC must be None or a dict of matplotlib rcParams")
+        import matplotlib
+        for key, val in rc.items():
+            if key not in matplotlib.rcParams:
+                raise ValueError(f"FONT_RC: {key!r} is not a matplotlib rcParam")
+            try:
+                with matplotlib.rc_context({key: val}):
+                    pass
+            except (ValueError, TypeError) as exc:
+                raise ValueError(f"FONT_RC[{key!r}] = {val!r}: {exc}") from None
+    ps = cfg["PANEL_SIZE"]
+    try:
+        ok = len(ps) == 2 and all(float(v) > 0 and np.isfinite(float(v)) for v in ps)
+    except (TypeError, ValueError):
+        ok = False
+    if not ok:
+        raise ValueError(f"PANEL_SIZE = {ps!r}: must be (width, height) in cm, both > 0")
+
+
+#: Largest |x|, |y| (km) of overlay positions given in the settings.
+_SETTING_KM_LIMITS = {"utm": (2000.0, 20000.0), "model": (1000.0, 1000.0)}
+
+
+def _settings_xy(a: np.ndarray, coords: str, what: str) -> Tuple[np.ndarray, np.ndarray]:
+    """
+    (x, y) of the (N, 2) positions of a PROFILES / LINES entry in the units of
+    to_lonlat: "utm" and "model" positions are km in the settings and m there;
+    "lonlat" / "latlon" are passed on. ValueError if they look like metres.
+    """
+    x, y = a[:, 0], a[:, 1]
+    if coords not in _SETTING_KM_LIMITS:
+        return x, y
+    for v, limit in zip((x, y), _SETTING_KM_LIMITS[coords]):
+        v = v[np.isfinite(v)]
+        if v.size and np.max(np.abs(v)) > limit:
+            raise ValueError(
+                f"{what}: positions with coords = {coords!r} are given in km; "
+                f"{v[np.argmax(np.abs(v))]:g} looks like metres")
+    return x * 1000.0, y * 1000.0
+
+
 def prepare_profile(spec: dict, geo: dict, index: int = 0) -> dict:
     """
     One profile from its spec (see PROFILES): the vertices in lon / lat and in
     km (flat earth around their mean position, origin lon0 / lat0), cumulative
     distance cum, length, the swath polygons (lon / lat) if width_km > 0, and
-    the style entries of the spec. OverlayError if the geometry cannot be made.
+    the style entries of the spec (keys of _PROFILE_STYLE; color, lw, ls are
+    None if not given). OverlayError if the geometry cannot be made.
     """
     name = str(spec.get("name") or f"P{index + 1}")
     coords = spec.get("coords", "lonlat")
@@ -2217,7 +2441,7 @@ def prepare_profile(spec: dict, geo: dict, index: int = 0) -> dict:
     try:
         if "points" in spec:
             a = _as_points(spec["points"], "points")
-            lon, lat = to_lonlat(a[:, 0], a[:, 1], coords, geo)
+            lon, lat = to_lonlat(*_settings_xy(a, coords, name), coords, geo)
             source = "points"
         elif "file" in spec and spec["file"]:
             parts = _read_parts(spec, geo)
@@ -2230,11 +2454,11 @@ def prepare_profile(spec: dict, geo: dict, index: int = 0) -> dict:
             (p0, l0), (p1, l1) = _end_point(spec["start"], "start"), _end_point(spec["end"], "end")
             a = _as_points([p0, p1], "start / end")
             end_labels = (l0, l1)
-            lon, lat = to_lonlat(a[:, 0], a[:, 1], coords, geo)
+            lon, lat = to_lonlat(*_settings_xy(a, coords, name), coords, geo)
             source = "start, end"
         else:
             c = _as_points([spec["center"]], "center")
-            c_lon, c_lat = to_lonlat(c[:, 0], c[:, 1], coords, geo)
+            c_lon, c_lat = to_lonlat(*_settings_xy(c, coords, name), coords, geo)
             half = 0.5 * float(spec["length_km"])
             az = math.radians(float(spec["azimuth"]))
             kx = _KM_PER_DEG * math.cos(math.radians(float(c_lat[0])))
@@ -2267,8 +2491,8 @@ def prepare_profile(spec: dict, geo: dict, index: int = 0) -> dict:
     prof = dict(kind="profile", name=name, source=source, labels=labels, lon=lon, lat=lat,
                 x=x, y=y, lon0=lon0, lat0=lat0, cum=cum, length=float(cum[-1]), width=width,
                 ticks_km=ticks, tick_labels=bool(spec.get("tick_labels", True)),
-                color=spec.get("color"), lw=spec.get("lw"), ls=spec.get("ls", "-"),
-                label=spec.get("label"))
+                color=None, lw=None, ls=None, label=spec.get("label"))
+    prof.update(style_entries(spec, _PROFILE_STYLE))   # the own style of the entry
     prof["swath"] = profile_swath(prof) if width > 0 else []
     return prof
 
@@ -2385,15 +2609,17 @@ def prepare_line(spec: dict, geo: dict) -> dict:
             a = _as_points(g, "points")
             if a.shape[0] < 2:
                 raise OverlayError("a polyline needs two points")
-            lon, lat = to_lonlat(a[:, 0], a[:, 1], coords, geo)
+            lon, lat = to_lonlat(
+                *_settings_xy(a, coords, str(spec.get("label") or "line")), coords, geo)
             parts.append(dict(lon=lon, lat=lat, closed=False))
     if spec.get("closed") is not None:
         for p in parts:
             p["closed"] = bool(spec["closed"])
-    return dict(kind="line", label=spec.get("label"), parts=parts, color=spec.get("color"),
-                lw=spec.get("lw"), ls=spec.get("ls", "-"), fill=spec.get("fill"),
-                alpha=spec.get("alpha"), halo=spec.get("halo"),
+    line = dict(kind="line", label=spec.get("label"), parts=parts, fill=spec.get("fill"),
+                color=None, lw=None, ls=None, halo=None, alpha=None,
                 n_vertices=int(sum(p["lon"].size for p in parts)))
+    line.update(style_entries(spec, _LINE_STYLE))      # the own style of the entry
+    return line
 
 
 def prepare_overlays(cfg: Dict[str, Any], geo: dict) -> Tuple[List[dict], List[dict]]:
@@ -2453,7 +2679,26 @@ def check_overlay_specs(cfg: Dict[str, Any]) -> None:
             if spec.get("coords", "lonlat") not in _COORDS:
                 raise ValueError(f"{what}: coords = {spec.get('coords')!r} must be one of "
                                  f"{list(_COORDS)}")
-            number(spec, "lw", what)
+            table = _PROFILE_STYLE if key == "PROFILES" else _LINE_STYLE
+            try:
+                own = style_entries(spec, table)
+            except OverlayError as exc:
+                raise ValueError(f"{what}: {exc}") from None
+            for name, val in own.items():
+                check_style_value(val, _STYLE_KINDS[name], f"{what}: {name}")
+            if spec.get("fill") is not None and spec.get("fill") is not False:
+                check_style_value(spec["fill"], "color", f"{what}: fill")
+            coords = spec.get("coords", "lonlat")
+            groups = [spec.get("points")] + list(spec.get("segments") or [])
+            groups += [[spec[k]] for k in ("start", "end", "center") if k in spec]
+            for g in groups:
+                if g is None:
+                    continue
+                try:
+                    a = _as_points(g, what)
+                except OverlayError:
+                    continue                  # reported when the item is made
+                _settings_xy(a, coords, what)
             if key == "PROFILES":
                 modes = [m for m, on in (
                     ("points", "points" in spec),
@@ -2482,21 +2727,20 @@ def check_overlay_specs(cfg: Dict[str, Any]) -> None:
                 if len(modes) != 1:
                     raise ValueError(f"{what}: exactly one of file, points, segments is needed "
                                      f"(found {modes or 'none'})")
-                number(spec, "alpha", what, "nonneg")
-                if spec.get("alpha") is not None and float(spec["alpha"]) > 1.0:
-                    raise ValueError(f"{what}: alpha = {spec['alpha']!r} must be <= 1")
 
 
 # ---------------------------------------------------------------------------
 # Colours
 # ---------------------------------------------------------------------------
 def make_norm(values: np.ndarray, *, vmin: Optional[float], vmax: Optional[float],
-              reference: Optional[float]):
+              reference: Optional[float], floor: Optional[float] = 0.0,
+              name: str = "NRMS_REFERENCE"):
     """
-    (norm, extend) of the nRMS colour scale. With a `reference`, a two-slope scale
-    centred on it (limits from the data, symmetric around the reference but not
-    below 0, unless given); without, a linear one. `extend` = "min", "max",
-    "both" or "neither" for values beyond the limits (colour bar arrows).
+    (norm, extend) of a colour scale (default: nRMS). With a `reference`, a two-slope
+    scale centred on it (limits from the data, symmetric around the reference but not
+    below `floor` (None = no limit), unless given); without, a linear one. `extend` =
+    "min", "max", "both" or "neither" for values beyond the limits (colour bar
+    arrows). `name` = the setting named in the warning.
     """
     from matplotlib.colors import Normalize, TwoSlopeNorm
     v = np.asarray(values, float)
@@ -2512,12 +2756,15 @@ def make_norm(values: np.ndarray, *, vmin: Optional[float], vmax: Optional[float
     else:
         ref = float(reference)
         spread = max(abs(vhi - ref), abs(ref - vlo), 0.1)
-        lo = max(ref - spread, 0.0) if vmin is None else float(vmin)
+        if vmin is None:
+            lo = ref - spread if floor is None else max(ref - spread, floor)
+        else:
+            lo = float(vmin)
         hi = ref + spread if vmax is None else float(vmax)
         if lo < ref < hi:
             norm = TwoSlopeNorm(vcenter=ref, vmin=lo, vmax=hi)
         else:
-            _say(f"WARNING: NRMS_REFERENCE = {ref:g} is not between the colour limits "
+            _say(f"WARNING: {name} = {ref:g} is not between the colour limits "
                  f"{lo:g} and {hi:g}; linear colour scale.")
             if not hi > lo:
                 hi = lo + 1.0
@@ -2546,15 +2793,6 @@ def _slug(s: str) -> str:
 # ---------------------------------------------------------------------------
 # Plot
 # ---------------------------------------------------------------------------
-def _overlay_style(item: dict, cfg: Dict[str, Any]) -> Tuple[str, float]:
-    """(colour, line width) of a profile or line: its own entries, else the settings."""
-    if item["kind"] == "profile":
-        return (item.get("color") or cfg.get("PROFILE_COLOR", "black"),
-                float(item.get("lw") or cfg.get("PROFILE_LW", 1.8)))
-    return (item.get("color") or cfg.get("LINE_COLOR", "tab:green"),
-            float(item.get("lw") or cfg.get("LINE_LW", 1.2)))
-
-
 def clip_polyline(x: Any, y: Any, box: Sequence[float], cum: Optional[Any] = None) -> List[dict]:
     """
     The parts of the polyline (x, y) inside the rectangle box = (xa, xb, ya, yb)
@@ -2777,33 +3015,52 @@ def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, A
     map_km = abs(x1 - x0) * kx_plot                       # width of the map [km]
     margin = _cut_margin(cfg, bbox)
 
+    from matplotlib.path import Path
+    box = None if margin is None else cut_box_lonlat(bbox, margin)
+
     for ln0 in overlays.get("lines") or []:
         ln = cut_line(ln0, bbox, margin)
-        color, lw = _overlay_style(ln, cfg)
-        halo = cfg.get("LINE_HALO", True) if ln.get("halo") is None else bool(ln["halo"])
-        pe = [patheffects.withStroke(linewidth=lw + 1.6, foreground="white")] if halo else []
-        alpha = 0.25 if ln.get("alpha") is None else float(ln["alpha"])
+        sty = overlay_style(ln, cfg)
+        color, lw, z = sty["color"], float(sty["lw"]), float(sty["zorder"])
+        pe = ([patheffects.withStroke(linewidth=lw + float(sty["halo_width"]),
+                                      foreground=sty["halo_color"])] if sty["halo"] else [])
         for part in ln["drawn"]:
             px, py = to_frame(frame, part["lon"], part["lat"])
             if part["closed"]:
                 px, py = np.r_[px, px[0]], np.r_[py, py[0]]
             if ln.get("fill") and part["closed"]:
-                ax.fill(px, py, facecolor=ln["fill"], edgecolor="none", alpha=alpha, zorder=2.5)
+                ax.fill(px, py, facecolor=ln["fill"], edgecolor="none",
+                        alpha=float(sty["alpha"]), zorder=z - 0.5)
             elif part["fill"] is not None and part["fill"][0].size:     # the polygon cut at the box
                 fx, fy = to_frame(frame, part["fill"][0], part["fill"][1])
-                ax.fill(fx, fy, facecolor=ln["fill"], edgecolor="none", alpha=alpha, zorder=2.5)
+                ax.fill(fx, fy, facecolor=ln["fill"], edgecolor="none", alpha=float(sty["alpha"]),
+                        zorder=z - 0.5)
             if px.size:
-                ax.plot(px, py, color=color, lw=lw, ls=ln.get("ls") or "-", zorder=3,
-                        path_effects=pe, solid_joinstyle="round")
+                ax.plot(px, py, color=color, lw=lw, ls=sty["ls"], alpha=float(sty["line_alpha"]),
+                        zorder=z, path_effects=pe, solid_joinstyle="round")
+        if sty["marker"] is not None:                  # at the vertices of the line (inside the cut box)
+            vlon = np.concatenate([np.asarray(p["lon"], float) for p in ln0["parts"]])
+            vlat = np.concatenate([np.asarray(p["lat"], float) for p in ln0["parts"]])
+            if box is not None:
+                keep = ((vlon >= box[0]) & (vlon <= box[1]) & (vlat >= box[2]) & (vlat <= box[3]))
+                vlon, vlat = vlon[keep], vlat[keep]
+            if vlon.size:
+                vx, vy = to_frame(frame, vlon, vlat)
+                ax.plot(vx, vy, ls="", marker=sty["marker"], ms=float(sty["markersize"]),
+                        color=color, alpha=float(sty["line_alpha"]), zorder=z + 0.05)
 
-    fs = float(cfg.get("PROFILE_FONTSIZE", 9.0))
     for pr0 in overlays.get("profiles") or []:
         pr = cut_profile(pr0, bbox, margin)
         if not pr["pieces"]:
             continue                                       # nothing of it inside the map
-        color, lw = _overlay_style(pr, cfg)
-        pe = [patheffects.withStroke(linewidth=lw + 1.6, foreground="white")]
-        halo_t = [patheffects.withStroke(linewidth=2.0, foreground="white")]
+        sty = overlay_style(pr, cfg)
+        color, lw, z = sty["color"], float(sty["lw"]), float(sty["zorder"])
+        line_alpha = float(sty["line_alpha"])
+        text_z = max(6.5, z + 0.2)
+        pe = ([patheffects.withStroke(linewidth=lw + float(sty["halo_width"]),
+                                      foreground=sty["halo_color"])] if sty["halo"] else [])
+        halo_t = ([patheffects.withStroke(linewidth=2.0, foreground=sty["halo_color"])]
+                  if sty["halo"] else [])
         if pr.get("swath"):
             verts: List[np.ndarray] = []
             codes: List[int] = []
@@ -2811,13 +3068,22 @@ def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, A
                 qx, qy = to_frame(frame, poly[:, 0], poly[:, 1])
                 verts.append(np.c_[np.r_[qx, qx[0]], np.r_[qy, qy[0]]])
                 codes += [Path.MOVETO] + [Path.LINETO] * (len(qx) - 1) + [Path.CLOSEPOLY]
-            ax.add_patch(PathPatch(Path(np.vstack(verts), codes), facecolor=color,
-                                   edgecolor="none", alpha=float(cfg.get("PROFILE_SWATH_ALPHA", 0.15)),
-                                   zorder=2))
+            ax.add_patch(PathPatch(Path(np.vstack(verts), codes), facecolor=sty["swath_color"],
+                                   edgecolor="none", alpha=float(sty["swath_alpha"]),
+                                   zorder=min(2.0, z - 0.5)))
         for pc in pr["pieces"]:
             px, py = to_frame(frame, pc["lon"], pc["lat"])
-            ax.plot(px, py, color=color, lw=lw, ls=pr.get("ls") or "-", zorder=4, path_effects=pe,
-                    solid_capstyle="butt", solid_joinstyle="round")
+            ax.plot(px, py, color=color, lw=lw, ls=sty["ls"], alpha=line_alpha, zorder=z,
+                    path_effects=pe, solid_capstyle="butt", solid_joinstyle="round")
+        if sty["marker"] is not None:                      # at the vertices on the parts that are left
+            cum = np.asarray(pr0["cum"], float)
+            keep = np.zeros(cum.size, bool)
+            for pc in pr["pieces"]:
+                keep |= (cum >= pc["s0"] - 1e-6) & (cum <= pc["s1"] + 1e-6)
+            if keep.any():
+                vx, vy = to_frame(frame, pr0["lon"][keep], pr0["lat"][keep])
+                ax.plot(vx, vy, ls="", marker=sty["marker"], ms=float(sty["markersize"]),
+                        color=color, alpha=line_alpha, zorder=z + 0.05)
         tp = profile_tick_points(pr, pr["ticks_km"]) if pr.get("ticks_km") else None
         if tp is not None and pr["cut"]:                   # only the ticks on the parts that are left
             keep = np.zeros(tp["s"].size, bool)
@@ -2825,7 +3091,7 @@ def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, A
                 keep |= (tp["s"] >= pc["s0"] - 1e-6) & (tp["s"] <= pc["s1"] + 1e-6)
             tp = {k: v[keep] for k, v in tp.items()}
         if tp is not None and tp["s"].size:
-            h = 0.5 * _PROFILE_TICK_FRAC * map_km
+            h = 0.5 * float(sty["tick_length"]) * map_km
             a_lon, a_lat = local_lonlat(tp["x"] + h * tp["uy"], tp["y"] - h * tp["ux"],
                                         pr["lon0"], pr["lat0"])
             b_lon, b_lat = local_lonlat(tp["x"] - h * tp["uy"], tp["y"] + h * tp["ux"],
@@ -2833,23 +3099,27 @@ def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, A
             ax1, ay1 = to_frame(frame, a_lon, a_lat)
             bx1, by1 = to_frame(frame, b_lon, b_lat)
             segs = [[(ax1[k], ay1[k]), (bx1[k], by1[k])] for k in range(ax1.size)]
-            ax.add_collection(LineCollection(segs, colors=color, linewidths=max(lw * 0.8, 0.8),
-                                             zorder=4, path_effects=pe))
+            ax.add_collection(LineCollection(segs, colors=color, linewidths=float(sty["tick_lw"]),
+                                             alpha=line_alpha, zorder=z, path_effects=pe))
             if pr.get("tick_labels", True):
                 c_lon, c_lat = local_lonlat(tp["x"], tp["y"], pr["lon0"], pr["lat0"])
                 cx, cy = to_frame(frame, c_lon, c_lat)
+                tfs = float(sty["tick_fontsize"])
+                off = tfs + 1.0                            # [pt] beside the tick
                 for k in range(cx.size):
                     ax.annotate(f"{tp['s'][k]:g}", (cx[k], cy[k]),
-                                xytext=(-8.0 * tp["uy"][k], 8.0 * tp["ux"][k]),
+                                xytext=(-off * tp["uy"][k], off * tp["ux"][k]),
                                 textcoords="offset points", ha="center", va="center",
-                                fontsize=fs - 2.0, color=color, zorder=6.5, path_effects=halo_t,
-                                annotation_clip=True)
+                                fontsize=tfs, color=sty["text_color"], zorder=text_z,
+                                path_effects=halo_t, annotation_clip=True)
         first, last = pr["pieces"][0], pr["pieces"][-1]          # the ends of what is shown
         fx0, fy0 = to_frame(frame, first["lon"][:1], first["lat"][:1])
         fx1, fy1 = to_frame(frame, last["lon"][-1:], last["lat"][-1:])
-        if cfg.get("PROFILE_END_MARKER"):
-            ax.plot([fx0[0], fx1[0]], [fy0[0], fy1[0]], ls="", marker=cfg["PROFILE_END_MARKER"],
-                    ms=6.0, mfc=color, mec="white", mew=0.8, zorder=6)
+        if sty["end_marker"] is not None:
+            ax.plot([fx0[0], fx1[0]], [fy0[0], fy1[0]], ls="", marker=sty["end_marker"],
+                    ms=float(sty["end_marker_size"]), mfc=color,
+                    mec=sty["halo_color"] if sty["halo"] else color, mew=0.8,
+                    zorder=max(6.0, z + 0.1))
         if pr.get("labels"):
             ends = ((fx0[0], fy0[0], -1.0, pr["labels"][0],
                      first["x"][1] - first["x"][0], first["y"][1] - first["y"][0]),
@@ -2857,11 +3127,13 @@ def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, A
                      last["x"][-1] - last["x"][-2], last["y"][-1] - last["y"][-2]))
             for vx, vy, sgn, txt, dxk, dyk in ends:
                 nrm = math.hypot(dxk, dyk) or 1.0
-                ax.annotate(txt, (vx, vy), xytext=(sgn * 10.0 * dxk / nrm, sgn * 10.0 * dyk / nrm),
-                            textcoords="offset points", ha="center", va="center", fontsize=fs,
-                            fontweight="bold", color=color, zorder=6.5, path_effects=halo_t)
+                d = sgn * float(sty["label_offset"])
+                ax.annotate(txt, (vx, vy), xytext=(d * dxk / nrm, d * dyk / nrm),
+                            textcoords="offset points", ha="center", va="center",
+                            fontsize=float(sty["fontsize"]), fontweight=sty["fontweight"],
+                            color=sty["text_color"], zorder=text_z, path_effects=halo_t)
         ring = pr.get("ring")
-        if cfg.get("PROFILE_MARK_SITES", True) and ring is not None and len(ring[0]):
+        if sty["mark_sites"] and ring is not None and len(ring[0]):
             rlon, rlat = np.asarray(ring[0], float), np.asarray(ring[1], float)
             if pr["cut"] and pr.get("proj") is not None and pr.get("order") is not None:
                 al = np.asarray(pr["proj"]["along"])[np.asarray(pr["order"], int)]
@@ -2871,8 +3143,9 @@ def draw_overlays(ax, *, frame: dict, overlays: Optional[dict], cfg: Dict[str, A
                 rlon, rlat = rlon[keep], rlat[keep]
             if rlon.size:
                 rx, ry = to_frame(frame, rlon, rlat)
-                ax.scatter(rx, ry, s=1.9 * float(cfg["SITE_SIZE"]), marker="o", facecolors="none",
-                           edgecolors=color, linewidths=1.0, zorder=4.5)
+                ax.scatter(rx, ry, s=float(sty["ring_size"]) * float(cfg["SITE_SIZE"]), marker="o",
+                           facecolors="none", edgecolors=color, linewidths=float(sty["ring_lw"]),
+                           zorder=4.5)
 
 
 def overlay_handles(overlays: Optional[dict], cfg: Dict[str, Any]) -> list:
@@ -2884,9 +3157,10 @@ def overlay_handles(overlays: Optional[dict], cfg: Dict[str, Any]) -> list:
     for kind in ("profiles", "lines"):
         for it in overlays.get(kind) or []:
             if it.get("label"):
-                color, lw = _overlay_style(it, cfg)
-                out.append(Line2D([], [], color=color, lw=lw, ls=it.get("ls") or "-",
-                                  label=str(it["label"])))
+                sty = overlay_style(it, cfg)
+                out.append(Line2D([], [], color=sty["color"], lw=float(sty["lw"]), ls=sty["ls"],
+                                  alpha=float(sty["line_alpha"]), marker=sty["marker"] or "",
+                                  ms=float(sty["markersize"]), label=str(it["label"])))
     return out
 
 
@@ -2906,20 +3180,54 @@ def overlay_outside(items: Sequence[dict], bbox: Sequence[float]) -> List[str]:
     return out
 
 
+def outside_hints(items: Sequence[dict], bbox: Sequence[float]) -> List[str]:
+    """
+    One message per profile / line that is outside the map `bbox` (see
+    overlay_outside): where it is, where the map is, and, if it would be on the
+    map with longitude and latitude exchanged, a note on `coords`.
+    """
+    out = []
+    for it in items:
+        if not overlay_outside([it], bbox):
+            continue
+        if it["kind"] == "profile":
+            lon, lat, what = it["lon"], it["lat"], f"profile {it['name']!r}"
+        else:
+            lon = np.concatenate([p["lon"] for p in it["parts"]])
+            lat = np.concatenate([p["lat"] for p in it["parts"]])
+            what = f"line {str(it.get('label') or 'line')!r}"
+        msg = (f"  {what}: lon {lon.min():.4f} .. {lon.max():.4f}, lat {lat.min():.4f} .. "
+               f"{lat.max():.4f}; the map: lon {bbox[0]:.4f} .. {bbox[1]:.4f}, lat "
+               f"{bbox[2]:.4f} .. {bbox[3]:.4f}.")
+        swapped = (lat.max() >= bbox[0] and lat.min() <= bbox[1]
+                   and lon.max() >= bbox[2] and lon.min() <= bbox[3])
+        if swapped:
+            msg += (" With longitude and latitude exchanged it would be on the map: check its "
+                    "coords (\"lonlat\" = (lon, lat) pairs, \"latlon\" = (lat, lon) pairs).")
+        out.append(msg)
+    return out
+
+
 def draw_panel(ax, *, frame: dict, bbox: Tuple[float, float, float, float], relief: Optional[dict],
                relief_extent: Optional[Tuple[float, float, float, float]],
                lon: np.ndarray, lat: np.ndarray, values: np.ndarray,
                names: Optional[Sequence[str]], cmap, norm, cfg: Dict[str, Any],
-               credit: Optional[str] = None, overlays: Optional[dict] = None):
+               credit: Optional[str] = None, overlays: Optional[dict] = None,
+               signed: bool = False):
     """
     One map: relief, then the sites as icons coloured by `values` (NaN = open
     icon, no data), and the profiles and lines of `overlays` (draw_overlays).
     Returns the scatter of the coloured icons (None if there is none). bbox =
-    (lon_min, lon_max, lat_min, lat_max) of the map.
+    (lon_min, lon_max, lat_min, lat_max) of the map. The largest values are drawn
+    on top (`signed`: the largest absolute values).
     """
     from matplotlib import patheffects
     from matplotlib.ticker import MaxNLocator
-    halo = [patheffects.withStroke(linewidth=1.5, foreground="white")]
+    halo, bar_halo = [], []                    # MAP_HALO: texts, scale bar line
+    if cfg["MAP_HALO"]:
+        hw, hc = float(cfg["MAP_HALO_WIDTH"]), cfg["MAP_HALO_COLOR"]
+        halo = [patheffects.withStroke(linewidth=hw, foreground=hc)]
+        bar_halo = [patheffects.withStroke(linewidth=_SCALE_BAR_LW + hw + 0.5, foreground=hc)]
     x0, x1 = to_frame(frame, [bbox[0], bbox[1]], [bbox[2], bbox[2]])[0]
     y0, y1 = to_frame(frame, [bbox[0], bbox[0]], [bbox[2], bbox[3]])[1]
     if relief is not None and relief_extent is not None:
@@ -2943,13 +3251,14 @@ def draw_panel(ax, *, frame: dict, bbox: Tuple[float, float, float, float], reli
         ax.scatter(x[~ok], y[~ok], facecolors="none", edgecolors=cfg["SITE_NODATA_EDGECOLOR"],
                    linewidths=float(cfg["SITE_LW"]), **kw)
     if ok.any():
-        order = np.argsort(v[ok])                      # the largest nRMS on top
+        order = np.argsort(np.abs(v[ok]) if signed else v[ok])     # the largest value on top
         sc = ax.scatter(x[ok][order], y[ok][order], c=v[ok][order], cmap=cmap, norm=norm,
                         edgecolors=cfg["SITE_EDGECOLOR"], linewidths=float(cfg["SITE_LW"]), **kw)
     if cfg["SITE_LABELS"] and names is not None:
         for xi, yi, nm in zip(x, y, names):
             ax.annotate(str(nm), (xi, yi), xytext=(4, 4), textcoords="offset points",
-                        fontsize=float(cfg["LABEL_FONTSIZE"]), zorder=6, path_effects=halo)
+                        fontsize=float(cfg["LABEL_FONTSIZE"]), fontweight=cfg["LABEL_FONTWEIGHT"],
+                        zorder=6, path_effects=halo)
     ax.set_xlim(x0, x1)
     ax.set_ylim(y0, y1)
     ax.set_aspect(frame["aspect"])
@@ -2961,28 +3270,30 @@ def draw_panel(ax, *, frame: dict, bbox: Tuple[float, float, float, float], reli
     ax.xaxis.set_major_locator(MaxNLocator(nbins=4))
     ax.yaxis.set_major_locator(MaxNLocator(nbins=5))
     ax.ticklabel_format(useOffset=False, style="plain")
+    fs_axis = font_size(cfg, "AXIS_LABEL_FONTSIZE")
     if frame["display"] == "latlon":
-        ax.set_xlabel("Longitude [deg]", fontsize=fs)
-        ax.set_ylabel("Latitude [deg]", fontsize=fs)
+        ax.set_xlabel("Longitude [deg]", fontsize=fs_axis)
+        ax.set_ylabel("Latitude [deg]", fontsize=fs_axis)
     else:
-        ax.set_xlabel("East [km]", fontsize=fs)
-        ax.set_ylabel("North [km]", fontsize=fs)
+        ax.set_xlabel("East [km]", fontsize=fs_axis)
+        ax.set_ylabel("North [km]", fontsize=fs_axis)
     if cfg["SCALE_BAR"]:
         width_km = abs(x1 - x0) * (frame["kx"] if frame["display"] == "latlon" else 1.0)
         length_km = (float(cfg["SCALE_BAR_KM"]) if cfg["SCALE_BAR_KM"]
                      else _nice_length(0.2 * width_km))
         length = length_km / (frame["kx"] if frame["display"] == "latlon" else 1.0)
         xa, ya = x0 + 0.05 * (x1 - x0), y0 + 0.05 * (y1 - y0)
-        ax.plot([xa, xa + length], [ya, ya], color="black", lw=2.0,
-                solid_capstyle="butt", zorder=7, path_effects=[patheffects.withStroke(
-                    linewidth=4.0, foreground="white")])
+        ax.plot([xa, xa + length], [ya, ya], color="black", lw=_SCALE_BAR_LW,
+                solid_capstyle="butt", zorder=7, path_effects=bar_halo)
         ax.text(xa + 0.5 * length, ya + 0.012 * (y1 - y0), f"{length_km:g} km", ha="center",
-                va="bottom", fontsize=fs - 1, zorder=7, path_effects=halo)
+                va="bottom", fontsize=font_size(cfg, "SCALEBAR_FONTSIZE", -1.0), zorder=7,
+                path_effects=halo)
     if credit:
         w_in = ax.figure.get_figwidth() * ax.get_position().width
-        ax.text(0.99, 0.01, wrap_credit(credit, w_in, 5.0), transform=ax.transAxes, ha="right",
-                va="bottom", multialignment="right", fontsize=5.0, color="0.15", zorder=7,
-                path_effects=halo)
+        fs_credit = float(cfg["CREDIT_FONTSIZE"])
+        ax.text(0.99, 0.01, wrap_credit(credit, w_in, fs_credit), transform=ax.transAxes,
+                ha="right", va="bottom", multialignment="right", fontsize=fs_credit, color="0.15",
+                zorder=7, path_effects=halo)
     return sc
 
 
@@ -3012,30 +3323,32 @@ def build_pages(sels: Sequence[dict], page_by: str) -> List[Tuple[str, List[dict
 
 
 def make_title(spec: Optional[str], *, iteration: int, nrms: float,
-               ens: Optional[dict] = None) -> str:
+               ens: Optional[dict] = None, label: str = "nRMS") -> str:
     """
     Figure title: "auto", None / "" (none) or text with {iter}, {nrms}, {M} and
     {stat}. `ens` (an ensemble) = dict(M, stat, iters): number of members, ENS_STAT,
     iterations of the members; then {iter} is "8" or "5-8", {nrms} the statistic
     of the nRMS of the members, {M} their number and {stat} the statistic in
-    words (for a single run: M = 1, stat = "").
+    words (for a single run: M = 1, stat = ""). `label` = what the maps show
+    (placeholder {measure}); {nrms} is always the nRMS.
     """
     if spec is None or spec is False or spec == "":
         return ""
     if ens is None:
         if spec == "auto":
-            return f"FEMTIC site nRMS (iteration {iteration}, global nRMS = {nrms:.2f})"
-        return str(spec).format(iter=iteration, nrms=nrms, M=1, stat="")
+            return f"FEMTIC site {label} (iteration {iteration}, global nRMS = {nrms:.2f})"
+        return str(spec).format(iter=iteration, nrms=nrms, M=1, stat="", measure=label)
     it = iteration_text(ens["iters"])
     words = stat_words(ens["stat"])
     if spec == "auto":
         what = "std of global nRMS" if parse_stat(ens["stat"])[0] == "std" else "global nRMS"
         word = "iteration" if "-" not in it else "iterations"
-        return (f"FEMTIC site nRMS, {words} of {ens['M']} members "
+        return (f"FEMTIC site {label}, {words} of {ens['M']} members "
                 f"({word} {it}, {what} = {nrms:.2f})")
-    return str(spec).format(iter=it, nrms=nrms, M=ens["M"], stat=words)
+    return str(spec).format(iter=it, nrms=nrms, M=ens["M"], stat=words, measure=label)
 
 
+_CM_PER_INCH = 2.54
 _CBAR_ASPECT = 20.0                # matplotlib's default: length / width of a colour bar
 _CBAR_TOL = 0.01                   # the colour bar has the asked size within 1 %
 _SAID: set = set()                 # messages that are said once (per run)
@@ -3085,7 +3398,8 @@ def _cbar_size_in(cb, vertical: bool) -> Tuple[float, float]:
 
 def add_colorbar(fig, mappable, axes, *, location: str, shrink: float, extend: str,
                  label: str, length_cm: Optional[float] = None,
-                 width_cm: Optional[float] = None):
+                 width_cm: Optional[float] = None, label_fontsize: Optional[float] = None,
+                 tick_fontsize: Optional[float] = None):
     """
     The colour bar of the panels `axes`. Without `length_cm` and `width_cm` it is
     matplotlib's: the length is `shrink` x the length of the panels along the bar
@@ -3097,9 +3411,18 @@ def add_colorbar(fig, mappable, axes, *, location: str, shrink: float, extend: s
     length, `length_cm` alone the proportions (1/20). A length that the panels
     cannot hold is reduced to the length of the panels, with a message. The size
     holds for the layout as it is when this is called (set the figure title first).
+    `label_fontsize`, `tick_fontsize` [pt]: None = matplotlib's.
     """
-    kw = dict(location=location, extend=extend, label=label)
-    cb = fig.colorbar(mappable, ax=axes, shrink=shrink, **kw)
+    kw = dict(location=location, extend=extend)
+
+    def make(**size):
+        bar = fig.colorbar(mappable, ax=axes, **size, **kw)
+        bar.set_label(label, **({} if label_fontsize is None else {"fontsize": label_fontsize}))
+        if tick_fontsize is not None:
+            bar.ax.tick_params(labelsize=tick_fontsize)
+        return bar
+
+    cb = make(shrink=shrink)
     if length_cm is None and width_cm is None:
         return cb
     vertical = location in ("right", "left")
@@ -3125,7 +3448,7 @@ def add_colorbar(fig, mappable, axes, *, location: str, shrink: float, extend: s
             aspect = have_l * new_shrink / shrink / want_w
         shrink = new_shrink
         cb.remove()
-        cb = fig.colorbar(mappable, ax=axes, shrink=shrink, aspect=aspect, fraction=frac, **kw)
+        cb = make(shrink=shrink, aspect=aspect, fraction=frac)
     else:
         _say(f"the colour bar has {have_l * 2.54:.2f} x {have_w * 2.54:.2f} cm, not the asked "
              f"size (CBAR_LENGTH, CBAR_WIDTH).")
@@ -3141,11 +3464,15 @@ def plot_page(page: Sequence[dict], *, site_lon: np.ndarray, site_lat: np.ndarra
               bbox: Tuple[float, float, float, float], relief: Optional[dict],
               relief_extent: Optional[Tuple[float, float, float, float]], norm, extend: str,
               cfg: Dict[str, Any], title: str, credit: Optional[str],
-              cbar_label: str = "nRMS", overlays: Optional[dict] = None):
+              cbar_label: str = "nRMS", overlays: Optional[dict] = None,
+              measure: str = "nrms"):
     """
-    One figure with the maps of the selections of `page`; returns the figure. The
+    One figure with the maps of `measure` of the selections of `page`; returns the
+    figure. CMAP_NRMS and NRMS_REFERENCE of `cfg` are the colour map and the
+    reference of this measure (see measure_scale). The
     second line of a panel title is s["sub"] if the selection has one (ensemble),
-    else the global nRMS and n. `overlays` (profiles, lines) are drawn in every
+    else the global nRMS and n (other measures: s["sub_m"][measure] or their global
+    value). The first line is s["head"] if given, else band | components. `overlays` (profiles, lines) are drawn in every
     panel; the legend (LEGEND_LOC, first panel) holds the no-data icon and the
     profiles and lines that have a label.
     """
@@ -3153,46 +3480,73 @@ def plot_page(page: Sequence[dict], *, site_lon: np.ndarray, site_lat: np.ndarra
     n = len(page)
     nc = min(int(cfg["PANEL_COLS"]), n)
     nr = int(math.ceil(n / nc))
-    pw, ph = cfg["PANEL_SIZE"]
-    fig, axs = plt.subplots(nr, nc, figsize=(pw * nc + 1.0, ph * nr + (0.5 if title else 0.0)),
-                            squeeze=False, constrained_layout=True)
-    cmap = plt.get_cmap(cfg["CMAP_NRMS"])
-    used = []
-    any_open = False
-    for k, s in enumerate(page):
-        ax = axs[k // nc][k % nc]
-        used.append(ax)
-        vals = s["nrms_site"]
-        any_open = any_open or bool(np.isnan(vals).any())
-        draw_panel(ax, frame=frame, bbox=bbox, relief=relief, relief_extent=relief_extent,
-                   lon=site_lon, lat=site_lat, values=vals, names=site_names, cmap=cmap,
-                   norm=norm, cfg=cfg, credit=credit, overlays=overlays)
-        sub = s.get("sub") or f"global nRMS = {s['nrms']:.2f}, n = {s['n']}"
-        ax.set_title(f"{s['band']} | {s['comp']}\n{sub}", fontsize=float(cfg["TICK_FONTSIZE"]) + 1)
-    for k in range(n, nr * nc):
-        axs[k // nc][k % nc].set_visible(False)
-    if title:                                      # before the colour bar: its size is fitted to the layout
-        fig.suptitle(title, fontsize=float(cfg["TICK_FONTSIZE"]) + 3)
-    loc = cfg["CBAR_LOCATION"] or "right"
-    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
-    cb = add_colorbar(fig, sm, used, location=loc, shrink=float(cfg["CBAR_SHRINK"]),
-                      extend=extend, label=cbar_label, length_cm=cfg["CBAR_LENGTH"],
-                      width_cm=cfg["CBAR_WIDTH"])
-    ref = cfg["NRMS_REFERENCE"]
-    if ref is not None and norm.vmin <= ref <= norm.vmax:
-        (cb.ax.axhline if loc in ("right", "left") else cb.ax.axvline)(
-            ref, color="black", lw=0.8, ls="--")
-    handles = []
-    if any_open:
-        from matplotlib.lines import Line2D
-        handles.append(Line2D([], [], ls="", marker=cfg["SITE_MARKER"], mfc="none",
-                              mec=cfg["SITE_NODATA_EDGECOLOR"], label="no data"))
-    handles += overlay_handles(overlays, cfg)
-    leg_loc = cfg.get("LEGEND_LOC", "upper left")
-    if handles and leg_loc:
-        used[0].legend(handles=handles, loc=leg_loc, fontsize=float(cfg["TICK_FONTSIZE"]) - 1,
-                       framealpha=0.8)
+    pw, ph = (float(v) / _CM_PER_INCH for v in cfg["PANEL_SIZE"])        # cm -> inch
+    with plt.rc_context(font_rc(cfg)):
+        fig, axs = plt.subplots(nr, nc, figsize=(pw * nc + 1.0, ph * nr + (0.5 if title else 0.0)),
+                                squeeze=False, constrained_layout=True)
+        cmap = plt.get_cmap(cfg["CMAP_NRMS"])
+        used = []
+        any_open = False
+        for k, s in enumerate(page):
+            ax = axs[k // nc][k % nc]
+            used.append(ax)
+            glob_v, vals = sel_values(s, measure)
+            any_open = any_open or bool(np.isnan(vals).any())
+            draw_panel(ax, frame=frame, bbox=bbox, relief=relief, relief_extent=relief_extent,
+                       lon=site_lon, lat=site_lat, values=vals, names=site_names, cmap=cmap,
+                       norm=norm, cfg=cfg, credit=credit, overlays=overlays,
+                       signed=measure in mm.SIGNED_MEASURES)
+            if measure == "nrms":
+                second = s.get("sub") or f"global nRMS = {s['nrms']:.2f}, n = {s['n']}"
+            else:
+                second = (s.get("sub_m", {}).get(measure)
+                          or f"global {measure_label(measure)} = {measure_text(glob_v, measure)}, "
+                             f"n = {s['n']}")
+            head = s.get("head") or f"{s['band']} | {s['comp']}"
+            ax.set_title(f"{head}\n{second}",
+                         fontsize=font_size(cfg, "PANEL_TITLE_FONTSIZE", 1.0))
+        for k in range(n, nr * nc):
+            axs[k // nc][k % nc].set_visible(False)
+        if title:                                  # before the colour bar: its size is fitted to the layout
+            fit_title(fig.suptitle(title, fontsize=font_size(cfg, "TITLE_FONTSIZE", 3.0),
+                                   fontweight=cfg["TITLE_FONTWEIGHT"]))
+        loc = cfg["CBAR_LOCATION"] or "right"
+        sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+        cb = add_colorbar(fig, sm, used, location=loc, shrink=float(cfg["CBAR_SHRINK"]),
+                          extend=extend, label=cbar_label, length_cm=cfg["CBAR_LENGTH"],
+                          width_cm=cfg["CBAR_WIDTH"], label_fontsize=cfg["CBAR_LABEL_FONTSIZE"],
+                          tick_fontsize=cfg["CBAR_TICK_FONTSIZE"])
+        ref = cfg["NRMS_REFERENCE"]
+        if ref is not None and norm.vmin <= ref <= norm.vmax:
+            (cb.ax.axhline if loc in ("right", "left") else cb.ax.axvline)(
+                ref, color="black", lw=0.8, ls="--")
+        handles = []
+        if any_open:
+            from matplotlib.lines import Line2D
+            handles.append(Line2D([], [], ls="", marker=cfg["SITE_MARKER"], mfc="none",
+                                  mec=cfg["SITE_NODATA_EDGECOLOR"], label="no data"))
+        handles += overlay_handles(overlays, cfg)
+        leg_loc = cfg.get("LEGEND_LOC", "upper left")
+        if handles and leg_loc:
+            used[0].legend(handles=handles, loc=leg_loc,
+                           fontsize=font_size(cfg, "LEGEND_FONTSIZE", -1.0), framealpha=0.8)
     return fig
+
+
+def fit_title(text) -> None:
+    """Break the figure title `text` into lines if it is wider than its figure."""
+    import textwrap
+    fig = text.get_figure()
+    try:
+        width = text.get_window_extent(fig.canvas.get_renderer()).width
+    except AttributeError:                         # a canvas without get_renderer
+        return
+    room = 0.97 * fig.get_figwidth() * fig.dpi
+    s = text.get_text()
+    if width <= room or "\n" in s:
+        return
+    n = max(10, int(len(s) * room / width))
+    text.set_text("\n".join(textwrap.wrap(s, n)))
 
 
 def save_figure(fig, stem: str, formats: Sequence[str], dpi: int) -> List[str]:
@@ -3213,16 +3567,20 @@ def _fmt(v: float, nd: int = 4) -> str:
 
 
 def write_site_tables(stem: str, rows: Sequence[dict], sels: Sequence[dict],
-                      used: np.ndarray) -> List[str]:
+                      used: np.ndarray, measures: Sequence[str] = ()) -> List[str]:
     """
     <stem>_nrms.csv and <stem>_n.csv: one row per site (name, lat, lon, site
     ids), one column per selection ("band | components"): nRMS, and the number
     of values. `rows` = the sites of site.dat (name, lat, lon, ids), `used` =
-    their indices (the sites with data).
+    their indices (the sites with data). `measures` = further fit measures: one
+    table <stem>_<measure>.csv each.
     """
     paths = []
     head = ["site", "lat", "lon", "site_ids"] + [f"{s['band']} | {s['comp']}" for s in sels]
-    for suffix, key, fmt in (("nrms", "nrms_site", _fmt), ("n", "n_site", lambda v: str(int(v)))):
+    jobs = [("nrms", lambda s: s["nrms_site"], _fmt),
+            ("n", lambda s: s["n_site"], lambda v: str(int(v)))]
+    jobs += [(m, lambda s, m=m: s["site_m"][m], _fmt) for m in measures]
+    for suffix, values, fmt in jobs:
         p = f"{stem}_{suffix}.csv"
         with open(p, "w", newline="") as fh:
             w = csv.writer(fh)
@@ -3231,7 +3589,7 @@ def write_site_tables(stem: str, rows: Sequence[dict], sels: Sequence[dict],
                 r = rows[j]
                 w.writerow([r["name"], f"{r['lat']:.6f}", f"{r['lon']:.6f}",
                             " ".join(str(i) for i in r.get("ids", []))]
-                           + [fmt(s[key][j]) for s in sels])
+                           + [fmt(values(s)[j]) for s in sels])
         paths.append(p)
     return paths
 
@@ -3260,20 +3618,22 @@ def write_members_table(stem: str, members: Sequence[dict], sels: Sequence[dict]
 
 
 def write_ens_stats(stem: str, rows: Sequence[dict], sels: Sequence[dict],
-                    used: np.ndarray) -> str:
+                    used: np.ndarray, measure: str = "nrms") -> str:
     """
     <stem>_ens_stats.csv: for every selection and site with data, the number of
     members M and the mean, median, std (ddof = 1), min and max of the member nRMS.
     `sels` = aggregate_members result (key X), `rows`, `used` as in write_site_tables.
+    Another fit `measure`: <stem>_<measure>_ens_stats.csv (keys X_m).
     """
-    p = f"{stem}_ens_stats.csv"
+    p = f"{stem}_ens_stats.csv" if measure == "nrms" else f"{stem}_{measure}_ens_stats.csv"
     kinds = ("mean", "median", "std", "min", "max")
     with open(p, "w", newline="") as fh:
         w = csv.writer(fh)
         w.writerow(["band", "components", "site", "lat", "lon", "M"] + list(kinds))
         for s in sels:
-            cnt = np.sum(np.isfinite(s["X"]), axis=0)
-            vals = {k: ens_statistic(s["X"], k) for k in kinds}
+            x = s["X"] if measure == "nrms" else s["X_m"][measure]
+            cnt = np.sum(np.isfinite(x), axis=0)
+            vals = {k: ens_statistic(x, k) for k in kinds}
             for j in used:
                 if cnt[j] == 0:
                     continue
@@ -3299,14 +3659,16 @@ def overlay_summary(profiles: Sequence[dict], lines: Sequence[dict]) -> List[str
 
 
 def write_profile_tables(stem: str, profiles: Sequence[dict], rows: Sequence[dict],
-                         used: np.ndarray, sels: Sequence[dict]) -> List[str]:
+                         used: np.ndarray, sels: Sequence[dict],
+                         extra: Sequence[Tuple[str, np.ndarray]] = ()) -> List[str]:
     """
     <stem>_profiles.csv: one row per profile (name, vertices, length_km, width_km,
     n_sites in the swath, lon / lat of the start and the end, source).
     <stem>_profile_sites.csv (profiles with a swath): the sites in the swath, by
     profile and increasing distance: profile, site, lat, lon, along_km (from the
     start), offset_km (positive to the right of the direction start -> end) and the
-    nRMS of every selection of `sels`. `profiles` = project_profiles result, `rows`
+    nRMS of every selection of `sels`, then the columns `extra` = (heading, value per
+    site of site.dat). `profiles` = project_profiles result, `rows`
     = the sites of site.dat (name, lat, lon), `used` = their indices behind the
     projection.
     """
@@ -3326,33 +3688,40 @@ def write_profile_tables(stem: str, profiles: Sequence[dict], rows: Sequence[dic
         with open(p2, "w", newline="") as fh:
             w = csv.writer(fh)
             w.writerow(["profile", "site", "lat", "lon", "along_km", "offset_km"]
-                       + [f"{s['band']} | {s['comp']}" for s in sels])
+                       + [f"{s['band']} | {s['comp']}" for s in sels]
+                       + [name for name, _ in extra])
             for p in profiles:
                 for k in p["order"]:
                     j = int(used[k])
                     r = rows[j]
                     w.writerow([p["name"], r["name"], f"{r['lat']:.6f}", f"{r['lon']:.6f}",
                                 f"{p['proj']['along'][k]:.3f}", f"{p['proj']['offset'][k]:.3f}"]
-                               + [_fmt(s["nrms_site"][j]) for s in sels])
+                               + [_fmt(s["nrms_site"][j]) for s in sels]
+                               + [_fmt(v[j]) for _, v in extra])
         paths.append(p2)
     return paths
 
 
-def format_summary(sels: Sequence[dict], *, header: Sequence[str]) -> str:
+def format_summary(sels: Sequence[dict], *, header: Sequence[str],
+                   measure: str = "nrms") -> str:
     """
     Plain-text table: global nRMS and the spread of the site values per selection.
     For an ensemble (selections of aggregate_members) with the number of members M
-    and the smallest and largest global nRMS of a member (m_min, m_max).
+    and the smallest and largest global nRMS of a member (m_min, m_max). Another
+    fit `measure` in place of nRMS.
     """
     ens = bool(sels) and "G" in sels[0]
-    cols = ("band", "components", "n", "nRMS") + (("M", "m_min", "m_max") if ens else ()) \
+    label = measure_label(measure)
+    cols = ("band", "components", "n", label) + (("M", "m_min", "m_max") if ens else ()) \
         + ("sites", "min", "median", "max", "n_unassigned")
     body = []
     for s in sels:
-        v = s["nrms_site"][np.isfinite(s["nrms_site"])]
-        row = [s["band"], s["comp"], str(s["n"]), _fmt(s["nrms"], 3)]
+        glob_v, v = sel_values(s, measure)
+        v = v[np.isfinite(v)]
+        row = [s["band"], s["comp"], str(s["n"]), _fmt(glob_v, 3)]
         if ens:
-            g = s["G"][np.isfinite(s["G"])]
+            g = s["G"] if measure == "nrms" else s["G_m"][measure]
+            g = g[np.isfinite(g)]
             row += [str(s["M"]), _fmt(float(g.min()), 3) if g.size else "",
                     _fmt(float(g.max()), 3) if g.size else ""]
         row += [str(v.size), _fmt(float(v.min()), 3) if v.size else "",
@@ -3368,13 +3737,13 @@ def format_summary(sels: Sequence[dict], *, header: Sequence[str]) -> str:
     out += [line,
             "n = number of values (real and imaginary parts), global = all rows of the "
             "selection;",
-            "sites, min, median, max = nRMS of the sites; n_unassigned = values of rows "
+            f"sites, min, median, max = {label} of the sites; n_unassigned = values of rows "
             "that belong to no site."]
     if ens:
         stat = stat_words(sels[0]["stat"])
-        out += [f"nRMS and the nRMS of the sites = {stat} over the members (M = members with a "
+        out += [f"{label} and the {label} of the sites = {stat} over the members (M = members with a "
                 "value; n, n_unassigned = median of the members);",
-                "m_min, m_max = smallest and largest global nRMS of a member."]
+                f"m_min, m_max = smallest and largest global {label} of a member."]
     return "\n".join(out) + "\n"
 
 
@@ -3446,7 +3815,8 @@ def run(cfg: Dict[str, Any]) -> int:
         print(f"{_TAG} cannot read site.dat: {exc}", file=sys.stderr)
         return 1
     site_index, st = assign_sites(ds, sites, match=cfg["SITE_MATCH"],
-                                  tol=cfg["SITE_MATCH_TOL"], offset=cfg["SITE_ID_OFFSET"])
+                                  tol=1000.0 * cfg["SITE_MATCH_TOL"],
+                                  offset=cfg["SITE_ID_OFFSET"])
     _say(f"{len(sites)} sites in {site_path}; assigned by {st['mode']}: {st['n_hit']} of "
          f"{st['n_ids']} site ids ({st['n_sites']} sites)"
          + (f"; frame {st['frame']}, shift {st['shift'][0]:.1f}, {st['shift'][1]:.1f} m, "
@@ -3466,7 +3836,28 @@ def run(cfg: Dict[str, Any]) -> int:
         _say("WARNING: fewer than half of the site ids assigned -- is this the site.dat of the "
              "data set?")
 
-    # --- nRMS of every member ---
+    # --- nRMS (and the other measures) of every member ---
+    measures = parse_measures(cfg["SITE_MEASURES"])
+    fits = fit_names(measures)
+
+    def add_distortion(member: dict, lm: dict) -> None:
+        """member["dist"] (None = not available) of a loaded member."""
+        member.update(dist=None, dist_source="", dist_why="")
+        if _DISTORTION not in measures:
+            return
+        found, text = read_run_distortion(lm["res"]["path"], int(lm["res"]["iter"]),
+                                          file_template=cfg["DISTORTION_FILE"])
+        if found is None:
+            member["dist_why"] = text
+            return
+        ids = member["id_to_site"]
+        if lm.get("all_ids") is not None:              # DATATYPES: match the ids of all rows
+            with _print_once(seen):
+                ids = assign_sites(lm["all_ids"], sites, match=cfg["SITE_MATCH"],
+                                   tol=1000.0 * cfg["SITE_MATCH_TOL"],
+                                   offset=cfg["SITE_ID_OFFSET"])[1]["id_to_site"]
+        member.update(dist=distortion_per_site(found, ids, len(sites)), dist_source=text)
+
     seen: set = set()                        # messages of the selections: once
     try:
         with _print_once(seen):
@@ -3477,11 +3868,13 @@ def run(cfg: Dict[str, Any]) -> int:
     members = [dict(k=k0, name=names[k0], path=paths[k0], res=res, n_rows=n_rows, sels=sels0,
                     keep=True, note="", used=np.unique(site_index[site_index >= 0]),
                     id_to_site=st["id_to_site"])]
+    add_distortion(members[0], first)
     for k in range(k0 + 1, n_paths):
         try:
             lm = load_member(paths[k], cfg)
             idx, st_k = assign_sites(lm["ds"], sites, match=cfg["SITE_MATCH"],
-                                     tol=cfg["SITE_MATCH_TOL"], offset=cfg["SITE_ID_OFFSET"])
+                                     tol=1000.0 * cfg["SITE_MATCH_TOL"],
+                                     offset=cfg["SITE_ID_OFFSET"])
             if st_k["n_hit"] == 0:
                 raise ValueError("no site id could be assigned to a site of the site.dat")
             with _print_once(seen):
@@ -3496,6 +3889,7 @@ def run(cfg: Dict[str, Any]) -> int:
         members.append(dict(k=k, name=names[k], path=paths[k], res=lm["res"],
                             n_rows=lm["n_rows"], sels=sels_k, keep=True, note="",
                             used=np.unique(idx[idx >= 0]), id_to_site=st_k["id_to_site"]))
+        add_distortion(members[-1], lm)
         if n_paths <= 20 or len(members) % 10 == 0 or k == n_paths - 1:
             _say(f"member {names[k]} ({k + 1} of {n_paths}): iteration {lm['res']['iter']}, "
                  f"nRMS = {lm['res']['rms']:.3f}.")
@@ -3541,6 +3935,31 @@ def run(cfg: Dict[str, Any]) -> int:
         if s not in plot_sels:
             _say(f"selection {s['band']} | {s['comp']}: no data at a site, no map.")
 
+    # --- distortion strength ---
+    dsel = None
+    if _DISTORTION in measures:
+        have = [m for m in kept if m["dist"] is not None]
+        why = [m for m in kept if m["dist"] is None]
+        dsel = distortion_selection(kept, cfg["ENS_STAT"], used, ens=ens)
+        if not have:
+            _say(f"WARNING: distortion strength not available: {why[0]['dist_why']}"
+                 + (f" (member {why[0]['name']}; none of {len(kept)} members has it)"
+                    if ens else "") + ". No distortion map.")
+        else:
+            _say("distortion from " + "; ".join(sorted({m["dist_source"] for m in have}))
+                 + (f": {len(have)} of {len(kept)} members" if ens else "") + ".")
+            if why:
+                _say(f"WARNING: {len(why)} members without distortion, e.g. {why[0]['name']}: "
+                     f"{why[0]['dist_why']}.")
+            lost = sorted({i for m in have for i in m["dist"]["unmatched"]})
+            if lost:
+                _say(f"WARNING: distortion: no site for the site ids {lost[:10]}"
+                     f"{' ...' if len(lost) > 10 else ''}.")
+            if any(m["dist"]["n_multi"] for m in have):
+                _say("distortion: sites with several site ids get the mean of their strengths.")
+            if dsel is None:
+                _say("WARNING: distortion: no value at a site with data. No distortion map.")
+
     # --- profiles and lines ---
     lon_s = np.array([site_rows[j]["lon"] for j in used])
     lat_s = np.array([site_rows[j]["lat"] for j in used])
@@ -3559,9 +3978,14 @@ def run(cfg: Dict[str, Any]) -> int:
     out_dir = cfg["OUTPUT_DIR"]
     os.makedirs(out_dir, exist_ok=True)
     stem = os.path.join(out_dir, cfg["OUTPUT_BASENAME"])
-    files = write_site_tables(stem, site_rows, sels, used)
+    files = write_site_tables(stem, site_rows, sels, used, fits)
+    if dsel is not None:
+        files.append(write_distortion_table(stem, site_rows, dsel, used, kept, ens=ens))
     if profiles:
-        files += write_profile_tables(stem, profiles, site_rows, used, sels)
+        extra = [(f"{m} | {s['band']} | {s['comp']}", s["site_m"][m]) for m in fits for s in sels]
+        if dsel is not None:
+            extra.append((_DISTORTION, dsel["site_m"][_DISTORTION]))
+        files += write_profile_tables(stem, profiles, site_rows, used, sels, extra)
     if ens:
         rms_k = np.array([m["res"]["rms"] for m in kept], float)
         its = [int(m["res"]["iter"]) for m in kept]
@@ -3589,8 +4013,13 @@ def run(cfg: Dict[str, Any]) -> int:
         files.append(write_members_table(stem, every, sels))
     if ens:
         files.append(write_ens_stats(stem, site_rows, sels, used))
+        files += [write_ens_stats(stem, site_rows, sels, used, m) for m in fits]
     header += overlay_summary(profiles, lines)
     txt = format_summary(sels, header=header)
+    for m in fits:
+        txt += "\n" + format_summary(sels, header=[f"{measure_label(m)} of the sites"], measure=m)
+    if dsel is not None:
+        txt += "\n" + format_distortion(dsel, used, ens=ens, stat=cfg["ENS_STAT"], members=kept)
     with open(stem + "_summary.txt", "w") as fh:
         fh.write(txt)
     files.append(stem + "_summary.txt")
@@ -3616,6 +4045,8 @@ def run(cfg: Dict[str, Any]) -> int:
     out_of_map = overlay_outside(list(profiles) + list(lines), bbox)
     if out_of_map:
         _say(f"WARNING: outside the map (not shown): {', '.join(out_of_map)}.")
+        for msg in outside_hints(list(profiles) + list(lines), bbox):
+            _say(msg)
     try:
         for msg in cut_report(profiles, lines, bbox, cfg["OVERLAY_CUT_MARGIN_KM"]):
             _say(msg)
@@ -3627,20 +4058,13 @@ def run(cfg: Dict[str, Any]) -> int:
     credit = None
     if cfg["DEM_SOURCE"] != "none":
         try:
-            if cfg["DEM_SOURCE"] == "file":
-                dem = load_dem_file(cfg["DEM_FILE"], bbox, cfg["DEM_MAX_PIXELS"])
-            else:
-                template = dem_template(cfg["DEM_SOURCE"], cfg["DEM_URL_TEMPLATE"])
-                tkw = dict(cache_dir=cfg["DEM_CACHE_DIR"], template=template,
+            dem = load_dem(cfg["DEM_SOURCE"], bbox, file=cfg["DEM_FILE"],
+                           url_template=cfg["DEM_URL_TEMPLATE"], cache_dir=cfg["DEM_CACHE_DIR"],
                            download=cfg["DEM_DOWNLOAD"], timeout=cfg["DEM_TIMEOUT"],
                            max_tiles=cfg["DEM_MAX_TILES"], fill=cfg["DEM_FILL_MISSING"],
-                           strict=cfg["DEM_STRICT"])
-                if tile_kind(template) == "raster":
-                    dem = load_dem_raster(*bbox, max_pixels=cfg["DEM_MAX_PIXELS"], **tkw)
-                else:
-                    dem = load_dem_hgt(*bbox, **tkw)
+                           strict=cfg["DEM_STRICT"], max_pixels=cfg["DEM_MAX_PIXELS"],
+                           user_agent=_USER_AGENT, say=_say)
             if dem is not None:
-                dem = decimate_dem(crop_dem(dem, *bbox), cfg["DEM_MAX_PIXELS"])
                 relief = shade_dem(dem, style=cfg["DEM_STYLE"], azdeg=cfg["HILLSHADE_AZIMUTH"],
                                    altdeg=cfg["HILLSHADE_ALTITUDE"],
                                    vert_exag=cfg["HILLSHADE_VERT_EXAG"], cmap=cfg["DEM_CMAP"])
@@ -3655,62 +4079,97 @@ def run(cfg: Dict[str, Any]) -> int:
                 return 1
             _say(f"WARNING: DEM: {exc} -- the maps have no relief.")
     if relief is not None:
-        credit = cfg["DEM_CREDIT"]
-        if credit == "auto":
-            credit = (_DEM_PRESETS[cfg["DEM_SOURCE"]]["credit"]
-                      if cfg["DEM_SOURCE"] in _DEM_PRESETS and not cfg["DEM_URL_TEMPLATE"]
-                      else None)
+        credit = dem_credit(cfg["DEM_SOURCE"], cfg["DEM_URL_TEMPLATE"], cfg["DEM_CREDIT"])
 
     # --- maps ---
     spread = ens and kind == "std"           # spread of the members: sequential scale from 0
-    pcfg = dict(cfg, CMAP_NRMS=cfg["CMAP_SPREAD"], NRMS_REFERENCE=None) if spread else cfg
-    vmin = 0.0 if spread and cfg["NRMS_VMIN"] is None else cfg["NRMS_VMIN"]
-    allv = np.concatenate([s["nrms_site"][used] for s in plot_sels])
-    norm, extend = make_norm(allv, vmin=vmin, vmax=cfg["NRMS_VMAX"],
-                             reference=pcfg["NRMS_REFERENCE"])
     if ens:
         n_k = len(kept)
-        title = make_title(cfg["TITLE"], iteration=its[0],
-                           nrms=float(ens_statistic(rms_k, cfg["ENS_STAT"])),
-                           ens=dict(M=n_k, stat=cfg["ENS_STAT"], iters=its))
-        cbar_label = (f"std of nRMS ({n_k} members)" if spread
-                      else f"nRMS ({stat_words(cfg['ENS_STAT'])} of {n_k} members)")
+        run_title = dict(iteration=its[0], nrms=float(ens_statistic(rms_k, cfg["ENS_STAT"])))
     else:
-        title = make_title(cfg["TITLE"], iteration=int(res["iter"]), nrms=float(res["rms"]))
-        cbar_label = "nRMS"
+        run_title = dict(iteration=int(res["iter"]), nrms=float(res["rms"]))
     import matplotlib.pyplot as plt
-    figs = []
-    for tag, page in build_pages(plot_sels, cfg["PAGE_BY"]):
-        page_sels = [dict(s, nrms_site=s["nrms_site"][used]) for s in page]
-        fig = plot_page(page_sels, site_lon=lon_s, site_lat=lat_s,
-                        site_names=[site_rows[j]["name"] for j in used], frame=frame, bbox=bbox,
-                        relief=relief, relief_extent=relief_extent, norm=norm, extend=extend,
-                        cfg=pcfg, title=title, credit=credit, cbar_label=cbar_label,
-                        overlays=overlays)
-        files += save_figure(fig, f"{stem}_{tag}", cfg["OUTPUT_FORMATS"], cfg["DPI"])
-        figs.append(fig)
-    _say(f"{len(files)} files in {out_dir}:")
-    for p in files:
-        print("   " + os.path.basename(p))
-    if cfg["SHOW"]:
-        plt.show()
+    for name in missing_fonts(cfg["FONT_FAMILY"]):
+        _say(f"WARNING: FONT_FAMILY: matplotlib finds no font {name!r}; another font is used.")
+    if max(float(v) for v in cfg["PANEL_SIZE"]) < _SMALL_PANEL_CM:
+        _say(f"NOTE: PANEL_SIZE = {tuple(cfg['PANEL_SIZE'])} is in cm (inch until 2026-11-26): "
+             "small panels.")
+    figs, n_figs = [], 0                     # figs: kept open for SHOW only
+    with plt.rc_context(font_rc(cfg)):             # also for the text made when saving / showing
+        for measure in measures:
+            if measure == _DISTORTION:
+                if dsel is None:
+                    continue
+                m_sels, pages = [dsel], [(_DISTORTION, [dsel])]
+            else:
+                m_sels = [s for s in plot_sels
+                          if np.isfinite(sel_values(s, measure)[1][used]).any()]
+                prefix = "" if measure == "nrms" else f"{measure}_"
+                pages = [(prefix + tag, page)
+                         for tag, page in build_pages(m_sels, cfg["PAGE_BY"])]
+            allv = np.concatenate([sel_values(s, measure)[1][used] for s in m_sels] or [[]])
+            if not np.isfinite(allv).any():
+                _say(f"{measure_label(measure)}: no value at a site, no map.")
+                continue
+            scale = measure_scale(measure, cfg, spread=spread)
+            pcfg = dict(cfg, CMAP_NRMS=scale["cmap"], NRMS_REFERENCE=scale["reference"])
+            norm, extend = make_norm(
+                allv, vmin=scale["vmin"], vmax=scale["vmax"], reference=scale["reference"],
+                floor=None if measure in mm.SIGNED_MEASURES else 0.0,
+                name="NRMS_REFERENCE" if measure == "nrms" else f"the reference of {measure}")
+            label = measure_label(measure)
+            short = "|C - I|" if measure == _DISTORTION else label
+            m_ens = None
+            if ens:
+                m_k = dsel["M"] if measure == _DISTORTION else n_k
+                m_ens = dict(M=m_k, stat=cfg["ENS_STAT"], iters=its)
+                cbar_label = (f"std of {short} ({m_k} members)" if spread
+                              else f"{short} ({stat_words(cfg['ENS_STAT'])} of {m_k} members)")
+            else:
+                cbar_label = _DISTORTION_LABEL if measure == _DISTORTION else label
+            title = make_title(cfg["TITLE"], ens=m_ens, **run_title,
+                               label="distortion strength" if measure == _DISTORTION else label)
+            for tag, page in pages:
+                page_sels = [dict(s, nrms_site=s["nrms_site"][used],
+                                  site_m={q: v[used] for q, v in s["site_m"].items()})
+                             for s in page]
+                fig = plot_page(page_sels, site_lon=lon_s, site_lat=lat_s,
+                                site_names=[site_rows[j]["name"] for j in used], frame=frame,
+                                bbox=bbox, relief=relief, relief_extent=relief_extent, norm=norm,
+                                extend=extend, cfg=pcfg, title=title, credit=credit,
+                                cbar_label=cbar_label, overlays=overlays, measure=measure)
+                files += save_figure(fig, f"{stem}_{tag}", cfg["OUTPUT_FORMATS"], cfg["DPI"])
+                n_figs += 1
+                if cfg["SHOW"]:
+                    figs.append(fig)
+                else:
+                    plt.close(fig)           # many measures x pages: do not keep them all
+        _say(f"{len(files)} files in {out_dir}:")
+        for p in files:
+            print("   " + os.path.basename(p))
+        if cfg["SHOW"]:
+            plt.show()
     for fig in figs:
         plt.close(fig)
+    if not n_figs:
+        print(f"{_TAG} no map: nothing to show for SITE_MEASURES = {list(measures)}.",
+              file=sys.stderr)
+        return 1
     return 0
 
 
 def main(argv: Sequence[str]) -> int:
-    """Command line: -w, -i, --dem, --runs, --stat, --profile, --line, --no-overlays."""
+    """Command line: -w, -i, --dem, --runs, --stat, --measures, --profile, --line, --no-overlays."""
     ap = argparse.ArgumentParser(
         prog="femtic_plot_sitemap.py",
-        description="Site map of a FEMTIC run or ensemble: nRMS per site, band and component on "
-                    "a shaded relief (Copernicus DEM by default). All paths are taken relative to "
-                    "WORK_DIR.")
+        description="Site map of a FEMTIC run or ensemble: nRMS (or other fit measures per "
+                    "site, band and component, or the distortion strength) on a shaded relief "
+                    "(Copernicus DEM by default). All paths are taken relative to WORK_DIR.")
     ap.add_argument("-w", "--work-dir", default=None, metavar="DIR",
                     help="base of all relative paths (replaces WORK_DIR)")
     ap.add_argument("-i", "--iteration", default=None, metavar="N",
                     help="\"best\", \"last\" or a number (replaces ITERATION)")
-    ap.add_argument("--dem", default=None, choices=_DEM_SOURCES,
+    ap.add_argument("--dem", default=None, choices=DEM_SOURCES,
                     help="DEM source (replaces DEM_SOURCE)")
     ap.add_argument("--runs", nargs="+", default=None, metavar="PATH",
                     help="members of the ensemble: run directories, results files or globs "
@@ -3718,6 +4177,9 @@ def main(argv: Sequence[str]) -> int:
     ap.add_argument("--stat", default=None, metavar="STAT",
                     help="statistic over the members: mean, median, min, max, std or pNN "
                          "(replaces ENS_STAT)")
+    ap.add_argument("--measures", nargs="+", default=None, metavar="NAME",
+                    help="what the maps show: " + ", ".join(mm.FIT_MEASURE_NAMES)
+                         + ", distortion (replaces SITE_MEASURES)")
     ap.add_argument("--profile", nargs=5, action="append", default=None,
                     metavar=("NAME", "LON1", "LAT1", "LON2", "LAT2"),
                     help="a profile line from (LON1, LAT1) to (LON2, LAT2), in degrees; can be "
@@ -3763,6 +4225,11 @@ def main(argv: Sequence[str]) -> int:
         except ValueError as exc:
             ap.error(str(exc))
         over["ENS_STAT"] = args.stat
+    if args.measures is not None:
+        try:
+            over["SITE_MEASURES"] = list(parse_measures(args.measures))
+        except ValueError as exc:
+            ap.error(str(exc))
     return run(settings(args.work_dir, **over))
 
 

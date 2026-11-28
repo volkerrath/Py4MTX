@@ -261,3 +261,12 @@ default). All outputs for a run are bundled into
 `{SITE_PREFIX}_structure_YYYYMMDD_HHMM.zip` (Europe/Paris timestamp, both
 the zip name and each member's internal mtime), matching the rest of the
 pipeline's delivery convention.
+
+## Changes 2026-11-27 (sizes in cm)
+
+Claude Sonnet 5.5 (Anthropic): AI-generated; review before use.
+
+New settings `MAP_FIG_SIZE = (17.78, 15.24)` and `SECTION_FIG_SIZE = (20.32, 10.16)`,
+width and height in cm (sections: the height is used if `VE < 1`, otherwise it is
+width / `VE`). Before, the sizes were fixed in the code in inch; the defaults give
+the same figures.

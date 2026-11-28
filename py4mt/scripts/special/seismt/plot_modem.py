@@ -38,6 +38,12 @@ Authors: Svetlana Byrdina (SMB) & Volker Rath (DIAS)
 AI-assisted development: Claude (Anthropic), 2026-06-29.
 License: GNU General Public License v3 (GPL-3.0-or-later).
 AI-generated code — review before use in production.
+
+Changes
+-------
+2026-11-27  Claude Sonnet 5.5 (Anthropic), AI-generated, review before use:
+            COLORBAR_PAD is in cm (before: inch); the default 0.254 is
+            the former 0.10. Multiply own values by 2.54.
 """
 
 import warnings
@@ -376,7 +382,7 @@ COLORBAR_POSITION   = "right"   # "right" | "left" | "bottom" | "top"
 # {"section": spec, "map": spec, "default": spec}
 FIGURE_TITLE = "auto"
 COLORBAR_SIZE       = 0.05
-COLORBAR_PAD        = 0.10      # inches
+COLORBAR_PAD        = 0.254     # [cm]
 COLORBAR_ASPECT     = 20
 COLORBAR_LABEL_SIZE = 8
 COLORBAR_TICK_SIZE  = 7
@@ -772,7 +778,7 @@ def add_colorbar(fig, ax, mappable, label):
         orientation=orientation,
         location=pos,
         fraction=COLORBAR_SIZE,
-        pad=COLORBAR_PAD / fig.get_size_inches()[0],
+        pad=(COLORBAR_PAD / 2.54) / fig.get_size_inches()[0],
         aspect=COLORBAR_ASPECT,
         shrink=0.85,
     )

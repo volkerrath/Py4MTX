@@ -41,7 +41,7 @@ Smoothing (smooth_median)
 The median model is smoothed in one pass using the same three kernel modes
 exposed in ``femtic_mod_edit.py``:
 
-    ``"physical"``      Global Gaussian, σ = SMOOTH_SIGMA metres.
+    ``"physical"``      Global Gaussian, σ = SMOOTH_SIGMA km.
     ``"knn_uniform"``   Flat average over K nearest neighbours.
     ``"knn_gauss"``     Per-region Gaussian, σ_i = SMOOTH_KNN_SIGMA_FRAC ×
                         distance to K-th neighbour.
@@ -54,6 +54,9 @@ Outputs
     <OUT_DIR>/resistivity_block_smooth_median.dat
     <OUT_DIR>/math_avg.pdf            (when PLOT = True)
     <OUT_DIR>/math_smooth_median.pdf  (when PLOT = True)
+
+With PLOT_SINGLE_PANELS = True every slice is a figure of its own:
+math_avg_01_<kind>.pdf, math_avg_02_<kind>.pdf, ... (same for the median).
 
 Provenance
 ----------
@@ -82,6 +85,21 @@ Provenance
                 which fitted only the layout with distortion columns. Needs
                 the femtic.py of the same date. AI-generated; review before
                 production use.
+    2026-11-26  Claude Sonnet 5.5 (Anthropic)
+                Optional single-panel output: new PLOT_SINGLE_PANELS (default
+                False) draws one figure per slice (fviz.single_panel_jobs).
+                Needs femtic_viz.py of the same date. Tested on synthetic
+                files only. AI-generated; review before production use.
+
+2026-11-26 (km)  Claude Sonnet 5.5 (Anthropic)
+              User settings are km throughout, UTM coordinates too (before:
+              UTM and some per-entry values in metres). Personal settings in
+              metres must be converted; values that look like metres stop
+              with an error (fem.KmUnitError). Concerns SMOOTH_SIGMA (3.0),
+              PLOT_SLICES, PLOT_XLIM / YLIM / ZLIM, PROJECTION_DIST,
+              UTM_ORIGIN_E / _N and MAP_MARKERS. Needs femtic.py of the same
+              date. Tested on synthetic files only. AI-generated; review
+              before production use.
 
 @author: vrath
 """
@@ -189,8 +207,8 @@ OCEAN_RHO = 0.25    # Ω·m written for region 1 when ocean is active
 #: Kernel mode — one of ``"physical"``, ``"knn_uniform"``, ``"knn_gauss"``.
 SMOOTH_MODE = "physical"
 
-#: Gaussian σ in metres — used by ``"physical"`` mode only.
-SMOOTH_SIGMA = 3000.0
+#: Gaussian σ in km — used by ``"physical"`` mode only.
+SMOOTH_SIGMA = 3.0
 
 #: Number of nearest neighbours — used by all three modes.
 SMOOTH_K = 100
@@ -229,16 +247,19 @@ PLOT_OCEAN_COLOR = "lightgrey"
 PLOT_AIR_BGCOLOR = None
 
 #: Slice list — same format as femtic_mod_edit.py / femtic_mod_plot_slice.py.
+#: All lengths are km: z0, x0, y0, point, p1, p2, z_top, z_bot and per-panel
+#: xlim / ylim / zlim; (value, "utm") is UTM km, (value, "latlon") degrees.
 PLOT_SLICES = [
-    dict(kind="map", z0=5000.0),
-    dict(kind="map", z0=15000.0),
+    dict(kind="map", z0=5.0),
+    dict(kind="map", z0=15.0),
     dict(kind="ns",  x0=0.0),
     dict(kind="ew",  y0=0.0),
 ]
 
-PLOT_XLIM = [-20000., 20000.]
-PLOT_YLIM = [-20000., 20000.]
-PLOT_ZLIM = [  -6000., 15000.]
+#: Axis limits in model-local km (depth positive down); None = auto.
+PLOT_XLIM = [-20., 20.]
+PLOT_YLIM = [-20., 20.]
+PLOT_ZLIM = [ -6., 15.]
 
 DEPTH_KM         = True
 HORIZ_KM         = True
@@ -246,14 +267,18 @@ PLOT_EQUAL_ASPECT = True
 PLOT_PANEL_HEIGHT = 16.0    # cm
 PLOT_NROWS        = None
 PLOT_NCOLS        = None
+#: False = one figure per output member with a panel per PLOT_SLICES entry;
+#: True  = one figure per member AND slice (math_avg_01_<kind>.pdf, ...);
+#: PLOT_NROWS / PLOT_NCOLS are then not used.
+PLOT_SINGLE_PANELS = False
 
 # ---------------------------------------------------------------------------
 # Geographic / UTM origin
 # ---------------------------------------------------------------------------
-UTM_ORIGIN_LAT    = None
-UTM_ORIGIN_LON    = None
-UTM_ORIGIN_E      = None
-UTM_ORIGIN_N      = None
+UTM_ORIGIN_LAT    = None    # decimal degrees
+UTM_ORIGIN_LON    = None    # decimal degrees
+UTM_ORIGIN_E      = None    # UTM easting  [km]
+UTM_ORIGIN_N      = None    # UTM northing [km]
 UTM_ZONE_OVERRIDE = None
 ORIGIN_METHOD     = "box"   # None | "box" | "average"
 
@@ -267,11 +292,11 @@ SITE_NAMES  = None
 
 PLOT_SITES_MAPS   = True
 PLOT_SITES_SLICES = False
-PROJECTION_DIST   = 5000.   # m
+PROJECTION_DIST   = 5.0     # km
 
 SITE_MARKER        = dict(marker="v", color="black", ms=8, zorder=10, label=None)
 SITE_MARKER_SLICES = None
-MAP_MARKERS        = []
+MAP_MARKERS        = []      # depth / depth_err / max_dist of an entry: km
 
 
 # ===========================================================================
@@ -296,6 +321,7 @@ def _smooth(m: np.ndarray, centroids: np.ndarray) -> np.ndarray:
     K    = min(int(SMOOTH_K), len(m))
     mode = str(SMOOTH_MODE).strip().lower()
     n    = len(m)
+    sigma_m = fem.km_to_m(SMOOTH_SIGMA, name="SMOOTH_SIGMA")  # centroids: m
 
     _valid = {"physical", "knn_uniform", "knn_gauss"}
     if mode not in _valid:
@@ -310,7 +336,7 @@ def _smooth(m: np.ndarray, centroids: np.ndarray) -> np.ndarray:
         m_nbr = m[idx]                                  # (n, K)
 
         if mode == "physical":
-            two_s2 = 2.0 * float(SMOOTH_SIGMA) ** 2
+            two_s2 = 2.0 * sigma_m ** 2
             W = np.exp(-dist ** 2 / two_s2)
 
         elif mode == "knn_uniform":
@@ -339,8 +365,7 @@ def _smooth(m: np.ndarray, centroids: np.ndarray) -> np.ndarray:
             )
 
     # -- Chunked dense fallback (physical, no SciPy) --
-    sigma   = float(SMOOTH_SIGMA)
-    two_s2  = 2.0 * sigma * sigma
+    two_s2  = 2.0 * sigma_m * sigma_m
     max_bytes  = int(SMOOTH_MAX_GB * 1024 ** 3)
     chunk_size = max(1, max_bytes // (n * 8))
     chunk_size = min(chunk_size, n)
@@ -367,12 +392,14 @@ def _resolve_origin_and_sites():
     Returns
     -------
     utm_e, utm_n, utm_lat, utm_lon : float | None
-        UTM origin.
+        UTM origin (utm_e / utm_n in metres).
     utm_zone, utm_northern : str | None, bool | None
         UTM zone string and hemisphere flag.
     site_xys : list of (name, x_m, y_m, elev) tuples
     """
-    _e, _n, _lat, _lon = UTM_ORIGIN_E, UTM_ORIGIN_N, UTM_ORIGIN_LAT, UTM_ORIGIN_LON
+    _e, _n = fem.utm_km_to_m(
+        UTM_ORIGIN_E, UTM_ORIGIN_N, name="UTM_ORIGIN_E / _N")
+    _lat, _lon = UTM_ORIGIN_LAT, UTM_ORIGIN_LON
     _zone, _north = None, None
 
     if ORIGIN_METHOD is not None and SITE_DAT and os.path.isfile(SITE_DAT):
@@ -413,19 +440,19 @@ def _plot_member(block_file: str, pdf_file: str,
         return
 
     _slices_resolved = fem.resolve_slice_positions(
-        PLOT_SLICES, utm_zone, utm_north,
+        fem.slices_km_to_m(PLOT_SLICES), utm_zone, utm_north,
         utm_e, utm_n, utm_lat, utm_lon,
         verbose=OUT,
     )
-    fviz.plot_model_slices(
+    _kw = dict(
         model_file         = block_file,
         mesh_file          = MESH_FILE,
         slices             = _slices_resolved,
         cmap               = PLOT_CMAP,
         clim               = PLOT_CLIM,
-        xlim               = PLOT_XLIM,
-        ylim               = PLOT_YLIM,
-        zlim               = PLOT_ZLIM,
+        xlim               = fem.lim_km_to_m(PLOT_XLIM, name="PLOT_XLIM"),
+        ylim               = fem.lim_km_to_m(PLOT_YLIM, name="PLOT_YLIM"),
+        zlim               = fem.lim_km_to_m(PLOT_ZLIM, name="PLOT_ZLIM"),
         ocean_color        = PLOT_OCEAN_COLOR,
         ocean_value        = OCEAN_RHO,
         air_bgcolor        = PLOT_AIR_BGCOLOR,
@@ -435,8 +462,9 @@ def _plot_member(block_file: str, pdf_file: str,
         sites_in_slices    = PLOT_SITES_SLICES,
         site_marker        = SITE_MARKER,
         site_marker_slices = SITE_MARKER_SLICES,
-        map_markers        = MAP_MARKERS,
-        projection_dist    = PROJECTION_DIST,
+        map_markers        = fem.markers_km_to_m(MAP_MARKERS),
+        projection_dist    = fem.km_to_m(
+            PROJECTION_DIST, name="PROJECTION_DIST"),
         display_coords     = DISPLAY_COORDS,
         utm_origin_e       = utm_e,
         utm_origin_n       = utm_n,
@@ -450,12 +478,19 @@ def _plot_member(block_file: str, pdf_file: str,
         panel_height       = PLOT_PANEL_HEIGHT / 2.54,
         nrows              = PLOT_NROWS,
         ncols              = PLOT_NCOLS,
-        plot_file          = pdf_file,
         dpi                = PLOT_DPI,
         out                = OUT,
     )
-    if OUT:
-        print(f"  saved → {pdf_file}")
+    if PLOT_SINGLE_PANELS:
+        _jobs = fviz.single_panel_jobs(_slices_resolved)
+    else:
+        _jobs = [dict(suffix="", kwargs={})]
+    _root, _ext = os.path.splitext(pdf_file)
+    for _job in _jobs:
+        _file = f"{_root}{_job['suffix']}{_ext}"
+        fviz.plot_model_slices(plot_file=_file, **{**_kw, **_job["kwargs"]})
+        if OUT:
+            print(f"  saved -> {_file}")
 
 
 # ===========================================================================
